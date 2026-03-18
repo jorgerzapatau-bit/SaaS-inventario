@@ -224,7 +224,7 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                 tickFormatter={(v) => formatTick(v, metric)} />
             <Tooltip
                 contentStyle={{ borderRadius:'8px', border:'none', boxShadow:'0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                formatter={(value: number | undefined, name: string) => formatTooltip(value ?? 0, name, metric)}
+                formatter={(value: any, name: any) => formatTooltip(value, name, metric)}
                 itemSorter={(item: any) => item.value === 0 ? 1 : -1}
                 filterNull
             />
