@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Empresa {
+  id        String   @id @default(uuid())
+  nombre    String
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuarios             Usuario[]
+  categorias           Categoria[]
+  proveedores          Proveedor[]
+  productos            Producto[]
+  almacenes            Almacen[]
+  compras              Compra[]
+  salidas              Salida[]
+  movimientosInventario MovimientoInventario[]
+}
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR
+}
+
+model Usuario {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nombre    String
+  email     String   @unique
+  password  String
+  role      Role     @default(OPERADOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movimientos MovimientoInventario[]
+  salidas     Salida[]
+}
+
+model Categoria {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nombre    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  productos Producto[]
+}
+
+model Proveedor {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nombre    String
+  contacto  String?
+  telefono  String?
+  email     String?
+  direccion String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  compras Compra[]
+}
+
+model Almacen {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nombre    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movimientos MovimientoInventario[]
+}
+
+model Producto {
+  id           String     @id @default(uuid())
+  empresaId    String
+  empresa      Empresa    @relation(fields: [empresaId], references: [id])
+  nombre       String
+  sku          String
+  categoriaId  String
+  categoria    Categoria  @relation(fields: [categoriaId], references: [id])
+  unidad       String     @default("unidad")
+  precioCompra Decimal    @default(0)
+  precioVenta  Decimal    @default(0)
+  stockMinimo  Int        @default(0)
+  activo       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  detallesCompra DetalleCompra[]
+  detallesSalida DetalleSalida[]
+  movimientos    MovimientoInventario[]
+
+  @@unique([empresaId, sku])
+}
+
+enum StatusCompra {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
+}
+
+model Compra {
+  id          String         @id @default(uuid())
+  empresaId   String
+  empresa     Empresa        @relation(fields: [empresaId], references: [id])
+  proveedorId String
+  proveedor   Proveedor      @relation(fields: [proveedorId], references: [id])
+  fecha       DateTime       @default(now())
+  total       Decimal        @default(0)
+  status      StatusCompra   @default(PENDIENTE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  detalles DetalleCompra[]
+}
+
+model DetalleCompra {
+  id             String   @id @default(uuid())
+  compraId       String
+  compra         Compra   @relation(fields: [compraId], references: [id])
+  productoId     String
+  producto       Producto @relation(fields: [productoId], references: [id])
+  cantidad       Int
+  precioUnitario Decimal
+}
+
+enum TipoSalida {
+  VENTA
+  CONSUMO_INTERNO
+  PERDIDA
+}
+
+model Salida {
+  id         String     @id @default(uuid())
+  empresaId  String
+  empresa    Empresa    @relation(fields: [empresaId], references: [id])
+  tipo       TipoSalida
+  fecha      DateTime   @default(now())
+  referencia String?
+  usuarioId  String
+  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  detalles DetalleSalida[]
+}
+
+model DetalleSalida {
+  id             String   @id @default(uuid())
+  salidaId       String
+  salida         Salida   @relation(fields: [salidaId], references: [id])
+  productoId     String
+  producto       Producto @relation(fields: [productoId], references: [id])
+  cantidad       Int
+  precioUnitario Decimal
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+}
+
+model MovimientoInventario {
+  id             String         @id @default(uuid())
+  empresaId      String
+  empresa        Empresa        @relation(fields: [empresaId], references: [id])
+  productoId     String
+  producto       Producto       @relation(fields: [productoId], references: [id])
+  almacenId      String
+  almacen        Almacen        @relation(fields: [almacenId], references: [id])
+  tipoMovimiento TipoMovimiento
+  cantidad       Int
+  costoUnitario  Decimal
+  fecha          DateTime       @default(now())
+  referencia     String?
+  usuarioId      String
+  usuario        Usuario        @relation(fields: [usuarioId], references: [id])
+  createdAt      DateTime       @default(now())
+
+  @@index([empresaId])
+  @@index([productoId])
+  @@index([almacenId])
+}

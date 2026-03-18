@@ -1,0 +1,5 @@
+﻿src/controllers/auth.controller.ts(21,17): error TS2322: Type '{ nombre: any; }' is not assignable to type '(Without<EmpresaCreateInput, EmpresaUncheckedCreateInput> & EmpresaUncheckedCreateInput) | (Without<...> & EmpresaCreateInput)'.
+  Type '{ nombre: any; }' is not assignable to type 'Without<EmpresaUncheckedCreateInput, EmpresaCreateInput> & EmpresaCreateInput'.
+    Property 'url' is missing in type '{ nombre: any; }' but required in type 'EmpresaCreateInput'.
+src/controllers/company.controller.ts(44,22): error TS2322: Type 'string | string[]' is not assignable to type 'string | undefined'.
+  Type 'string[]' is not assignable to type 'string'.
