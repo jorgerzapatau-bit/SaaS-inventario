@@ -32,3 +32,4 @@ prisma/migrations/
 # VS Code
 .vscode/
 EOF
+*.zip
