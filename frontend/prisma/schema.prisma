@@ -157,13 +157,15 @@ model Compra {
   empresa     Empresa      @relation(fields: [empresaId], references: [id])
   proveedorId String
   proveedor   Proveedor    @relation(fields: [proveedorId], references: [id])
+  referencia  String?
   fecha       DateTime     @default(now())
   total       Decimal      @default(0)
   status      StatusCompra @default(PENDIENTE)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  detalles DetalleCompra[]
+  detalles    DetalleCompra[]
+  movimientos MovimientoInventario[]
 }
 
 model DetalleCompra {
@@ -231,6 +233,8 @@ model MovimientoInventario {
   clienteId      String?
   cliente        Cliente?       @relation(fields: [clienteId], references: [id])
   clienteNombre  String?
+  compraId       String?
+  compra         Compra?        @relation(fields: [compraId], references: [id])
   fecha          DateTime       @default(now())
   referencia     String?
   usuarioId      String
@@ -241,4 +245,5 @@ model MovimientoInventario {
   @@index([productoId])
   @@index([almacenId])
   @@index([clienteId])
+  @@index([compraId])
 }
