@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { MovimientoModal } from '@/components/ui/MovimientoModal';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
+import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
 import ProductChart from '@/components/dashboard/ProductChart';
 
 // ─── Interfaces ────────────────────────────────────────────────────────────────
@@ -328,7 +329,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const ultimoCosto = Number(ultimaEntrada?.costoUnitario ?? 0);
     const valorEsteProducto = (product?.stock ?? 0) * ultimoCosto;
-    const hace30d = new Date(Date.now() - 30 * 86400000);
+    const hace30d = useMemo(() => new Date(Date.now() - 30 * 86400000), []);
     const salidasUltimos30d = !isNew ? movements.filter(m => ['SALIDA', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d).reduce((a, m) => a + m.cantidad, 0) : 0;
     const rotacionProducto = product?.stock && product.stock > 0 ? (salidasUltimos30d / product.stock * 100).toFixed(1) : null;
     const promedioSalidasDiarias = salidasUltimos30d / 30;
