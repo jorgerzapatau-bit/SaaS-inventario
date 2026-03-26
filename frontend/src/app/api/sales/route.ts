@@ -6,7 +6,14 @@ export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        const salidas = await prisma.salida.findMany({ where: { empresaId: user.empresaId }, include: { usuario: true, detalles: true } });
+        const salidas = await prisma.salida.findMany({
+            where: { empresaId: user.empresaId },
+            include: {
+                usuario: true,
+                detalles: { include: { producto: { select: { nombre: true, sku: true, unidad: true } } } }
+            },
+            orderBy: { fecha: 'desc' }
+        });
         return Response.json(salidas);
     } catch { return Response.json({ error: 'Error fetching sales' }, { status: 500 }); }
 }
