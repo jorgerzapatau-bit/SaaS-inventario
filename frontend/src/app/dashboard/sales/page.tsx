@@ -19,6 +19,8 @@ interface Salida {
     tipo: 'VENTA' | 'CONSUMO_INTERNO' | 'PERDIDA';
     referencia: string | null;
     fecha: string;
+    clienteNombre: string | null;
+    esFormal: boolean;
     usuario: { nombre?: string; email?: string } | null;
     detalles: DetalleSalida[];
 }
@@ -289,7 +291,7 @@ export default function SalesPage() {
                                 <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('total')}>
                                     Total <SortIcon col="total"/>
                                 </th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Registrada por</th>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente / Registrada por</th>
                                 <th className="px-4 py-3"></th>
                             </tr>
                         </thead>
@@ -339,7 +341,10 @@ export default function SalesPage() {
                                                 ${total.toLocaleString('es-MX', { maximumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-500">
-                                                {salida.usuario?.nombre || salida.usuario?.email || '—'}
+                                                {salida.clienteNombre
+                                                    ? <span className="font-medium text-gray-700">{salida.clienteNombre}</span>
+                                                    : <span className="text-gray-400">{salida.usuario?.nombre || salida.usuario?.email || '—'}</span>
+                                                }
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <ChevronRight size={16} className="text-gray-300 group-hover:text-orange-400 transition-colors"/>
@@ -402,8 +407,10 @@ export default function SalesPage() {
                         <div className="px-6 py-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><UserCircle2 size={11}/> Registrado por</p>
-                                    <p className="text-sm font-semibold text-gray-800">{detalle.usuario?.nombre || detalle.usuario?.email || '—'}</p>
+                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><UserCircle2 size={11}/> {detalle.clienteNombre ? 'Cliente' : 'Registrado por'}</p>
+                                    <p className="text-sm font-semibold text-gray-800">
+                                        {detalle.clienteNombre || detalle.usuario?.nombre || detalle.usuario?.email || '—'}
+                                    </p>
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Calendar size={11}/> Fecha</p>

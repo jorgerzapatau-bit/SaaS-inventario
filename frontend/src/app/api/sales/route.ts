@@ -6,16 +6,76 @@ export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        const salidas = await prisma.salida.findMany({
+        // 1. Salidas formales (creadas desde /sales/new → modelo Salida)
+        const salidasFormales = await prisma.salida.findMany({
             where: { empresaId: user.empresaId },
             include: {
-                usuario: true,
+                usuario: { select: { nombre: true, email: true } },
                 detalles: { include: { producto: { select: { nombre: true, sku: true, unidad: true } } } }
             },
             orderBy: { fecha: 'desc' }
         });
-        return Response.json(salidas);
-    } catch { return Response.json({ error: 'Error fetching sales' }, { status: 500 }); }
+
+        // Convertir al shape unificado
+        const formalesNormalizadas = salidasFormales.map(s => ({
+            id:            s.id,
+            tipo:          s.tipo as string,
+            referencia:    s.referencia,
+            fecha:         s.fecha,
+            clienteNombre: null,
+            usuario:       s.usuario,
+            esFormal:      true,
+            detalles: s.detalles.map(d => ({
+                id:             d.id,
+                productoId:     d.productoId,
+                producto:       d.producto,
+                cantidad:       d.cantidad,
+                precioUnitario: Number(d.precioUnitario),
+            })),
+        }));
+
+        // 2. Salidas registradas desde MovimientoModal (modelo MovimientoInventario)
+        const movSalidas = await prisma.movimientoInventario.findMany({
+            where: {
+                empresaId:      user.empresaId,
+                tipoMovimiento: 'SALIDA',
+            },
+            orderBy: { fecha: 'desc' },
+            include: {
+                producto:  { select: { nombre: true, sku: true, unidad: true } },
+                almacen:   { select: { nombre: true } },
+                usuario:   { select: { nombre: true, email: true } },
+                cliente:   { select: { nombre: true } },
+            }
+        });
+
+        // Convertir movimientos al mismo shape
+        const movNormalizados = movSalidas.map(m => ({
+            id:            m.id,
+            tipo:          'VENTA',   // los movimientos de salida son ventas por defecto
+            referencia:    m.referencia || null,
+            fecha:         m.fecha,
+            clienteNombre: m.clienteNombre || m.cliente?.nombre || null,
+            usuario:       m.usuario,
+            esFormal:      false,
+            detalles: [{
+                id:             m.id,
+                productoId:     m.productoId,
+                producto:       m.producto,
+                cantidad:       m.cantidad,
+                precioUnitario: Number(m.precioVenta ?? m.costoUnitario),
+            }],
+        }));
+
+        // Unir y ordenar por fecha
+        const todas = [...formalesNormalizadas, ...movNormalizados]
+            .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+        return Response.json(todas);
+    } catch (e) {
+        console.error(e);
+        return Response.json({ error: 'Error fetching sales' }, { status: 500 });
+    }
 }
 
 export async function POST(req: NextRequest) {
