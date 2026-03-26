@@ -6,7 +6,8 @@ import { fetchApi } from '@/lib/api';
 import {
     ArrowLeft, Plus, Minus, Edit, AlertTriangle, X,
     TrendingUp, TrendingDown, DollarSign, FileDown,
-    Building2, User, Save, Upload, ToggleLeft, ToggleRight, Check, SlidersHorizontal
+    Building2, User, Save, Upload, ToggleLeft, ToggleRight, Check, SlidersHorizontal,
+    Download, RefreshCw, Filter, StickyNote, ShoppingCart, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { MovimientoModal } from '@/components/ui/MovimientoModal';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
@@ -83,6 +84,23 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const [movModal,setMovModal]=useState<'entrada'|'salida'|'ajuste'|null>(null);
     const [totalInventarioValor,setTotalInventarioValor]=useState<number>(0);
 
+    // ── Notas internas ─────────────────────────────────────────────────────────
+    const [notas,setNotas]=useState('');
+    const [notasEditando,setNotasEditando]=useState(false);
+    const [notasGuardando,setNotasGuardando]=useState(false);
+    const [notasTemp,setNotasTemp]=useState('');
+
+    // ── Filtros historial ──────────────────────────────────────────────────────
+    const [filtroTipo,setFiltroTipo]=useState<string>('todos');
+    const [filtroDesde,setFiltroDesde]=useState('');
+    const [filtroHasta,setFiltroHasta]=useState('');
+    const [filtroBusqueda,setFiltroBusqueda]=useState('');
+    const [mostrarFiltros,setMostrarFiltros]=useState(false);
+
+    // ── Paginación historial ───────────────────────────────────────────────────
+    const [pagina,setPagina]=useState(1);
+    const POR_PAGINA=25;
+
     const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true});
 
     useEffect(()=>{
@@ -108,6 +126,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 setMovements([...movsWithBalance].reverse());
                 const cats=Array.from(new Map(products.filter((p:any)=>p.categoria).map((p:any)=>[p.categoria.id,p.categoria])).values());
                 setCategorias(cats as any[]);
+                // Cargar notas internas desde localStorage
+                const notasGuardadas=localStorage.getItem(`notas_producto_${id}`)||'';
+                setNotas(notasGuardadas);
+                setNotasTemp(notasGuardadas);
                 // Valor total del inventario para % de contexto
                 if(Array.isArray(totalMovs)){
                     const totalVal=totalMovs.reduce((a:number,m:any)=>{
@@ -181,6 +203,35 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         doc.save(`kardex-${product?.sku}-${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
+    const exportCSV=()=>{
+        if(!product||movements.length===0)return;
+        const headers=['Fecha','Tipo','Referencia','Proveedor/Cliente','Almacén','Cantidad','Costo Unitario','Precio Venta','Saldo','Usuario'];
+        const rows=[...movements].reverse().map(m=>[
+            new Date(m.fecha).toLocaleDateString('es-MX'),
+            tipoLabel(m.tipoMovimiento),
+            m.referencia||'',
+            m.proveedor?.nombre||m.clienteNombre||'',
+            m.almacen?.nombre||'',
+            (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
+            Number(m.costoUnitario).toFixed(2),
+            m.precioVenta?Number(m.precioVenta).toFixed(2):'',
+            String(m.saldo??''),
+            m.usuario?.nombre||''
+        ]);
+        const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+        const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=`kardex-${product.sku}-${new Date().toISOString().split('T')[0]}.csv`;a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const guardarNotas=async()=>{
+        setNotasGuardando(true);
+        localStorage.setItem(`notas_producto_${id}`,notasTemp);
+        setNotas(notasTemp);
+        setTimeout(()=>{setNotasGuardando(false);setNotasEditando(false);},400);
+    };
+
     if(loading)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Cargando producto...</p></div>;
     if(!isNew&&!product)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Producto no encontrado.</p></div>;
 
@@ -217,6 +268,28 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const diasStockAlerta = diasStock !== null && diasStock <= (product?.stockMinimo ?? 5) * 2;
     const catColor=CATEGORY_COLORS[product?.categoria?.nombre||'']||CATEGORY_COLORS['default'];
 
+    // ── Filtros y paginación del historial ────────────────────────────────────
+    const movimientosFiltrados=movements.filter(m=>{
+        if(filtroTipo!=='todos'&&m.tipoMovimiento!==filtroTipo)return false;
+        const fecha=new Date(m.fecha);
+        if(filtroDesde&&fecha<new Date(filtroDesde+'T00:00:00'))return false;
+        if(filtroHasta&&fecha>new Date(filtroHasta+'T23:59:59'))return false;
+        if(filtroBusqueda){
+            const q=filtroBusqueda.toLowerCase();
+            const contacto=(m.proveedor?.nombre||m.clienteNombre||'').toLowerCase();
+            if(!(m.referencia||'').toLowerCase().includes(q)&&!contacto.includes(q))return false;
+        }
+        return true;
+    });
+    const totalPaginas=Math.max(1,Math.ceil(movimientosFiltrados.length/POR_PAGINA));
+    const paginaActual=Math.min(pagina,totalPaginas);
+    const movPagina=movimientosFiltrados.slice((paginaActual-1)*POR_PAGINA,paginaActual*POR_PAGINA);
+    const hayFiltrosActivos=filtroTipo!=='todos'||filtroDesde||filtroHasta||filtroBusqueda;
+
+    // ── Datos para botón reorden rápido ────────────────────────────────────────
+    const ultimaEntradaConProveedor=movements.find(m=>m.tipoMovimiento==='ENTRADA'&&m.proveedorId);
+    const cantidadReordenSugerida=product?(product.stockMinimo*3-product.stock>0?product.stockMinimo*3-product.stock:product.stockMinimo*2):0;
+
     return(
         <div className="space-y-6 animate-in fade-in duration-500">
 
@@ -235,6 +308,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 </div>
                 <div className="flex gap-2 flex-wrap">
                     {!isNew && <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"><FileDown size={16}/> Kardex PDF</button>}
+                    {!isNew && movements.length>0 && <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"><Download size={16}/> Exportar CSV</button>}
                     {!editing
                         ?<button onClick={startEdit} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"><Edit size={16}/> Editar</button>
                         :<><button onClick={()=>{setEditing(false);setSaveError('');}} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"><X size={16}/> Cancelar</button>
@@ -245,6 +319,31 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                     {!isNew && <button onClick={()=>setMovModal('ajuste')} className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors cursor-pointer"><SlidersHorizontal size={16}/> Ajuste</button>}
                 </div>
             </div>
+
+            {/* ── BANNER ALERTA STOCK BAJO ─────────────────────────────────── */}
+            {!isNew && !editing && lowStock && (
+                <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
+                            <AlertTriangle size={18} className="text-red-600"/>
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-red-700">Stock bajo — requiere reabastecimiento</p>
+                            <p className="text-xs text-red-500 mt-0.5">
+                                Stock actual <strong>{product?.stock} {product?.unidad}</strong> ≤ mínimo <strong>{product?.stockMinimo} {product?.unidad}</strong>
+                                {diasStock!==null&&` · ~${diasStock} días de inventario restantes`}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={()=>setMovModal('entrada')}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer flex-shrink-0"
+                    >
+                        <ShoppingCart size={15}/>
+                        Registrar entrada
+                    </button>
+                </div>
+            )}
 
             {/* ── BLOQUE SUPERIOR: imagen + datos ── */}
             <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-5">
@@ -484,40 +583,157 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 />
             )}
 
+            {/* ── NOTAS INTERNAS ──────────────────────────────────────────────── */}
+            {!isNew && !editing && (
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                            <StickyNote size={15} className="text-amber-400"/>
+                            <h2 className="text-base font-semibold text-gray-800">Notas internas</h2>
+                            <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">solo visible en esta pantalla</span>
+                        </div>
+                        {!notasEditando
+                            ? <button onClick={()=>{setNotasTemp(notas);setNotasEditando(true);}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"><Edit size={12}/> Editar</button>
+                            : <div className="flex gap-2">
+                                <button onClick={()=>setNotasEditando(false)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors cursor-pointer"><X size={12}/> Cancelar</button>
+                                <button onClick={guardarNotas} disabled={notasGuardando} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={12}/>{notasGuardando?'Guardando...':'Guardar'}</button>
+                            </div>
+                        }
+                    </div>
+                    <div className="px-6 py-4">
+                        {notasEditando ? (
+                            <textarea
+                                value={notasTemp}
+                                onChange={e=>setNotasTemp(e.target.value)}
+                                rows={3}
+                                placeholder="Ej: Pedir solo al proveedor X · Frágil · Requiere revisión técnica antes de despachar..."
+                                className="w-full px-3 py-2.5 bg-amber-50/50 border border-amber-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 resize-none placeholder:text-gray-400"
+                            />
+                        ) : notas ? (
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notas}</p>
+                        ) : (
+                            <p className="text-sm text-gray-400 italic">Sin notas. Usa este espacio para indicaciones del equipo: proveedores preferidos, manejo especial, observaciones, etc.</p>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Historial */}
             {!isNew && <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                    <h2 className="text-base font-semibold text-gray-800">Historial de movimientos</h2>
-                    <p className="text-sm text-gray-400">{movements.length} registros · haz clic para ver detalle</p>
+                <div className="px-6 py-4 border-b border-gray-100">
+                    <div className="flex justify-between items-center flex-wrap gap-3">
+                        <div>
+                            <h2 className="text-base font-semibold text-gray-800">Historial de movimientos</h2>
+                            <p className="text-sm text-gray-400 mt-0.5">
+                                {hayFiltrosActivos
+                                    ? `${movimientosFiltrados.length} de ${movements.length} registros`
+                                    : `${movements.length} registros · haz clic para ver detalle`}
+                            </p>
+                        </div>
+                        <button
+                            onClick={()=>{setMostrarFiltros(v=>!v);}}
+                            className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors cursor-pointer ${hayFiltrosActivos?'border-blue-300 bg-blue-50 text-blue-600':'border-gray-200 hover:bg-gray-50 text-gray-600'}`}
+                        >
+                            <Filter size={14}/>
+                            Filtros
+                            {hayFiltrosActivos&&<span className="w-4 h-4 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center font-bold">!</span>}
+                        </button>
+                    </div>
+
+                    {/* Panel de filtros */}
+                    {mostrarFiltros&&(
+                        <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 block mb-1">Tipo</label>
+                                <select value={filtroTipo} onChange={e=>{setFiltroTipo(e.target.value);setPagina(1);}} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                    <option value="todos">Todos</option>
+                                    <option value="ENTRADA">Entrada</option>
+                                    <option value="SALIDA">Salida</option>
+                                    <option value="AJUSTE_POSITIVO">Ajuste +</option>
+                                    <option value="AJUSTE_NEGATIVO">Ajuste -</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 block mb-1">Desde</label>
+                                <input type="date" value={filtroDesde} onChange={e=>{setFiltroDesde(e.target.value);setPagina(1);}} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 block mb-1">Hasta</label>
+                                <input type="date" value={filtroHasta} onChange={e=>{setFiltroHasta(e.target.value);setPagina(1);}} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-gray-500 block mb-1">Referencia / Proveedor</label>
+                                <input type="text" value={filtroBusqueda} onChange={e=>{setFiltroBusqueda(e.target.value);setPagina(1);}} placeholder="Buscar..." className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                            </div>
+                            {hayFiltrosActivos&&(
+                                <div className="col-span-full flex justify-end">
+                                    <button onClick={()=>{setFiltroTipo('todos');setFiltroDesde('');setFiltroHasta('');setFiltroBusqueda('');setPagina(1);}} className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 cursor-pointer"><X size={12}/> Limpiar filtros</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead><tr className="bg-gray-50/50 border-b border-gray-100">
-                            {['Fecha','Tipo','Referencia','Proveedor / Cliente','Almacén','Cant.','Costo unit.','P. Venta','Saldo','Usuario'].map(h=>(
+                            {['Fecha','Tipo','Referencia','Proveedor / Cliente','Almacén','Cant.','Costo unit.','P. Venta','Saldo','Usuario',''].map(h=>(
                                 <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
                             ))}
                         </tr></thead>
                         <tbody className="divide-y divide-gray-50">
-                            {movements.length===0?<tr><td colSpan={10} className="px-6 py-10 text-center text-gray-400">No hay movimientos.</td></tr>
-                            :movements.map(mov=>{
-                                const isPos=['ENTRADA','AJUSTE_POSITIVO'].includes(mov.tipoMovimiento);
-                                const contacto=mov.proveedor?.nombre||mov.clienteNombre;
-                                return(<tr key={mov.id} onClick={()=>setSelectedMov(mov)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                                    <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{new Date(mov.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
-                                    <td className="px-4 py-3"><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tipoColor(mov.tipoMovimiento)}`}>{tipoLabel(mov.tipoMovimiento)}</span></td>
-                                    <td className="px-4 py-3 text-sm text-gray-700 max-w-[140px] truncate">{mov.referencia||'—'}</td>
-                                    <td className="px-4 py-3 text-sm">{contacto?<span className="flex items-center gap-1.5 text-gray-700">{mov.proveedor?<Building2 size={13} className="text-blue-400 flex-shrink-0"/>:<User size={13} className="text-green-400 flex-shrink-0"/>}{contacto}</span>:<span className="text-gray-300">—</span>}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-500">{mov.almacen?.nombre}</td>
-                                    <td className={`px-4 py-3 text-sm font-bold text-right ${isPos?'text-green-600':'text-red-500'}`}>{isPos?'+':'-'}{mov.cantidad}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-700 text-right">${Number(mov.costoUnitario).toLocaleString()}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-700 text-right">{mov.precioVenta?`$${Number(mov.precioVenta).toLocaleString()}`:<span className="text-gray-300">—</span>}</td>
-                                    <td className="px-4 py-3 text-sm font-semibold text-gray-800 text-right">{mov.saldo}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-500">{mov.usuario?.nombre}</td>
-                                </tr>);
-                            })}
+                            {movPagina.length===0
+                                ? <tr><td colSpan={11} className="px-6 py-10 text-center text-gray-400">{hayFiltrosActivos?'Sin resultados con estos filtros.':'No hay movimientos.'}</td></tr>
+                                : movPagina.map(mov=>{
+                                    const isPos=['ENTRADA','AJUSTE_POSITIVO'].includes(mov.tipoMovimiento);
+                                    const contacto=mov.proveedor?.nombre||mov.clienteNombre;
+                                    return(<tr key={mov.id} className="hover:bg-blue-50/40 transition-colors group">
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap cursor-pointer">{new Date(mov.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 cursor-pointer"><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tipoColor(mov.tipoMovimiento)}`}>{tipoLabel(mov.tipoMovimiento)}</span></td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 max-w-[140px] truncate cursor-pointer">{mov.referencia||'—'}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm cursor-pointer">{contacto?<span className="flex items-center gap-1.5 text-gray-700">{mov.proveedor?<Building2 size={13} className="text-blue-400 flex-shrink-0"/>:<User size={13} className="text-green-400 flex-shrink-0"/>}{contacto}</span>:<span className="text-gray-300">—</span>}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.almacen?.nombre}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className={`px-4 py-3 text-sm font-bold text-right cursor-pointer ${isPos?'text-green-600':'text-red-500'}`}>{isPos?'+':'-'}{mov.cantidad}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">${Number(mov.costoUnitario).toLocaleString()}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">{mov.precioVenta?`$${Number(mov.precioVenta).toLocaleString()}`:<span className="text-gray-300">—</span>}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm font-semibold text-gray-800 text-right cursor-pointer">{mov.saldo}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.usuario?.nombre}</td>
+                                        {/* Acción rápida: repetir entrada */}
+                                        <td className="px-3 py-3 text-right">
+                                            {mov.tipoMovimiento==='ENTRADA'&&(
+                                                <button
+                                                    title="Repetir esta entrada"
+                                                    onClick={e=>{e.stopPropagation();setMovModal('entrada');}}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg cursor-pointer"
+                                                >
+                                                    <RefreshCw size={13}/>
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>);
+                                })
+                            }
                         </tbody>
                     </table>
                 </div>
+
+                {/* Paginación */}
+                {movimientosFiltrados.length > POR_PAGINA && (
+                    <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+                        <p className="text-xs text-gray-400">
+                            Mostrando {(paginaActual-1)*POR_PAGINA+1}–{Math.min(paginaActual*POR_PAGINA,movimientosFiltrados.length)} de {movimientosFiltrados.length}
+                        </p>
+                        <div className="flex items-center gap-1">
+                            <button onClick={()=>setPagina(p=>Math.max(1,p-1))} disabled={paginaActual===1} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"><ChevronLeft size={16}/></button>
+                            {Array.from({length:totalPaginas},(_,i)=>i+1).filter(n=>n===1||n===totalPaginas||Math.abs(n-paginaActual)<=1).reduce((acc:number[],n,i,arr)=>{if(i>0&&n-arr[i-1]>1)acc.push(-1);acc.push(n);return acc;},[]).map((n,i)=>
+                                n===-1
+                                    ? <span key={`ellipsis-${i}`} className="px-1 text-gray-300 text-sm">…</span>
+                                    : <button key={n} onClick={()=>setPagina(n)} className={`w-7 h-7 text-xs rounded-lg cursor-pointer transition-colors ${n===paginaActual?'bg-blue-600 text-white font-semibold':'text-gray-600 hover:bg-gray-100'}`}>{n}</button>
+                            )}
+                            <button onClick={()=>setPagina(p=>Math.min(totalPaginas,p+1))} disabled={paginaActual===totalPaginas} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"><ChevronRight size={16}/></button>
+                        </div>
+                    </div>
+                )}
             </div>}
 
             {/* Modal */}
