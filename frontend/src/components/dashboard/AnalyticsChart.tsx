@@ -16,15 +16,10 @@ function toInputDate(d: Date) { return d.toISOString().split('T')[0]; }
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 function buildChartData(movements: any[], desde: string, hasta: string, metric: MetricType) {
-    // Usar medianoche UTC para evitar problemas de timezone (Supabase guarda en UTC)
     const desdeDate = desde ? new Date(desde + 'T00:00:00Z') : null;
     const hastaDate = hasta ? new Date(hasta + 'T23:59:59Z') : null;
 
-    // ── Métrica especial: Valor en almacén ──────────────────────────────────
-    // Usa TODOS los movimientos para acumular el saldo real,
-    // pero solo muestra los meses dentro del rango desde/hasta
     if (metric === 'valorAlmacen') {
-        // 1. Construir saldo acumulado mes a mes con TODOS los movimientos
         const allBuckets: Record<string, { name: string; delta: number }> = {};
         movements.forEach((mov) => {
             const fecha = new Date(mov.fecha);
@@ -38,8 +33,6 @@ function buildChartData(movements: any[], desde: string, hasta: string, metric: 
             if (isEntrada) allBuckets[key].delta += qty * costo;
             if (isSalida)  allBuckets[key].delta -= qty * costo;
         });
-
-        // 2. Calcular saldo acumulado progresivo para TODOS los meses
         const allSorted = Object.keys(allBuckets).sort();
         let saldoAcum = 0;
         const saldoPorMes: Record<string, { name: string; saldo: number }> = {};
@@ -47,8 +40,6 @@ function buildChartData(movements: any[], desde: string, hasta: string, metric: 
             saldoAcum += allBuckets[k].delta;
             saldoPorMes[k] = { name: allBuckets[k].name, saldo: saldoAcum };
         }
-
-        // 3. Filtrar solo los meses dentro del rango visible
         return allSorted
             .filter(k => {
                 const [y, m] = k.split('-').map(Number);
@@ -60,7 +51,6 @@ function buildChartData(movements: any[], desde: string, hasta: string, metric: 
             .map(k => ({ name: saldoPorMes[k].name, entradas: saldoPorMes[k].saldo, salidas: 0 }));
     }
 
-    // ── Otras métricas: flujo mensual filtrado por rango ────────────────────
     const buckets: Record<string, { name: string; entradas: number; salidas: number }> = {};
     movements.forEach((mov) => {
         const fecha = new Date(mov.fecha);
@@ -95,11 +85,10 @@ function buildChartData(movements: any[], desde: string, hasta: string, metric: 
 
 function formatTick(value: number, metric: MetricType) {
     if (metric === 'cantidad') return value.toLocaleString('es-MX');
-    return `$${(value / 1000).toFixed(0)}k`; // costo, ingresos, margen, valorAlmacen
+    return `$${(value / 1000).toFixed(0)}k`;
 }
 
 function formatTooltip(value: number, name: string, metric: MetricType) {
-    // Para valorAlmacen, salidas siempre es 0 — no mostrar
     if (metric === 'valorAlmacen') {
         if (name === 'salidas' || value === 0) return ['', ''];
         return [`$${value.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, 'Valor en almacén'];
@@ -112,20 +101,25 @@ function formatTooltip(value: number, name: string, metric: MetricType) {
 }
 
 const METRICS: { key: MetricType; label: string; color: string; tooltip: string }[] = [
-    { key: 'cantidad',     label: 'Cantidad',           color: 'bg-blue-50 text-blue-700 border-blue-200',   tooltip: 'Unidades físicas movidas por mes. Azul = entradas al almacén, rojo = salidas. No considera precios.' },
-    { key: 'costo',        label: '$ Costo compras',    color: 'bg-green-50 text-green-700 border-green-200', tooltip: 'Azul = dinero invertido en compras ese mes (Σ cantidad × costoUnitario de entradas). Rojo = costo de lo que salió del almacén.' },
-    { key: 'ingresos',     label: '$ Ingresos venta',   color: 'bg-teal-50 text-teal-700 border-teal-200',   tooltip: 'Azul = inversión en compras (costo). Rojo = dinero recuperado por ventas (Σ cantidad × precioVenta de salidas). Si hay salidas sin precio registrado aparecen como $0.' },
+    { key: 'cantidad',     label: 'Cantidad',           color: 'bg-blue-50 text-blue-700 border-blue-200',      tooltip: 'Unidades físicas movidas por mes. Azul = entradas al almacén, rojo = salidas. No considera precios.' },
+    { key: 'costo',        label: '$ Costo compras',    color: 'bg-green-50 text-green-700 border-green-200',    tooltip: 'Azul = dinero invertido en compras ese mes (Σ cantidad × costoUnitario de entradas). Rojo = costo de lo que salió del almacén.' },
+    { key: 'ingresos',     label: '$ Ingresos venta',   color: 'bg-teal-50 text-teal-700 border-teal-200',       tooltip: 'Azul = inversión en compras (costo). Rojo = dinero recuperado por ventas (Σ cantidad × precioVenta de salidas).' },
     { key: 'margen',       label: '$ Margen bruto',     color: 'bg-purple-50 text-purple-700 border-purple-200', tooltip: 'Verde = ingresos por ventas. Amarillo = costo de lo vendido. La diferencia visual entre ambas líneas es tu ganancia bruta del mes.' },
-    { key: 'valorAlmacen', label: '$ Valor en almacén', color: 'bg-amber-50 text-amber-700 border-amber-200', tooltip: 'Saldo acumulado del inventario mes a mes: Σ(costos de entradas) − Σ(costos de salidas) desde el inicio. El punto final siempre coincide con el KPI "Valor inventario" del dashboard.' },
+    { key: 'valorAlmacen', label: '$ Valor en almacén', color: 'bg-amber-50 text-amber-700 border-amber-200',    tooltip: 'Saldo acumulado del inventario mes a mes: Σ(costos de entradas) − Σ(costos de salidas) desde el inicio.' },
 ];
 
+export interface ExternalDateRange {
+    desde: string;
+    hasta: string;
+    isAllTime?: boolean;
+}
+
 interface Props {
-    // Si se pasan movimientos externos, no hace fetch propio
     externalMovements?: any[];
-    // Título opcional para contexto (ej: "Electrónicos")
     title?: string;
-    // Si es compacto (sin Card wrapper, para embeber en otra página)
     compact?: boolean;
+    /** Si se pasa, sincroniza el rango de fecha con el filtro global del dashboard */
+    externalDateRange?: ExternalDateRange | null;
 }
 
 function getMinDate(movs: any[]): string {
@@ -134,19 +128,39 @@ function getMinDate(movs: any[]): string {
     return toInputDate(new Date(Math.min(...dates)));
 }
 
-export default function AnalyticsChart({ externalMovements, title, compact = false }: Props = {}) {
+export default function AnalyticsChart({ externalMovements, title, compact = false, externalDateRange }: Props = {}) {
     const [chartType, setChartType] = useState<'line' | 'bar' | 'area'>('area');
-    const [period, setPeriod] = useState<'7d' | '30d' | '90d' | '1y' | 'all' | 'manual'>(externalMovements !== undefined ? 'all' : '30d');
+    const [period, setPeriod] = useState<'7d' | '30d' | '90d' | '1y' | 'all' | 'manual'>(
+        externalDateRange?.isAllTime ? 'all' : externalDateRange ? 'manual' : externalMovements !== undefined ? 'all' : '30d'
+    );
     const [metric, setMetric] = useState<MetricType>('cantidad');
     const [fetchedMovements, setFetchedMovements] = useState<any[]>([]);
     const [loading, setLoading] = useState(!externalMovements);
 
-    // Rango manual — solo se usa cuando period !== 'all'
     const now = new Date();
-    const [manualDesde, setManualDesde] = useState<string>(toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)));
-    const [manualHasta, setManualHasta] = useState<string>(toInputDate(now));
+    const [manualDesde, setManualDesde] = useState<string>(
+        externalDateRange?.desde ?? toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30))
+    );
+    const [manualHasta, setManualHasta] = useState<string>(
+        externalDateRange?.hasta ?? toInputDate(now)
+    );
 
-    // Solo fetcha si no recibe movimientos externos
+    // Sync with external date range
+    useEffect(() => {
+        if (externalDateRange === null) {
+            // null = "General" = all time
+            setPeriod('all');
+        } else if (externalDateRange) {
+            if (externalDateRange.isAllTime) {
+                setPeriod('all');
+            } else {
+                setManualDesde(externalDateRange.desde);
+                setManualHasta(externalDateRange.hasta);
+                setPeriod('manual');
+            }
+        }
+    }, [externalDateRange?.desde, externalDateRange?.hasta, externalDateRange?.isAllTime, externalDateRange]);
+
     useEffect(() => {
         if (externalMovements !== undefined) {
             setLoading(false);
@@ -158,27 +172,24 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
             .finally(() => setLoading(false));
     }, [externalMovements]);
 
-    // Usa externos si los hay, si no usa los fetchados
     const movements = externalMovements ?? fetchedMovements;
+    const isExternallyControlled = externalDateRange !== undefined;
 
-    // Cuando period === 'all', desde/hasta se derivan directamente de los movimientos (nunca quedan desactualizados)
-    // Cuando period === 'manual', usa los valores editados por el usuario
     const desde = period === 'all' ? getMinDate(movements) : manualDesde;
     const hasta  = period === 'all' ? toInputDate(new Date()) : manualHasta;
 
     const applyPeriod = (p: typeof period) => {
+        if (isExternallyControlled) return;
         setPeriod(p);
         const now = new Date();
         if (p === '7d')       { setManualDesde(toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)));   setManualHasta(toInputDate(now)); }
         else if (p === '30d') { setManualDesde(toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30)));  setManualHasta(toInputDate(now)); }
         else if (p === '90d') { setManualDesde(toInputDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90)));  setManualHasta(toInputDate(now)); }
         else if (p === '1y')  { setManualDesde(toInputDate(new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())));   setManualHasta(toInputDate(now)); }
-        // 'all' no necesita setear nada — desde/hasta se calculan en el render desde movements
     };
 
-    // Cuando el usuario edita manualmente las fechas, usa los valores manuales directamente
-    const handleDesde = (val: string) => { setManualDesde(val); setManualHasta(hasta); setPeriod('manual' as any); };
-    const handleHasta = (val: string) => { setManualHasta(val); setManualDesde(desde); setPeriod('manual' as any); };
+    const handleDesde = (val: string) => { if (isExternallyControlled) return; setManualDesde(val); setPeriod('manual' as any); };
+    const handleHasta = (val: string) => { if (isExternallyControlled) return; setManualHasta(val); setPeriod('manual' as any); };
 
     const data = buildChartData(movements, desde, hasta, metric);
 
@@ -208,7 +219,6 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
 
     const entrLabel = metric === 'margen' ? 'Costo vendido' : metric === 'valorAlmacen' ? 'Valor en almacén' : 'Entradas';
     const salLabel  = metric === 'margen' ? 'Ingresos venta' : 'Salidas';
-    // Sanitizar el title para usarlo como ID de SVG (sin espacios ni caracteres especiales)
     const gradientId = (title || 'd').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20);
     const entrColor = metric === 'margen' ? '#f59e0b' : metric === 'valorAlmacen' ? '#f59e0b' : '#3b82f6';
     const salColor  = metric === 'margen' ? '#22c55e' : '#ef4444';
@@ -269,15 +279,19 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
 
     const btnPeriod = (p: typeof period, label: string) => (
         <button key={p} onClick={() => applyPeriod(p)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${period === p ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            disabled={isExternallyControlled}
+            title={isExternallyControlled ? 'Controlado por el filtro global' : undefined}
+            className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${
+                isExternallyControlled
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : period === p ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
             {label}
         </button>
     );
 
-    // ── Contenido interno (reutilizable) ──────────────────────────────────────
     const inner = (
         <>
-            {/* Header */}
             <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${compact ? 'mb-4' : 'px-6 py-5 border-b border-gray-50'}`}>
                 <div>
                     <h3 className={`font-semibold text-gray-800 ${compact ? 'text-sm' : 'text-lg'}`}>
@@ -285,18 +299,24 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                     </h3>
                     <p className="text-sm text-gray-500 mt-1">{subtitles[metric]}</p>
                 </div>
-                <div className="flex bg-gray-200/50 rounded-md p-0.5">
-                    {(['area','bar','line'] as const).map(type => (
-                        <button key={type} onClick={() => setChartType(type)}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${chartType === type ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                            {type === 'area' ? 'Área' : type === 'bar' ? 'Barras' : 'Líneas'}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-3">
+                    {isExternallyControlled && (
+                        <span className="text-xs text-blue-500 font-medium px-2 py-1 bg-blue-50 rounded-md border border-blue-100 flex items-center gap-1">
+                            <span>🔗</span> Sincronizado con filtro global
+                        </span>
+                    )}
+                    <div className="flex bg-gray-200/50 rounded-md p-0.5">
+                        {(['area','bar','line'] as const).map(type => (
+                            <button key={type} onClick={() => setChartType(type)}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-all ${chartType === type ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                                {type === 'area' ? 'Área' : type === 'bar' ? 'Barras' : 'Líneas'}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
             <div className={compact ? '' : 'px-6 pb-6'}>
-                {/* Selector de métrica */}
                 <div className="flex flex-wrap gap-2 mb-4">
                     {METRICS.map(m => (
                         <div key={m.key} className="flex items-center gap-1">
@@ -309,8 +329,7 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                     ))}
                 </div>
 
-                {/* Filtros */}
-                <div className="flex flex-wrap items-center gap-3 mb-5 py-3 px-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div className={`flex flex-wrap items-center gap-3 mb-5 py-3 px-4 rounded-lg border ${isExternallyControlled ? 'bg-blue-50/30 border-blue-100' : 'bg-gray-50 border-gray-100'}`}>
                     <div className="flex bg-gray-200/50 rounded-md p-0.5">
                         {btnPeriod('7d','7d')}{btnPeriod('30d','30d')}{btnPeriod('90d','90d')}{btnPeriod('1y','1 año')}{btnPeriod('all','Todo')}
                     </div>
@@ -318,12 +337,14 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-400 font-medium">Desde</span>
                         <input type="date" value={desde} onChange={e => handleDesde(e.target.value)}
-                            className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"/>
+                            disabled={isExternallyControlled}
+                            className={`text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isExternallyControlled ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}/>
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-400 font-medium">Hasta</span>
                         <input type="date" value={hasta} onChange={e => handleHasta(e.target.value)}
-                            className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"/>
+                            disabled={isExternallyControlled}
+                            className={`text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isExternallyControlled ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}/>
                     </div>
                     <div className="ml-auto flex items-center gap-4 text-xs font-semibold">
                         {metric === 'cantidad' && <>
@@ -358,7 +379,6 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                     </div>
                 </div>
 
-                {/* Chart */}
                 {loading ? (
                     <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">Cargando datos...</div>
                 ) : data.length === 0 ? (
@@ -374,8 +394,6 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
         </>
     );
 
-    // En modo compacto no envuelve en Card (lo hace la página que lo usa)
     if (compact) return <div>{inner}</div>;
-
     return <Card className="mt-2 mb-2">{inner}</Card>;
 }
