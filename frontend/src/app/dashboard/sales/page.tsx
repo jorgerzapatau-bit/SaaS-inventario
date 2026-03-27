@@ -25,18 +25,24 @@ interface Salida {
     detalles: DetalleSalida[];
 }
 
+// ── Labels visuales ─────────────────────────────────────────────────────────
+// El enum de BD se mantiene (VENTA, CONSUMO_INTERNO, PERDIDA, AJUSTE_POSITIVO,
+// AJUSTE_NEGATIVO). Solo cambia lo que ve el usuario.
 const tipoConfig: Record<string, { label: string; cls: string }> = {
-    VENTA:           { label: 'Venta',           cls: 'bg-blue-100 text-blue-700'    },
-    CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-amber-100 text-amber-700'  },
-    PERDIDA:         { label: 'Pérdida / Merma', cls: 'bg-red-100 text-red-600'      },
+    VENTA:            { label: 'Salida por venta',  cls: 'bg-blue-100 text-blue-700'    },
+    CONSUMO_INTERNO:  { label: 'Consumo interno',   cls: 'bg-amber-100 text-amber-700'  },
+    PERDIDA:          { label: 'Pérdida / Merma',   cls: 'bg-red-100 text-red-600'      },
+    AJUSTE_POSITIVO:  { label: 'Ajuste (+)',         cls: 'bg-green-100 text-green-700'  },
+    AJUSTE_NEGATIVO:  { label: 'Ajuste (−)',         cls: 'bg-purple-100 text-purple-700'},
 };
 
-const getTipoConfig = (tipo: string) => tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600' };
+const getTipoConfig = (tipo: string) =>
+    tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600' };
 
 const PAGE_SIZE = 20;
 
 type SortKey = 'fecha' | 'total' | 'referencia' | 'tipo';
-type SortDir = 'asc' | 'desc';
+type SortDir  = 'asc' | 'desc';
 
 function calcTotal(s: Salida) {
     return s.detalles?.reduce((sum, d) => sum + Number(d.precioUnitario) * d.cantidad, 0) ?? 0;
@@ -46,11 +52,11 @@ function sortSalidas(list: Salida[], key: SortKey, dir: SortDir): Salida[] {
     return [...list].sort((a, b) => {
         let va: any, vb: any;
         if      (key === 'fecha') { va = new Date(a.fecha).getTime(); vb = new Date(b.fecha).getTime(); }
-        else if (key === 'total') { va = calcTotal(a); vb = calcTotal(b); }
-        else if (key === 'tipo')  { va = a.tipo ?? ''; vb = b.tipo ?? ''; }
-        else                      { va = a.referencia ?? ''; vb = b.referencia ?? ''; }
+        else if (key === 'total') { va = calcTotal(a);                vb = calcTotal(b);                }
+        else if (key === 'tipo')  { va = a.tipo ?? '';                vb = b.tipo ?? '';                }
+        else                      { va = a.referencia ?? '';          vb = b.referencia ?? '';          }
         if (va < vb) return dir === 'asc' ? -1 : 1;
-        if (va > vb) return dir === 'asc' ? 1 : -1;
+        if (va > vb) return dir === 'asc' ?  1 : -1;
         return 0;
     });
 }
@@ -63,12 +69,12 @@ export default function SalesPage() {
     const [page,        setPage]        = useState(1);
     const [showFiltros, setShowFiltros] = useState(false);
 
-    const [busqueda,      setBusqueda]       = useState('');
-    const [filtroTipo,    setFiltroTipo]     = useState<string>('todos');
-    const [filtroDesde,   setFiltroDesde]    = useState('');
-    const [filtroHasta,   setFiltroHasta]    = useState('');
-    const [filtroMontoMin,setFiltroMontoMin] = useState('');
-    const [filtroMontoMax,setFiltroMontoMax] = useState('');
+    const [busqueda,       setBusqueda]       = useState('');
+    const [filtroTipo,     setFiltroTipo]     = useState<string>('todos');
+    const [filtroDesde,    setFiltroDesde]    = useState('');
+    const [filtroHasta,    setFiltroHasta]    = useState('');
+    const [filtroMontoMin, setFiltroMontoMin] = useState('');
+    const [filtroMontoMax, setFiltroMontoMax] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('fecha');
     const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -83,7 +89,8 @@ export default function SalesPage() {
         let result = salidas.filter(s => {
             if (busqueda.trim()) {
                 const q = busqueda.toLowerCase();
-                const match = (s.referencia || '').toLowerCase().includes(q) ||
+                const match =
+                    (s.referencia    || '').toLowerCase().includes(q) ||
                     (s.clienteNombre || '').toLowerCase().includes(q) ||
                     s.detalles?.some(d =>
                         d.producto?.nombre?.toLowerCase().includes(q) ||
@@ -92,8 +99,8 @@ export default function SalesPage() {
                 if (!match) return false;
             }
             if (filtroTipo !== 'todos' && s.tipo !== filtroTipo) return false;
-            if (filtroDesde && new Date(s.fecha) < new Date(filtroDesde)) return false;
-            if (filtroHasta && new Date(s.fecha) > new Date(filtroHasta + 'T23:59:59')) return false;
+            if (filtroDesde && new Date(s.fecha) < new Date(filtroDesde))                    return false;
+            if (filtroHasta && new Date(s.fecha) > new Date(filtroHasta + 'T23:59:59'))      return false;
             const total = calcTotal(s);
             if (filtroMontoMin && total < Number(filtroMontoMin)) return false;
             if (filtroMontoMax && total > Number(filtroMontoMax)) return false;
@@ -108,13 +115,15 @@ export default function SalesPage() {
     const mesActual   = new Date().getMonth();
     const kpiMes      = salidasFiltradas.filter(s => new Date(s.fecha).getMonth() === mesActual).length;
     const kpiPromedio = kpiCount > 0 ? kpiTotal / kpiCount : 0;
+    // "Salidas por venta" en vez de "Ventas" para no confundir
     const kpiVentas   = salidasFiltradas.filter(s => s.tipo === 'VENTA').length;
     const kpiPerdidas = salidasFiltradas.filter(s => s.tipo === 'PERDIDA').length;
 
     const totalPages = Math.max(1, Math.ceil(salidasFiltradas.length / PAGE_SIZE));
     const salidasPag = salidasFiltradas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    const hayFiltros = filtroTipo !== 'todos' || !!filtroDesde || !!filtroHasta || !!filtroMontoMin || !!filtroMontoMax;
+    const hayFiltros =
+        filtroTipo !== 'todos' || !!filtroDesde || !!filtroHasta || !!filtroMontoMin || !!filtroMontoMax;
 
     const resetFiltros = () => {
         setBusqueda(''); setFiltroTipo('todos'); setFiltroDesde(''); setFiltroHasta('');
@@ -133,19 +142,22 @@ export default function SalesPage() {
         </span>
     );
 
-    // Tabs dinámicos: solo mostrar los que tienen datos
+    // Conteo por tipo para los tabs
     const tiposCounts = useMemo(() => {
         const counts: Record<string, number> = { todos: salidas.length };
         salidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
         return counts;
     }, [salidas]);
 
+    // Solo muestra tabs que tienen al menos 1 registro (excepto "Todas")
     const tabsVisibles = [
-        { key: 'todos',           label: 'Todas' },
-        { key: 'VENTA',           label: 'Ventas' },
+        { key: 'todos',           label: 'Todas'           },
+        { key: 'VENTA',           label: 'Salidas por venta' },
         { key: 'CONSUMO_INTERNO', label: 'Consumo interno' },
-        { key: 'PERDIDA',         label: 'Pérdidas' },
-    ];
+        { key: 'PERDIDA',         label: 'Pérdidas'        },
+        { key: 'AJUSTE_POSITIVO', label: 'Ajuste (+)'      },
+        { key: 'AJUSTE_NEGATIVO', label: 'Ajuste (−)'      },
+    ].filter(t => t.key === 'todos' || (tiposCounts[t.key] ?? 0) > 0);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -154,7 +166,9 @@ export default function SalesPage() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Registrar Salidas</h1>
-                    <p className="text-sm text-gray-500 mt-1">Registra ventas, consumos internos o mermas y descuenta del inventario.</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                        Registra salidas por venta, consumos internos, mermas o ajustes de inventario.
+                    </p>
                 </div>
                 <Link href="/dashboard/sales/new"
                     className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
@@ -184,7 +198,8 @@ export default function SalesPage() {
                     <p className="text-xs text-gray-400 mt-1">por salida</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Ventas</p>
+                    {/* Antes decía "Ventas" — ahora "Salidas por venta" para no confundir */}
+                    <p className="text-xs text-gray-500 mb-1">Salidas por venta</p>
                     <p className="text-2xl font-bold text-blue-600">{kpiVentas}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas / mermas</p>
                 </div>
@@ -208,24 +223,29 @@ export default function SalesPage() {
                             value={busqueda}
                             onChange={e => { setBusqueda(e.target.value); setPage(1); }}
                             placeholder="Referencia, cliente o producto..."
-                            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm
+                                       focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                         />
                         {busqueda && (
-                            <button onClick={() => { setBusqueda(''); setPage(1); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <button
+                                onClick={() => { setBusqueda(''); setPage(1); }}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                 <X size={13}/>
                             </button>
                         )}
                     </div>
 
                     {/* Tabs por tipo */}
-                    <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                    <div className="flex flex-wrap rounded-lg border border-gray-200 overflow-hidden text-xs">
                         {tabsVisibles.map(t => (
                             <button key={t.key}
                                 onClick={() => { setFiltroTipo(t.key); setPage(1); }}
-                                className={`px-3 py-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${filtroTipo === t.key ? 'bg-gray-800 text-white' : 'hover:bg-gray-50 text-gray-600'}`}>
+                                className={`px-3 py-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5
+                                    ${filtroTipo === t.key ? 'bg-gray-800 text-white' : 'hover:bg-gray-50 text-gray-600'}`}>
                                 {t.label}
-                                {tiposCounts[t.key] > 0 && (
-                                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${filtroTipo === t.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                {(tiposCounts[t.key] ?? 0) > 0 && (
+                                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium
+                                        ${filtroTipo === t.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
                                         {tiposCounts[t.key]}
                                     </span>
                                 )}
@@ -236,7 +256,10 @@ export default function SalesPage() {
                     {/* Filtros avanzados */}
                     <button
                         onClick={() => setShowFiltros(v => !v)}
-                        className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors cursor-pointer ${showFiltros || hayFiltros ? 'bg-orange-50 border-orange-200 text-orange-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                        className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors cursor-pointer
+                            ${showFiltros || hayFiltros
+                                ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                         <SlidersHorizontal size={13}/>
                         Filtros
                         {hayFiltros && (
@@ -250,7 +273,9 @@ export default function SalesPage() {
                     <p className="text-sm text-gray-400 whitespace-nowrap ml-auto">
                         {salidasFiltradas.length} {salidasFiltradas.length === 1 ? 'resultado' : 'resultados'}
                         {(busqueda || hayFiltros) && (
-                            <button onClick={resetFiltros} className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">limpiar</button>
+                            <button onClick={resetFiltros} className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">
+                                limpiar
+                            </button>
                         )}
                     </p>
                 </div>
@@ -262,13 +287,15 @@ export default function SalesPage() {
                             <label className="text-xs font-medium text-gray-500">Desde</label>
                             <input type="date" value={filtroDesde}
                                 onChange={e => { setFiltroDesde(e.target.value); setPage(1); }}
-                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white
+                                           focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs font-medium text-gray-500">Hasta</label>
                             <input type="date" value={filtroHasta}
                                 onChange={e => { setFiltroHasta(e.target.value); setPage(1); }}
-                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                className="w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white
+                                           focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs font-medium text-gray-500">Monto mínimo</label>
@@ -276,7 +303,8 @@ export default function SalesPage() {
                                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                                 <input type="number" min="0" placeholder="0" value={filtroMontoMin}
                                     onChange={e => { setFiltroMontoMin(e.target.value); setPage(1); }}
-                                    className="w-full pl-6 pr-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                    className="w-full pl-6 pr-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white
+                                               focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                             </div>
                         </div>
                         <div className="space-y-1">
@@ -285,13 +313,15 @@ export default function SalesPage() {
                                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                                 <input type="number" min="0" placeholder="Sin límite" value={filtroMontoMax}
                                     onChange={e => { setFiltroMontoMax(e.target.value); setPage(1); }}
-                                    className="w-full pl-6 pr-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                    className="w-full pl-6 pr-2.5 py-1.5 text-sm border border-gray-200 rounded-lg bg-white
+                                               focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                             </div>
                         </div>
                         {hayFiltros && (
                             <div className="flex items-end col-span-2">
                                 <button onClick={resetFiltros}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded-lg bg-white transition-colors cursor-pointer">
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-red-600
+                                               border border-gray-200 hover:border-red-200 rounded-lg bg-white transition-colors cursor-pointer">
                                     <X size={11}/> Limpiar todos los filtros
                                 </button>
                             </div>
@@ -304,18 +334,30 @@ export default function SalesPage() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-gray-50/50 border-b border-gray-100">
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('referencia')}>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider
+                                               cursor-pointer hover:text-gray-600 select-none"
+                                    onClick={() => handleSort('referencia')}>
                                     Referencia <SortIcon col="referencia"/>
                                 </th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('tipo')}>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider
+                                               cursor-pointer hover:text-gray-600 select-none"
+                                    onClick={() => handleSort('tipo')}>
                                     Tipo <SortIcon col="tipo"/>
                                 </th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('fecha')}>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider
+                                               cursor-pointer hover:text-gray-600 select-none"
+                                    onClick={() => handleSort('fecha')}>
                                     Fecha <SortIcon col="fecha"/>
                                 </th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Productos</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('total')}>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                    Cliente
+                                </th>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                    Productos
+                                </th>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider
+                                               cursor-pointer hover:text-gray-600 select-none"
+                                    onClick={() => handleSort('total')}>
                                     Total <SortIcon col="total"/>
                                 </th>
                                 <th className="px-4 py-3"></th>
@@ -323,16 +365,23 @@ export default function SalesPage() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {loading ? (
-                                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-400">Cargando salidas...</td></tr>
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-10 text-center text-gray-400">
+                                        Cargando salidas...
+                                    </td>
+                                </tr>
                             ) : salidasPag.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-12 text-center">
                                         <TrendingDown size={32} className="mx-auto text-gray-300 mb-2"/>
                                         <p className="text-gray-500 font-medium">
-                                            {busqueda || hayFiltros ? 'Sin resultados para estos filtros' : 'No hay salidas registradas'}
+                                            {busqueda || hayFiltros
+                                                ? 'Sin resultados para estos filtros'
+                                                : 'No hay salidas registradas'}
                                         </p>
                                         {(busqueda || hayFiltros) && (
-                                            <button onClick={resetFiltros} className="mt-2 text-sm text-orange-500 hover:underline cursor-pointer">
+                                            <button onClick={resetFiltros}
+                                                className="mt-2 text-sm text-orange-500 hover:underline cursor-pointer">
                                                 Limpiar filtros
                                             </button>
                                         )}
@@ -340,15 +389,16 @@ export default function SalesPage() {
                                 </tr>
                             ) : (
                                 salidasPag.map(salida => {
-                                    const tc = getTipoConfig(salida.tipo);
-                                    const total = calcTotal(salida);
+                                    const tc        = getTipoConfig(salida.tipo);
+                                    const total     = calcTotal(salida);
                                     const totalItems = salida.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0;
                                     return (
                                         <tr key={salida.id}
                                             onClick={() => setDetalle(salida)}
                                             className="hover:bg-orange-50/30 transition-colors cursor-pointer group">
                                             <td className="px-4 py-3">
-                                                <span className="text-sm font-bold text-gray-800 group-hover:text-orange-600 transition-colors">
+                                                <span className="text-sm font-bold text-gray-800
+                                                                 group-hover:text-orange-600 transition-colors">
                                                     {salida.referencia || '—'}
                                                 </span>
                                             </td>
@@ -358,7 +408,9 @@ export default function SalesPage() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                                                {new Date(salida.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                {new Date(salida.fecha).toLocaleDateString('es-MX', {
+                                                    day: '2-digit', month: 'short', year: 'numeric'
+                                                })}
                                             </td>
                                             <td className="px-4 py-3 text-sm">
                                                 {salida.clienteNombre
@@ -367,7 +419,9 @@ export default function SalesPage() {
                                                 }
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
-                                                {salida.detalles?.length ?? 0} {salida.detalles?.length === 1 ? 'producto' : 'productos'} · {totalItems} uds
+                                                {salida.detalles?.length ?? 0}{' '}
+                                                {salida.detalles?.length === 1 ? 'producto' : 'productos'}{' '}
+                                                · {totalItems} uds
                                             </td>
                                             <td className="px-4 py-3 text-sm font-bold text-gray-800">
                                                 {total > 0
@@ -376,7 +430,8 @@ export default function SalesPage() {
                                                 }
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <ChevronRight size={16} className="text-gray-300 group-hover:text-orange-400 transition-colors"/>
+                                                <ChevronRight size={16}
+                                                    className="text-gray-300 group-hover:text-orange-400 transition-colors"/>
                                             </td>
                                         </tr>
                                     );
@@ -394,23 +449,28 @@ export default function SalesPage() {
                         </p>
                         <div className="flex items-center gap-1">
                             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50
+                                           disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
                                 <ChevronLeft size={14}/>
                             </button>
                             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                                 const p = totalPages <= 5 ? i + 1
-                                    : page <= 3 ? i + 1
+                                    : page <= 3             ? i + 1
                                     : page >= totalPages - 2 ? totalPages - 4 + i
                                     : page - 2 + i;
                                 return (
                                     <button key={p} onClick={() => setPage(p)}
-                                        className={`w-7 h-7 text-xs rounded-lg border transition-colors cursor-pointer ${page === p ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                        className={`w-7 h-7 text-xs rounded-lg border transition-colors cursor-pointer
+                                            ${page === p
+                                                ? 'bg-gray-800 text-white border-gray-800'
+                                                : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                                         {p}
                                     </button>
                                 );
                             })}
                             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50
+                                           disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
                                 <ChevronRight size={14}/>
                             </button>
                         </div>
@@ -420,56 +480,76 @@ export default function SalesPage() {
 
             {/* Modal detalle */}
             {detalle && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDetalle(null)}>
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+                     onClick={() => setDetalle(null)}>
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+                         onClick={e => e.stopPropagation()}>
+                        <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between
+                                        sticky top-0 bg-white rounded-t-2xl z-10">
                             <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-lg font-bold text-gray-900">{detalle.referencia || 'Sin referencia'}</span>
-                                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${getTipoConfig(detalle.tipo).cls}`}>
+                                <span className="text-lg font-bold text-gray-900">
+                                    {detalle.referencia || 'Sin referencia'}
+                                </span>
+                                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full
+                                    ${getTipoConfig(detalle.tipo).cls}`}>
                                     {getTipoConfig(detalle.tipo).label}
                                 </span>
                             </div>
-                            <button onClick={() => setDetalle(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer flex-shrink-0">
+                            <button onClick={() => setDetalle(null)}
+                                className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer flex-shrink-0">
                                 <X size={18}/>
                             </button>
                         </div>
                         <div className="px-6 py-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
-                                {/* Cliente — siempre visible */}
                                 <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><UserCircle2 size={11}/> Cliente</p>
+                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                        <UserCircle2 size={11}/> Cliente
+                                    </p>
                                     {detalle.clienteNombre
                                         ? <p className="text-sm font-semibold text-gray-800">{detalle.clienteNombre}</p>
                                         : <p className="text-sm text-gray-400 italic">Sin cliente registrado</p>
                                     }
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Calendar size={11}/> Fecha</p>
+                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                        <Calendar size={11}/> Fecha
+                                    </p>
                                     <p className="text-sm font-semibold text-gray-800">
                                         {new Date(detalle.fecha).toLocaleDateString('es-MX', { dateStyle: 'long' })}
                                     </p>
                                     <p className="text-xs text-gray-400 mt-0.5">
-                                        {new Date(detalle.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                        {new Date(detalle.fecha).toLocaleTimeString('es-MX', {
+                                            hour: '2-digit', minute: '2-digit'
+                                        })}
                                         {detalle.usuario?.nombre && ` · ${detalle.usuario.nombre}`}
                                     </p>
                                 </div>
                             </div>
                             <div>
-                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Productos despachados</p>
+                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                                    Productos despachados
+                                </p>
                                 <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
                                     {detalle.detalles?.map((d, i) => (
-                                        <div key={d.id ?? i} className="flex items-center justify-between px-4 py-2.5">
+                                        <div key={d.id ?? i}
+                                             className="flex items-center justify-between px-4 py-2.5">
                                             <div>
                                                 <p className="text-sm font-medium text-gray-800">{d.producto?.nombre}</p>
-                                                <p className="text-xs text-gray-400">{d.producto?.sku} · {d.cantidad} {d.producto?.unidad}</p>
+                                                <p className="text-xs text-gray-400">
+                                                    {d.producto?.sku} · {d.cantidad} {d.producto?.unidad}
+                                                </p>
                                             </div>
                                             <div className="text-right">
                                                 {Number(d.precioUnitario) > 0 ? (
                                                     <>
                                                         <p className="text-sm font-bold text-gray-800">
-                                                            ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                                            ${(Number(d.precioUnitario) * d.cantidad)
+                                                                .toLocaleString('es-MX', { maximumFractionDigits: 2 })}
                                                         </p>
-                                                        <p className="text-xs text-gray-400">${Number(d.precioUnitario).toLocaleString()} c/u</p>
+                                                        <p className="text-xs text-gray-400">
+                                                            ${Number(d.precioUnitario).toLocaleString()} c/u
+                                                        </p>
                                                     </>
                                                 ) : (
                                                     <p className="text-xs text-gray-400">Sin precio</p>
@@ -490,7 +570,8 @@ export default function SalesPage() {
                         </div>
                         <div className="px-6 pb-5">
                             <button onClick={() => setDetalle(null)}
-                                className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+                                className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100
+                                           hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
                                 Cerrar
                             </button>
                         </div>
