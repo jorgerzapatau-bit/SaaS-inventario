@@ -103,9 +103,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true});
 
-    useEffect(()=>{\
-        const load=async()=>{\
-            try{\
+    useEffect(()=>{
+        const load=async()=>{
+            try{
                 // ── FIX: siempre cargar categorías desde el endpoint dedicado ──
                 const cats = await fetchApi('/categories');
                 setCategorias(cats);
