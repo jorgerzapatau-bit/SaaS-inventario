@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
-import { Package, AlertTriangle, DollarSign, ArrowUpCircle, ArrowDownCircle, RotateCcw, Zap } from 'lucide-react';
+import { Package, AlertTriangle, DollarSign, ArrowUpCircle, ArrowDownCircle, RotateCcw, Zap, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
@@ -12,7 +12,6 @@ function timeAgo(dateStr: string) {
     const diff = (Date.now() - date.getTime()) / 1000;
     if (diff < 60) return 'hace un momento';
     if (diff < 3600) return `hace ${Math.floor(diff / 60)}m`;
-    // If today, show time
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
     if (isToday) return `hoy ${date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
@@ -33,6 +32,47 @@ function tipoLabel(tipo: string) {
     return 'Ajuste -';
 }
 
+/** Calcula el % de cambio entre valor actual y anterior. */
+function calcPct(current: number, previous: number): number | null {
+    if (previous === 0) return null;
+    return ((current - previous) / previous) * 100;
+}
+
+/** Chip de variación con flecha + porcentaje */
+function DeltaBadge({
+    pct,
+    label,
+}: {
+    pct: number | null;
+    label?: string;
+}) {
+    if (pct === null) {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">
+                <Minus size={10} />
+                Sin datos ant.
+            </span>
+        );
+    }
+
+    const isUp = pct > 0;
+    const isNeutral = Math.abs(pct) < 0.05;
+    const colorClass = isNeutral
+        ? 'bg-gray-100 text-gray-500'
+        : isUp
+        ? 'bg-green-100 text-green-700'
+        : 'bg-red-100 text-red-600';
+    const Icon = isNeutral ? Minus : isUp ? TrendingUp : TrendingDown;
+
+    return (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${colorClass}`}>
+            <Icon size={11} />
+            {isNeutral ? '0%' : `${isUp ? '+' : ''}${pct.toFixed(1)}%`}
+            {label && <span className="font-normal opacity-75">{label}</span>}
+        </span>
+    );
+}
+
 export default function DashboardPage() {
     const [products, setProducts] = useState<any[]>([]);
     const [movements, setMovements] = useState<any[]>([]);
@@ -43,7 +83,7 @@ export default function DashboardPage() {
             try {
                 const [prods, movs] = await Promise.all([
                     fetchApi('/products'),
-                    fetchApi('/inventory/movements')
+                    fetchApi('/inventory/movements'),
                 ]);
                 setProducts(prods);
                 setMovements(movs);
@@ -56,46 +96,75 @@ export default function DashboardPage() {
         load();
     }, []);
 
-    // ── Stats ──────────────────────────────────────────────────────
-    // Valor inventario = Σ(entradas×costo) - Σ(salidas×costo) sobre TODOS los movimientos
-    // Misma fórmula que la gráfica "Valor en almacén" → ambos muestran el mismo número
-    const totalValue = movements.reduce((a, m) => {
-        const qty = Number(m.cantidad || 0);
-        const costo = Number(m.costoUnitario || 0);
-        if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
-        if (['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))  return a - qty * costo;
-        return a;
-    }, 0);
-    const lowStockProducts = products.filter(p => p.stock <= p.stockMinimo);
-    const categories = new Set(products.map(p => p.categoria?.nombre).filter(Boolean)).size;
-
+    // ── Períodos ────────────────────────────────────────────────────
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfDay       = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth     = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPrevMonth   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const endOfYesterday   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
 
-    const movsHoy = movements.filter(m => new Date(m.fecha) >= startOfDay);
+    // ── Helpers ─────────────────────────────────────────────────────
+    const isEntrada   = (m: any) => ['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
+    const isSalida    = (m: any) => ['SALIDA',  'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento);
+    const sumCantidad = (arr: any[]) => arr.reduce((a, m) => a + m.cantidad, 0);
+
+    // ── Valor inventario ────────────────────────────────────────────
+    const valorMovimiento = (m: any) => {
+        const v = Number(m.cantidad || 0) * Number(m.costoUnitario || 0);
+        return isEntrada(m) ? v : -v;
+    };
+    const totalValue    = movements.reduce((a, m) => a + valorMovimiento(m), 0);
+    const prevTotalValue = movements
+        .filter(m => new Date(m.fecha) <= endOfPrevMonth)
+        .reduce((a, m) => a + valorMovimiento(m), 0);
+    const valuePct = calcPct(totalValue, prevTotalValue);
+
+    // ── Total productos ─────────────────────────────────────────────
+    const categories = new Set(products.map(p => p.categoria?.nombre).filter(Boolean)).size;
+    const productosNuevosMes = products.filter(p => p.createdAt && new Date(p.createdAt) >= startOfMonth).length;
+
+    // ── Stock bajo mínimo ───────────────────────────────────────────
+    const lowStockProducts = products.filter(p => p.stock <= p.stockMinimo);
+
+    // ── Entradas / Salidas ──────────────────────────────────────────
+    const movsHoy    = movements.filter(m => new Date(m.fecha) >= startOfDay);
+    const movsAyer   = movements.filter(m => { const f = new Date(m.fecha); return f >= startOfYesterday && f < endOfYesterday; });
     const movsEsteMes = movements.filter(m => new Date(m.fecha) >= startOfMonth);
+    const movsMesAnt  = movements.filter(m => { const f = new Date(m.fecha); return f >= startOfPrevMonth && f <= endOfPrevMonth; });
 
-    const entradasHoy = movsHoy.filter(m => ['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a, m) => a + m.cantidad, 0);
-    const salidasHoy = movsHoy.filter(m => ['SALIDA', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a, m) => a + m.cantidad, 0);
-    const entradasMes = movsEsteMes.filter(m => ['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a, m) => a + m.cantidad, 0);
-    const salidasMes = movsEsteMes.filter(m => ['SALIDA', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a, m) => a + m.cantidad, 0);
+    const entradasHoy    = sumCantidad(movsHoy.filter(isEntrada));
+    const salidasHoy     = sumCantidad(movsHoy.filter(isSalida));
+    const entradasAyer   = sumCantidad(movsAyer.filter(isEntrada));
+    const salidasAyer    = sumCantidad(movsAyer.filter(isSalida));
+    const entradasMes    = sumCantidad(movsEsteMes.filter(isEntrada));
+    const salidasMes     = sumCantidad(movsEsteMes.filter(isSalida));
+    const entradasMesAnt = sumCantidad(movsMesAnt.filter(isEntrada));
+    const salidasMesAnt  = sumCantidad(movsMesAnt.filter(isSalida));
 
-    const totalStock = products.reduce((a, p) => a + p.stock, 0);
-    const rotacion = totalStock > 0 ? ((salidasMes / totalStock) * 100).toFixed(1) : '0.0';
+    const entradasHoyPct = calcPct(entradasHoy, entradasAyer);
+    const salidasHoyPct  = calcPct(salidasHoy, salidasAyer);
+    const entradasMesPct = calcPct(entradasMes, entradasMesAnt);
+    const salidasMesPct  = calcPct(salidasMes, salidasMesAnt);
 
-    // Top 5 productos más movidos este mes
+    // ── Rotación ────────────────────────────────────────────────────
+    const totalStock   = products.reduce((a, p) => a + p.stock, 0);
+    const rotacionNum  = totalStock > 0 ? (salidasMes / totalStock) * 100 : 0;
+    const rotacionPrev = totalStock > 0 ? (salidasMesAnt / totalStock) * 100 : 0;
+    const rotacion     = rotacionNum.toFixed(1);
+    const rotacionPct  = calcPct(rotacionNum, rotacionPrev);
+
+    // ── Top 5 ───────────────────────────────────────────────────────
     const salesByProduct: Record<string, { nombre: string; stock: number; salidas: number }> = {};
-    movsEsteMes.filter(m => ['SALIDA', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).forEach(m => {
+    movsEsteMes.filter(isSalida).forEach(m => {
         const nombre = m.producto?.nombre || 'Desconocido';
         if (!salesByProduct[nombre]) salesByProduct[nombre] = { nombre, stock: 0, salidas: 0 };
         salesByProduct[nombre].salidas += m.cantidad;
     });
-    products.forEach(p => {
-        if (salesByProduct[p.nombre]) salesByProduct[p.nombre].stock = p.stock;
-    });
+    products.forEach(p => { if (salesByProduct[p.nombre]) salesByProduct[p.nombre].stock = p.stock; });
     const topProductos = Object.values(salesByProduct).sort((a, b) => b.salidas - a.salidas).slice(0, 5);
-    const maxSalidas = topProductos.length > 0 ? topProductos[0].salidas : 1;
+    const maxSalidas   = topProductos.length > 0 ? topProductos[0].salidas : 1;
 
     const recentMovements = movements.slice(0, 8);
 
@@ -115,9 +184,10 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* KPI Cards — 6 con bordes y sombra */}
+            {/* KPI Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
 
+                {/* Valor inventario */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
@@ -126,10 +196,15 @@ export default function DashboardPage() {
                         </div>
                         <div className="p-2 bg-blue-50 rounded-lg"><DollarSign size={16} className="text-blue-600" /></div>
                     </div>
-                    <p className="text-3xl font-bold text-gray-800">{loading ? '...' : `$${totalValue.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`}</p>
-                    <p className="text-xs text-gray-400 mt-2">Costo total en almacén</p>
+                    <p className="text-3xl font-bold text-gray-800">
+                        {loading ? '...' : `$${totalValue.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                        {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={valuePct} label="vs mes ant." />}
+                    </div>
                 </div>
 
+                {/* Total productos */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
@@ -139,9 +214,20 @@ export default function DashboardPage() {
                         <div className="p-2 bg-purple-50 rounded-lg"><Package size={16} className="text-purple-600" /></div>
                     </div>
                     <p className="text-3xl font-bold text-gray-800">{loading ? '...' : products.length}</p>
-                    <p className="text-xs text-gray-400 mt-2">{loading ? '...' : `${categories} categorías activas`}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                        {loading ? (
+                            <p className="text-xs text-gray-400">Cargando...</p>
+                        ) : productosNuevosMes > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+                                <TrendingUp size={11} />+{productosNuevosMes} este mes
+                            </span>
+                        ) : (
+                            <p className="text-xs text-gray-400">{categories} categorías activas</p>
+                        )}
+                    </div>
                 </div>
 
+                {/* Stock bajo mínimo */}
                 <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${lowStockProducts.length > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
@@ -160,34 +246,49 @@ export default function DashboardPage() {
                     </Link>
                 </div>
 
+                {/* Entradas hoy */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
                             <p className="text-sm text-gray-500 font-medium">Entradas hoy</p>
-                            <InfoTooltip text="Suma de unidades de movimientos tipo ENTRADA y AJUSTE_POSITIVO registrados hoy. El acumulado del mes aparece abajo." />
+                            <InfoTooltip text="Suma de unidades de ENTRADA y AJUSTE_POSITIVO registradas hoy, vs ayer y el mes completo vs mes anterior." />
                         </div>
                         <div className="p-2 bg-green-50 rounded-lg"><ArrowUpCircle size={16} className="text-green-600" /></div>
                     </div>
                     <p className="text-3xl font-bold text-green-600">{loading ? '...' : `+${entradasHoy}`}</p>
-                    <span className="inline-block mt-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                        +{entradasMes} este mes
-                    </span>
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
+                            <>
+                                <DeltaBadge pct={entradasHoyPct} label="vs ayer" />
+                                <span className="text-xs text-gray-400">· +{entradasMes} mes</span>
+                                {entradasMesPct !== null && <DeltaBadge pct={entradasMesPct} label="vs mes ant." />}
+                            </>
+                        )}
+                    </div>
                 </div>
 
+                {/* Salidas hoy */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
                             <p className="text-sm text-gray-500 font-medium">Salidas hoy</p>
-                            <InfoTooltip text="Suma de unidades de movimientos tipo SALIDA y AJUSTE_NEGATIVO registrados hoy. El acumulado del mes aparece abajo." />
+                            <InfoTooltip text="Suma de unidades de SALIDA y AJUSTE_NEGATIVO registradas hoy, vs ayer y el mes completo vs mes anterior." />
                         </div>
                         <div className="p-2 bg-red-50 rounded-lg"><ArrowDownCircle size={16} className="text-red-500" /></div>
                     </div>
                     <p className="text-3xl font-bold text-red-500">{loading ? '...' : `-${salidasHoy}`}</p>
-                    <span className="inline-block mt-2 px-2 py-0.5 bg-red-100 text-red-600 text-xs font-semibold rounded-full">
-                        -{salidasMes} este mes
-                    </span>
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                        {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
+                            <>
+                                <DeltaBadge pct={salidasHoyPct} label="vs ayer" />
+                                <span className="text-xs text-gray-400">· -{salidasMes} mes</span>
+                                {salidasMesPct !== null && <DeltaBadge pct={salidasMesPct} label="vs mes ant." />}
+                            </>
+                        )}
+                    </div>
                 </div>
 
+                {/* Rotación mensual */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
@@ -197,7 +298,9 @@ export default function DashboardPage() {
                         <div className="p-2 bg-teal-50 rounded-lg"><RotateCcw size={16} className="text-teal-600" /></div>
                     </div>
                     <p className="text-3xl font-bold text-gray-800">{loading ? '...' : `${rotacion}%`}</p>
-                    <p className="text-xs text-gray-400 mt-2">Salidas / stock total</p>
+                    <div className="flex items-center gap-2 mt-2">
+                        {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={rotacionPct} label="vs mes ant." />}
+                    </div>
                 </div>
 
             </div>
@@ -208,7 +311,6 @@ export default function DashboardPage() {
             {/* Top productos + Acciones + Actividad */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-                {/* Top 5 con barras de progreso */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-base font-semibold text-gray-800">Top productos · este mes</h2>
@@ -230,10 +332,7 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                     <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-red-400 rounded-full transition-all duration-500"
-                                            style={{ width: `${(p.salidas / maxSalidas) * 100}%` }}
-                                        />
+                                        <div className="h-full bg-red-400 rounded-full transition-all duration-500" style={{ width: `${(p.salidas / maxSalidas) * 100}%` }} />
                                     </div>
                                 </div>
                             ))}
@@ -242,7 +341,6 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                    {/* Acciones rápidas */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <h2 className="text-base font-semibold text-gray-800 mb-3">Acciones rápidas</h2>
                         <div className="grid grid-cols-2 gap-2">
@@ -261,7 +359,6 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* Última actividad con hora exacta */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex-1">
                         <h2 className="text-base font-semibold text-gray-800 mb-3">Última actividad</h2>
                         {loading ? (
