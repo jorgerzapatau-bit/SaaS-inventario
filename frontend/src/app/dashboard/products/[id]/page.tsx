@@ -103,14 +103,15 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true});
 
-    useEffect(()=>{
-        const load=async()=>{
-            try{
+    useEffect(()=>{\
+        const load=async()=>{\
+            try{\
+                // ── FIX: siempre cargar categorías desde el endpoint dedicado ──
+                const cats = await fetchApi('/categories');
+                setCategorias(cats);
+
                 if(isNew){
-                    // Solo carga categorías para el formulario
-                    const products=await fetchApi('/products');
-                    const cats=Array.from(new Map(products.filter((p:any)=>p.categoria).map((p:any)=>[p.categoria.id,p.categoria])).values());
-                    setCategorias(cats as any[]);
+                    // Solo necesitábamos las categorías, listo
                     return;
                 }
                 const [prod,movs,products,totalMovs]=await Promise.all([
@@ -124,8 +125,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 const fp=products.find((p:any)=>p.id===id);
                 setProduct({...prod,stock:fp?.stock??0,ultimoPrecioCompra:fp?.ultimoPrecioCompra,ultimoPrecioVenta:fp?.ultimoPrecioVenta});
                 setMovements([...movsWithBalance].reverse());
-                const cats=Array.from(new Map(products.filter((p:any)=>p.categoria).map((p:any)=>[p.categoria.id,p.categoria])).values());
-                setCategorias(cats as any[]);
                 // Cargar notas internas desde localStorage
                 const notasGuardadas=localStorage.getItem(`notas_producto_${id}`)||'';
                 setNotas(notasGuardadas);
@@ -166,11 +165,20 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     };
 
     const handleSave=async()=>{
-        if(isNew&&(!editData.nombre||!editData.sku)){setSaveError('SKU y nombre son obligatorios');return;}
+        // ── FIX 1: validar nombre y SKU ──
+        if(isNew&&(!editData.nombre||!editData.sku)){
+            setSaveError('SKU y nombre son obligatorios');
+            return;
+        }
+        // ── FIX 2: validar que se haya seleccionado una categoría ──
+        if(isNew&&!editData.categoriaId){
+            setSaveError('Debes seleccionar una categoría');
+            return;
+        }
         setSaving(true);setSaveError('');
         try{
             if(isNew){
-                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,categoriaId:editData.categoriaId||undefined,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo)||5,imagen:editData.imagen,activo:editData.activo})});
+                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,categoriaId:editData.categoriaId,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo)||5,imagen:editData.imagen,activo:editData.activo})});
                 router.replace(`/dashboard/products/${created.id}`);
                 return;
             }
@@ -409,11 +417,20 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
+                                    {/* ── FIX: borde rojo si no se ha seleccionado categoría ── */}
                                     <label className="text-xs font-medium text-gray-700 block mb-1">Categoría *</label>
-                                    <select name="categoriaId" value={editData.categoriaId} onChange={handleEditChange} className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                    <select
+                                        name="categoriaId"
+                                        value={editData.categoriaId}
+                                        onChange={handleEditChange}
+                                        className={`w-full px-3 py-2 bg-white border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${!editData.categoriaId ? 'border-red-300' : 'border-gray-200'}`}
+                                    >
                                         <option value="">Seleccionar</option>
                                         {categorias.map((c:any)=><option key={c.id} value={c.id}>{c.nombre}</option>)}
                                     </select>
+                                    {!editData.categoriaId && (
+                                        <p className="text-xs text-red-500 mt-1">Requerida para guardar</p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-gray-700 block mb-1">Unidad *</label>
@@ -736,7 +753,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 )}
             </div>}
 
-            {/* Modal */}
+            {/* Modal detalle movimiento */}
             {!isNew && selectedMov&&(
                 <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={()=>setSelectedMov(null)}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e=>e.stopPropagation()}>
@@ -754,7 +771,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 </div>
             )}
 
-            {/* Modal Entrada / Salida */}
+            {/* Modal Entrada / Salida / Ajuste */}
             {movModal && product && (
                 <MovimientoModal
                     producto={{
