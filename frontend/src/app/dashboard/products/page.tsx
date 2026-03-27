@@ -1,723 +1,805 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
-import { StockBarChart } from '@/components/dashboard/StockBarChart';
-import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
-import { Card } from '@/components/ui/Card';
 import {
-    Search, Plus, Edit, Trash2, AlertTriangle, LayoutGrid, List,
-    ChevronUp, ChevronDown, ChevronsUpDown, Download, Upload,
-    ArrowUpCircle, ArrowDownCircle, X, Check, BarChart2
+    Package, AlertTriangle, DollarSign, ArrowUpCircle, ArrowDownCircle,
+    RotateCcw, TrendingUp, TrendingDown, Minus, Percent,
+    ShoppingCart, Ban, Warehouse, Calendar, ExternalLink
 } from 'lucide-react';
+import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-    'Electrónicos': '#3b82f6', 'Periféricos': '#8b5cf6', 'Consumibles': '#f59e0b',
-    'Accesorios': '#10b981', 'Ropa': '#ec4899', 'default': '#6b7280',
-};
-function getCatColor(cat: string) { return CATEGORY_COLORS[cat] || CATEGORY_COLORS['default']; }
-function getMargen(p: any) {
-    const pv = Number(p.ultimoPrecioVenta ?? 0);
-    const pc = Number(p.ultimoPrecioCompra ?? 0);
-    return pv > 0 ? (pv - pc) / pv * 100 : 0;
+// ── Tipos ──────────────────────────────────────────────────────────────
+type PeriodKey = 'general' | 'este_mes' | 'mes_anterior' | 'ultimos_3m' | 'este_anio' | 'personalizado';
+
+interface PeriodOption {
+    key: PeriodKey;
+    label: string;
+    shortLabel: string;
 }
 
-function ProductImage({ imagen, nombre, categoria, size = 40 }: { imagen?: string; nombre: string; categoria?: string; size?: number }) {
-    const color = getCatColor(categoria || '');
-    if (imagen) return <img src={imagen} alt={nombre} style={{ width: size, height: size, objectFit: 'cover', borderRadius: 8 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />;
+const PERIODS: PeriodOption[] = [
+    { key: 'general',      label: 'General (todo el tiempo)', shortLabel: 'General' },
+    { key: 'este_mes',     label: 'Este mes',                  shortLabel: 'Este mes' },
+    { key: 'mes_anterior', label: 'Mes anterior',              shortLabel: 'Mes ant.' },
+    { key: 'ultimos_3m',   label: 'Últimos 3 meses',           shortLabel: 'Últ. 3 meses' },
+    { key: 'este_anio',    label: 'Este año',                  shortLabel: 'Este año' },
+];
+
+// ── Helpers de tiempo ──────────────────────────────────────────────────
+function toInputDate(d: Date) { return d.toISOString().split('T')[0]; }
+
+function getPeriodRange(key: PeriodKey): { desde: Date; hasta: Date; prevDesde: Date; prevHasta: Date } {
+    const now = new Date();
+    const startOfMonth     = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfPrevMonth   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    const start3m          = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    const startPrev3m      = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+    const endPrev3m        = new Date(now.getFullYear(), now.getMonth() - 3, 0, 23, 59, 59);
+    const startOfYear      = new Date(now.getFullYear(), 0, 1);
+    const startOfPrevYear  = new Date(now.getFullYear() - 1, 0, 1);
+    const endOfPrevYear    = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+
+    switch (key) {
+        case 'este_mes':
+            return { desde: startOfMonth, hasta: now, prevDesde: startOfPrevMonth, prevHasta: endOfPrevMonth };
+        case 'mes_anterior':
+            return { desde: startOfPrevMonth, hasta: endOfPrevMonth, prevDesde: new Date(now.getFullYear(), now.getMonth() - 2, 1), prevHasta: new Date(now.getFullYear(), now.getMonth() - 1, 0, 23, 59, 59) };
+        case 'ultimos_3m':
+            return { desde: start3m, hasta: now, prevDesde: startPrev3m, prevHasta: endPrev3m };
+        case 'este_anio':
+            return { desde: startOfYear, hasta: now, prevDesde: startOfPrevYear, prevHasta: endOfPrevYear };
+        default:
+            return { desde: new Date(0), hasta: now, prevDesde: new Date(0), prevHasta: new Date(0) };
+    }
+}
+
+// ── Utilidades de display ──────────────────────────────────────────────
+function calcPct(current: number, previous: number): number | null {
+    if (previous === 0) return null;
+    return ((current - previous) / previous) * 100;
+}
+
+function fmt(n: number) { return n.toLocaleString('es-MX', { maximumFractionDigits: 0 }); }
+
+function DeltaBadge({ pct, label }: { pct: number | null; label?: string }) {
+    if (pct === null) {
+        return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-400">
+                <Minus size={10} /> Sin datos ant.
+            </span>
+        );
+    }
+    const isUp = pct > 0;
+    const isNeutral = Math.abs(pct) < 0.05;
+    const colorClass = isNeutral ? 'bg-gray-100 text-gray-500' : isUp ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600';
+    const Icon = isNeutral ? Minus : isUp ? TrendingUp : TrendingDown;
     return (
-        <div style={{ width: size, height: size, borderRadius: 8, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ fontSize: size * 0.45, fontWeight: 600, color }}>{nombre?.[0]?.toUpperCase() || '?'}</span>
-        </div>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${colorClass}`}>
+            <Icon size={11} />
+            {isNeutral ? '0%' : `${isUp ? '+' : ''}${pct.toFixed(1)}%`}
+            {label && <span className="font-normal opacity-75">{label}</span>}
+        </span>
     );
 }
 
-function StockBadge({ stock, stockMinimo }: { stock: number; stockMinimo: number }) {
-    if (stock === 0) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700"><AlertTriangle size={10} /> Sin stock</span>;
-    if (stock <= stockMinimo) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700"><AlertTriangle size={10} /> Bajo mín.</span>;
-    return null;
-}
-
-type SortKey = 'nombre' | 'sku' | 'stock' | 'precioCompra' | 'precioVenta' | 'margen'; // precioCompra/Venta map to ultimoPrecio*
-type SortDir = 'asc' | 'desc';
-
-function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
-    if (col !== sortKey) return <ChevronsUpDown size={12} className="text-gray-300 ml-1 inline" />;
-    return sortDir === 'asc' ? <ChevronUp size={12} className="text-blue-500 ml-1 inline" /> : <ChevronDown size={12} className="text-blue-500 ml-1 inline" />;
-}
-
-// ── Quick Movement Modal ──────────────────────────────────────────────────────
-function QuickMovModal({ product, type, onClose, onDone }: { product: any; type: 'entrada' | 'salida'; onClose: () => void; onDone: () => void }) {
-    const [qty, setQty] = useState('1');
-    const [motivo, setMotivo] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [err, setErr] = useState('');
-    const isEntrada = type === 'entrada';
-
-    const handleSubmit = async () => {
-        if (!qty || Number(qty) <= 0) { setErr('Ingresa una cantidad válida'); return; }
-        setSaving(true); setErr('');
-        try {
-            await fetchApi('/inventory/movements', {
-                method: 'POST',
-                body: JSON.stringify({
-                    productoId: product.id,
-                    tipoMovimiento: isEntrada ? 'ENTRADA' : 'SALIDA',
-                    cantidad: Number(qty),
-                    costoUnitario: Number(product.ultimoPrecioCompra ?? 0),
-                    precioVenta: isEntrada ? null : Number(product.ultimoPrecioVenta ?? null),
-                    motivo: motivo || (isEntrada ? 'Entrada rápida' : 'Salida rápida'),
-                    almacenId: null,
-                }),
-            });
-            onDone();
-        } catch (e: any) { setErr(e.message || 'Error al registrar'); setSaving(false); }
-    };
-
+// ── MEJORA 1: Tooltip contextual para margen alto ──────────────────────
+function MargenTooltipDetalle({ margenPct, costoEntradas, ingresosSalidas }: {
+    margenPct: number; costoEntradas: number; ingresosSalidas: number;
+}) {
+    const esAlto = margenPct > 60;
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-lg ${isEntrada ? 'bg-green-100' : 'bg-red-100'}`}>
-                            {isEntrada ? <ArrowUpCircle size={18} className="text-green-600" /> : <ArrowDownCircle size={18} className="text-red-500" />}
-                        </div>
-                        <div>
-                            <p className="font-semibold text-gray-800 text-sm">{isEntrada ? 'Entrada rápida' : 'Salida rápida'}</p>
-                            <p className="text-xs text-gray-400 truncate max-w-[180px]">{product.nombre}</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
-                </div>
-                {err && <p className="text-xs text-red-500 mb-3 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
-                <div className="space-y-3 mb-5">
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">Cantidad ({product.unidad})</label>
-                        <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} autoFocus
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                        <p className="text-xs text-gray-400 mt-1">Stock actual: <strong>{product.stock} {product.unidad}</strong></p>
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">Motivo (opcional)</label>
-                        <input type="text" value={motivo} onChange={e => setMotivo(e.target.value)} placeholder={isEntrada ? 'Ej: Compra a proveedor' : 'Ej: Venta #V-001'}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                    </div>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
-                    <button onClick={handleSubmit} disabled={saving}
-                        className={`flex-1 py-2 text-sm text-white font-medium rounded-lg transition-colors disabled:opacity-70 ${isEntrada ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'}`}>
-                        {saving ? 'Guardando...' : `Registrar ${isEntrada ? 'entrada' : 'salida'}`}
-                    </button>
-                </div>
+        <InfoTooltip
+            position="top"
+            text={
+                esAlto
+                    ? `Margen alto (${margenPct.toFixed(1)}%): Ingresos $${fmt(ingresosSalidas)} − Costo $${fmt(costoEntradas)} = $${fmt(ingresosSalidas - costoEntradas)}. Puede ser real si las salidas tienen precio de venta muy superior al costo de entrada del período.`
+                    : `(Ingresos − Costo) ÷ Ingresos × 100. Ingresos: $${fmt(ingresosSalidas)}, Costo: $${fmt(costoEntradas)}.`
+            }
+        />
+    );
+}
+
+// ── MEJORA 3: Estado vacío para gráfica ───────────────────────────────
+function EmptyChartState({ desde, hasta }: { desde: string; hasta: string }) {
+    const diffDays = desde && hasta
+        ? Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400000)
+        : 0;
+    return (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 flex flex-col items-center justify-center gap-3 text-center min-h-[200px]">
+            <div className="p-3 bg-gray-100 rounded-full">
+                <RotateCcw size={22} className="text-gray-400" />
+            </div>
+            <div>
+                <p className="text-sm font-semibold text-gray-600">Aún hay pocos movimientos para mostrar una tendencia</p>
+                <p className="text-xs text-gray-400 mt-1">
+                    {diffDays <= 7
+                        ? 'El período seleccionado es muy corto. Prueba con "Este mes" o "Últimos 3 meses".'
+                        : 'Registra más entradas y salidas para ver la tendencia aquí.'}
+                </p>
             </div>
         </div>
     );
 }
 
-// ── CSV Import Modal ──────────────────────────────────────────────────────────
-function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-    const fileRef = useRef<HTMLInputElement>(null);
-    const [rows, setRows] = useState<any[]>([]);
-    const [importing, setImporting] = useState(false);
-    const [result, setResult] = useState('');
-    const [err, setErr] = useState('');
-
-    const parseCSV = (text: string) => {
-        const lines = text.trim().split('\n').filter(l => l.trim());
-        if (lines.length < 2) { setErr('El archivo debe tener encabezados y al menos una fila.'); return; }
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s/g, ''));
-        const parsed = lines.slice(1).map(line => {
-            const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-            const obj: any = {};
-            headers.forEach((h, i) => obj[h] = vals[i] || '');
-            return obj;
-        }).filter(r => r.nombre || r.sku);
-        setRows(parsed); setErr('');
-    };
-
-    const handleFile = (file: File) => {
-        const reader = new FileReader();
-        reader.onload = e => parseCSV(e.target?.result as string);
-        reader.readAsText(file);
-    };
-
-    const handleImport = async () => {
-        if (rows.length === 0) return;
-        setImporting(true); setErr('');
-        let ok = 0, fail = 0;
-        for (const row of rows) {
-            try {
-                await fetchApi('/products', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        sku: row.sku || `IMP-${Date.now()}`,
-                        nombre: row.nombre,
-                        unidad: row.unidad || 'pieza',
-                        precioCompra: Number(row.preciocompra || row['precio compra'] || row.costo || 0),
-                        precioVenta: Number(row.precioventa || row['precio venta'] || row.precio || 0),
-                        stockMinimo: Number(row.stockminimo || row['stock minimo'] || row.minimo || 5),
-                    }),
-                });
-                ok++;
-            } catch { fail++; }
-        }
-        setResult(`${ok} productos importados${fail > 0 ? `, ${fail} fallaron` : ' correctamente'}.`);
-        setImporting(false);
-        if (ok > 0) setTimeout(() => { onDone(); }, 1500);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <p className="font-semibold text-gray-800">Importar productos desde CSV</p>
-                        <p className="text-xs text-gray-400 mt-0.5">El archivo debe tener columnas: sku, nombre, unidad, preciocompra, precioventa, stockminimo</p>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
-                </div>
-
-                {/* Plantilla descargable */}
-                <button onClick={() => {
-                    const csv = 'sku,nombre,unidad,preciocompra,precioventa,stockminimo\nPRD-001,Producto ejemplo,pieza,100,150,5';
-                    const blob = new Blob([csv], { type: 'text/csv' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = 'plantilla_productos.csv'; a.click();
-                }} className="flex items-center gap-2 text-xs text-blue-500 hover:underline mb-4">
-                    <Download size={13} /> Descargar plantilla CSV
-                </button>
-
-                <div onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-                    onDragOver={e => e.preventDefault()} onClick={() => fileRef.current?.click()}
-                    className="w-full border-2 border-dashed border-gray-200 rounded-xl py-8 flex flex-col items-center gap-2 cursor-pointer hover:border-blue-400 hover:bg-blue-50/20 transition-all mb-4">
-                    <Upload size={24} className="text-gray-400" />
-                    <p className="text-sm text-gray-500">Haz clic o arrastra tu archivo CSV</p>
-                    {rows.length > 0 && <p className="text-xs text-green-600 font-medium">{rows.length} productos listos para importar</p>}
-                </div>
-                <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
-
-                {err && <p className="text-xs text-red-500 mb-3">{err}</p>}
-                {result && <p className="text-xs text-green-600 mb-3 font-medium">{result}</p>}
-
-                {rows.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
-                        <p className="text-xs font-semibold text-gray-500 mb-2">Vista previa:</p>
-                        {rows.slice(0, 5).map((r, i) => (
-                            <div key={i} className="text-xs text-gray-600 py-1 border-b border-gray-100 last:border-0">
-                                <span className="font-mono text-gray-400 mr-2">{r.sku}</span>{r.nombre} · {r.unidad || 'pieza'} · ${r.preciocompra||r['precio compra']||0} / ${r.precioventa||r['precio venta']||0}
-                            </div>
-                        ))}
-                        {rows.length > 5 && <p className="text-xs text-gray-400 mt-1">...y {rows.length - 5} más</p>}
-                    </div>
-                )}
-
-                <div className="flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
-                    <button onClick={handleImport} disabled={rows.length === 0 || importing}
-                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {importing ? 'Importando...' : `Importar ${rows.length} productos`}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-export default function ProductsPage() {
+// ── Componente principal ───────────────────────────────────────────────
+export default function DashboardPage() {
     const [products, setProducts] = useState<any[]>([]);
+    const [movements, setMovements] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [search, setSearch] = useState('');
-    const [filterCat, setFilterCat] = useState('Todas');
-    const [filterStock, setFilterStock] = useState('Todos');
-    const [view, setView] = useState<'list' | 'grid'>('list');
-    const [showStockModal, setShowStockModal] = useState(false);
-    const [showTendencia, setShowTendencia] = useState(false);
-    const [allMovements, setAllMovements] = useState<any[]>([]);
-    const [sortKey, setSortKey] = useState<SortKey>('nombre');
-    const [sortDir, setSortDir] = useState<SortDir>('asc');
-    const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [quickMov, setQuickMov] = useState<{ product: any; type: 'entrada' | 'salida' } | null>(null);
-    const [showImport, setShowImport] = useState(false);
+    const [period, setPeriod] = useState<PeriodKey>('este_mes');
 
-    const loadProducts = () => {
-        setLoading(true);
-        Promise.all([
-            fetchApi('/products'),
-            fetchApi('/inventory/movements'),
-        ])
-            .then(([prods, movs]) => { setProducts(prods); setAllMovements(movs); })
-            .catch(err => setError(err.message || 'Error al cargar'))
-            .finally(() => setLoading(false));
-    };
-    useEffect(() => { loadProducts(); }, []);
+    // MEJORA 2: toggle lista productos sin movimiento
+    const [showSinMovimiento, setShowSinMovimiento] = useState(false);
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`¿Eliminar "${name}"?`)) return;
-        try { await fetchApi(`/products/${id}`, { method: 'DELETE' }); setProducts(p => p.filter(x => x.id !== id)); }
-        catch (err: any) { alert(err.message || 'Error al eliminar'); }
-    };
+    const now = new Date();
+    const [manualDesde, setManualDesde] = useState<string>(
+        toInputDate(new Date(now.getFullYear(), now.getMonth(), 1))
+    );
+    const [manualHasta, setManualHasta] = useState<string>(toInputDate(now));
 
-    const handleSort = (key: SortKey) => {
-        if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        else { setSortKey(key); setSortDir('asc'); }
-    };
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const [prods, movs] = await Promise.all([
+                    fetchApi('/products'),
+                    fetchApi('/inventory/movements'),
+                ]);
+                setProducts(prods);
+                setMovements(movs);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        load();
+    }, []);
 
-    const toggleSelect = (id: string) => setSelected(prev => {
-        const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
-        return next;
-    });
-    const toggleAll = () => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(p => p.id)));
-
-    // ── CSV Export ────────────────────────────────────────────────────────────
-    const exportCSV = () => {
-        const toExport = selected.size > 0 ? sorted.filter(p => selected.has(p.id)) : sorted;
-        const header = 'SKU,Nombre,Categoría,Stock,Precio Compra,Precio Venta,Margen %,Valor Almacén';
-        const rows = toExport.map(p => [
-            p.sku, `"${p.nombre}"`, p.categoria?.nombre || '',
-            p.stock, Number(p.ultimoPrecioCompra ?? 0), Number(p.ultimoPrecioVenta ?? 0),
-            getMargen(p).toFixed(1),
-            (p.stock * Number(p.ultimoPrecioCompra ?? 0)).toFixed(0)
-        ].join(','));
-        const csv = [header, ...rows].join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url;
-        a.download = `productos_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+    const handlePeriodButton = (key: PeriodKey) => {
+        setPeriod(key);
+        setShowSinMovimiento(false);
+        if (key === 'general') {
+            setManualDesde('');
+            setManualHasta(toInputDate(new Date()));
+            return;
+        }
+        const range = getPeriodRange(key);
+        setManualDesde(toInputDate(range.desde));
+        setManualHasta(toInputDate(range.hasta));
     };
 
-    // ── Filtered & Sorted ─────────────────────────────────────────────────────
-    const categories = ['Todas', ...Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean)))];
+    const handleManualDesde = (val: string) => { setManualDesde(val); setPeriod('personalizado'); };
+    const handleManualHasta = (val: string) => { setManualHasta(val); setPeriod('personalizado'); };
 
-    const filtered = products.filter(p => {
-        const q = search.toLowerCase();
-        const matchSearch = !search || p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.categoria?.nombre || '').toLowerCase().includes(q);
-        const matchCat = filterCat === 'Todas' || p.categoria?.nombre === filterCat;
-        const matchStock = filterStock === 'Todos' || (filterStock === 'Bajo mínimo' && p.stock <= p.stockMinimo) || (filterStock === 'Sin stock' && p.stock === 0);
-        return matchSearch && matchCat && matchStock;
-    });
+    const desde: Date = useMemo(() => {
+        if (period === 'general' || !manualDesde) return new Date(0);
+        return new Date(manualDesde + 'T00:00:00');
+    }, [period, manualDesde]);
 
-    const sorted = [...filtered].sort((a, b) => {
-        let va: any, vb: any;
-        if (sortKey === 'margen') { va = getMargen(a); vb = getMargen(b); }
-        else if (sortKey === 'stock') { va = a.stock ?? 0; vb = b.stock ?? 0; }
-        else if (sortKey === 'precioCompra') { va = Number(a.ultimoPrecioCompra??0); vb = Number(b.ultimoPrecioCompra??0); }
-        else if (sortKey === 'precioVenta') { va = Number(a.ultimoPrecioVenta??0); vb = Number(b.ultimoPrecioVenta??0); }
-        else { va = (a[sortKey] || '').toLowerCase(); vb = (b[sortKey] || '').toLowerCase(); }
-        if (va < vb) return sortDir === 'asc' ? -1 : 1;
-        if (va > vb) return sortDir === 'asc' ? 1 : -1;
-        return 0;
-    });
+    const hasta: Date = useMemo(() => {
+        if (!manualHasta) return new Date();
+        return new Date(manualHasta + 'T23:59:59');
+    }, [manualHasta]);
 
-    const maxMargen = Math.max(...sorted.map(p => getMargen(p)), 1);
+    const prevRange = useMemo(() => {
+        if (period === 'general' || period === 'personalizado') return null;
+        return getPeriodRange(period);
+    }, [period]);
 
-    // ── KPIs reactivos ────────────────────────────────────────────────────────
-    const totalValor = allMovements.reduce((a, m) => {
-        const qty   = Number(m.cantidad || 0);
-        const costo = Number(m.costoUnitario || 0);
-        if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
-        if (['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))  return a - qty * costo;
-        return a;
-    }, 0);
-    const margenProm = filtered.length > 0 ? filtered.reduce((a, p) => a + getMargen(p), 0) / filtered.length : 0;
-    const bajosStock = filtered.filter(p => p.stock <= p.stockMinimo).length;
-    const catsActivas = new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean)).size;
+    const isEntrada = (m: any) => ['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
+    const isSalida  = (m: any) => ['SALIDA',  'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento);
+    const sumCant   = (arr: any[]) => arr.reduce((a, m) => a + m.cantidad, 0);
 
-    // ── Category stats ────────────────────────────────────────────────────────
-    const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
-        const prods = products.filter(p => p.categoria?.nombre === cat);
-        const valor = prods.reduce((a, p) => a + (p.stock * Number(p.ultimoPrecioCompra ?? 0)), 0);
-        const mg = prods.length > 0 ? prods.reduce((a, p) => a + getMargen(p), 0) / prods.length : 0;
-        return { cat, count: prods.length, valor, mg };
-    }).sort((a, b) => b.valor - a.valor);
-    const maxCatValor = catStats.length > 0 ? catStats[0].valor : 1;
+    const startOfDay       = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const endOfYesterday   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Movimientos filtrados por categoría activa
-    const filteredProductIds = new Set(filtered.map(p => p.id));
-    const filteredMovements = filterCat === 'Todas'
-        ? allMovements
-        : allMovements.filter(m => filteredProductIds.has(m.productoId));
+    const movsActual = useMemo(() =>
+        period === 'general'
+            ? movements
+            : movements.filter(m => { const f = new Date(m.fecha); return f >= desde && f <= hasta; }),
+        [movements, period, desde, hasta]
+    );
 
-    const thClass = (key: SortKey) =>
-        `p-3 text-xs font-semibold uppercase tracking-wider cursor-pointer select-none hover:text-blue-600 transition-colors whitespace-nowrap ${sortKey === key ? 'text-blue-600' : 'text-gray-400'}`;
+    const movsPrev = useMemo(() => {
+        if (!prevRange) return [];
+        return movements.filter(m => {
+            const f = new Date(m.fecha);
+            return f >= prevRange.prevDesde && f <= prevRange.prevHasta;
+        });
+    }, [movements, prevRange]);
+
+    const movsHoy  = movements.filter(m => new Date(m.fecha) >= startOfDay);
+    const movsAyer = movements.filter(m => { const f = new Date(m.fecha); return f >= startOfYesterday && f < endOfYesterday; });
+
+    const valorSnapshotHasta = useMemo(() =>
+        movements
+            .filter(m => new Date(m.fecha) <= hasta)
+            .reduce((acc, m) => {
+                const v = Number(m.cantidad || 0) * Number(m.costoUnitario || 0);
+                return acc + (isEntrada(m) ? v : -v);
+            }, 0),
+        [movements, hasta]
+    );
+
+    const valorSnapshotPrev = useMemo(() => {
+        if (!prevRange) return 0;
+        return movements
+            .filter(m => new Date(m.fecha) <= prevRange.prevHasta)
+            .reduce((acc, m) => {
+                const v = Number(m.cantidad || 0) * Number(m.costoUnitario || 0);
+                return acc + (isEntrada(m) ? v : -v);
+            }, 0);
+    }, [movements, prevRange]);
+
+    const valuePct = prevRange ? calcPct(valorSnapshotHasta, valorSnapshotPrev) : null;
+
+    const productosNuevosMes = useMemo(() =>
+        products.filter(p => p.createdAt && new Date(p.createdAt) >= desde).length,
+        [products, desde]
+    );
+    const categories = new Set(products.map(p => p.categoria?.nombre).filter(Boolean)).size;
+    const lowStockProducts = products.filter(p => p.stock <= p.stockMinimo);
+
+    const entradasActual = sumCant(movsActual.filter(isEntrada));
+    const salidasActual  = sumCant(movsActual.filter(isSalida));
+    const entradasPrev   = sumCant(movsPrev.filter(isEntrada));
+    const salidasPrev    = sumCant(movsPrev.filter(isSalida));
+    const entradasHoy    = sumCant(movsHoy.filter(isEntrada));
+    const salidasHoy     = sumCant(movsHoy.filter(isSalida));
+    const entradasAyer   = sumCant(movsAyer.filter(isEntrada));
+    const salidasAyer    = sumCant(movsAyer.filter(isSalida));
+
+    const entradasPct    = prevRange ? calcPct(entradasActual, entradasPrev) : null;
+    const salidasPct     = prevRange ? calcPct(salidasActual, salidasPrev)  : null;
+    const entradasHoyPct = calcPct(entradasHoy, entradasAyer);
+    const salidasHoyPct  = calcPct(salidasHoy, salidasAyer);
+
+    const totalStock   = products.reduce((a, p) => a + p.stock, 0);
+    const rotacionNum  = totalStock > 0 ? (salidasActual / totalStock) * 100 : 0;
+    const rotacionPrev = totalStock > 0 ? (salidasPrev / totalStock) * 100 : 0;
+    const rotacion     = rotacionNum.toFixed(1);
+    const rotacionPct  = prevRange ? calcPct(rotacionNum, rotacionPrev) : null;
+
+    const costoEntradas     = movsActual.filter(isEntrada).reduce((a, m) => a + Number(m.cantidad||0)*Number(m.costoUnitario||0), 0);
+    const costoEntradasPrev = movsPrev.filter(isEntrada).reduce((a, m) => a + Number(m.cantidad||0)*Number(m.costoUnitario||0), 0);
+
+    const ingresosSalidas     = movsActual.filter(m => m.tipoMovimiento === 'SALIDA').reduce((a, m) => a + Number(m.cantidad||0)*Number(m.precioUnitario||m.costoUnitario||0), 0);
+    const ingresosSalidasPrev = movsPrev.filter(m => m.tipoMovimiento === 'SALIDA').reduce((a, m) => a + Number(m.cantidad||0)*Number(m.precioUnitario||m.costoUnitario||0), 0);
+
+    const margenBruto     = ingresosSalidas - costoEntradas;
+    const margenBrutoPrev = ingresosSalidasPrev - costoEntradasPrev;
+    const margenPct       = ingresosSalidas > 0 ? (margenBruto / ingresosSalidas) * 100 : 0;
+    const margenPctPrev   = ingresosSalidasPrev > 0 ? (margenBrutoPrev / ingresosSalidasPrev) * 100 : 0;
+
+    const costoEntradasDelta   = prevRange ? calcPct(costoEntradas, costoEntradasPrev)     : null;
+    const ingresosSalidasDelta = prevRange ? calcPct(ingresosSalidas, ingresosSalidasPrev) : null;
+    const margenBrutoDelta     = prevRange ? calcPct(margenBruto, margenBrutoPrev)         : null;
+    const margenPorcentDelta   = prevRange ? calcPct(margenPct, margenPctPrev)             : null;
+
+    const productosConMov     = new Set(movsActual.map(m => m.productoId || m.producto?.id));
+    const productosConMovPrev = new Set(movsPrev.map(m => m.productoId || m.producto?.id));
+    const sinMovimiento       = products.filter(p => !productosConMov.has(p.id));
+    const sinMovimientoPrev   = products.filter(p => !productosConMovPrev.has(p.id));
+    const sinMovimientoDelta  = prevRange ? calcPct(sinMovimiento.length, sinMovimientoPrev.length) : null;
+
+    const valorInmovilizado = sinMovimiento.reduce((a, p) => a + Number(p.stock||0)*Number(p.costoUnitario||0), 0);
+    const pctInmovilizado   = valorSnapshotHasta > 0 ? (valorInmovilizado / valorSnapshotHasta) * 100 : 0;
+
+    const chartDateRange = useMemo(() => {
+        if (period === 'general' || !manualDesde) return null;
+        return {
+            desde: manualDesde,
+            hasta: manualHasta || toInputDate(new Date()),
+            isAllTime: false,
+        };
+    }, [period, manualDesde, manualHasta]);
+
+    // MEJORA 3: detectar datos insuficientes para la gráfica
+    const puntosEnGrafica = useMemo(() => {
+        const meses = new Set(movsActual.map(m => {
+            const f = new Date(m.fecha);
+            return `${f.getFullYear()}-${f.getMonth()}`;
+        }));
+        return meses.size;
+    }, [movsActual]);
+    const graficaVacia    = movsActual.length === 0;
+    const graficaPocaData = movsActual.length > 0 && puntosEnGrafica <= 1;
+
+    const selectedPeriodLabel =
+        period === 'personalizado'
+            ? `${manualDesde || '…'} → ${manualHasta || '…'}`
+            : PERIODS.find(p => p.key === period)!.label;
+
+    const compareLabel =
+        !prevRange ? '' :
+        period === 'este_mes'     ? 'vs mes ant.' :
+        period === 'mes_anterior' ? 'vs 2 meses atrás' :
+        period === 'ultimos_3m'   ? 'vs 3 meses previos' :
+        'vs año anterior';
 
     return (
-        <div className="space-y-5 animate-in fade-in duration-500">
+        <div className="space-y-6 animate-in fade-in duration-500">
 
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            {/* ── Header ────────────────────────────────────────────── */}
+            <div className="flex justify-between items-center flex-wrap gap-3">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Productos</h1>
-                    <p className="text-sm text-gray-500 mt-1">Gestiona el catálogo de productos de tu empresa.</p>
+                    <h1 className="text-3xl font-bold text-gray-900">Resumen General</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">
+                        Mostrando datos de: <span className="font-medium text-gray-600">{selectedPeriodLabel}</span>
+                    </p>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
-                        <Upload size={15} /> Importar CSV
-                    </button>
-                    <button onClick={exportCSV} className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
-                        <Download size={15} /> {selected.size > 0 ? `Exportar (${selected.size})` : 'Exportar CSV'}
-                    </button>
-                    <Link href="/dashboard/products/new" className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                        <Plus size={16} /> Nuevo Producto
+                {/* MEJORA 4: flex-wrap para que no se aplaste en pantallas pequeñas */}
+                <div className="flex gap-2 items-center flex-wrap">
+                    <Link href="/dashboard/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        <ArrowUpCircle size={16} /> Nueva Entrada
+                    </Link>
+                    <Link href="/dashboard/sales/new" className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors">
+                        <ArrowDownCircle size={16} /> Registrar Salida
                     </Link>
                 </div>
             </div>
 
-            {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
-
-            {/* ── KPIs reactivos ──────────────────────────────────────── */}
-            {!loading && (
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Productos</p>
-                            <InfoTooltip text="SKUs activos visibles según los filtros aplicados actualmente." position="bottom" />
-                        </div>
-                        <p className="text-2xl font-bold text-gray-800">{filtered.length}</p>
-                        <p className="text-xs text-gray-400 mt-1">de {products.length} totales</p>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Valor inventario</p>
-                            <InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos. Misma fórmula que el KPI del dashboard — ambos siempre muestran el mismo número." position="bottom" />
-                        </div>
-                        <p className="text-2xl font-bold text-gray-800">${totalValor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                        <p className="text-xs text-gray-400 mt-1">mismo cálculo que dashboard</p>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Margen promedio</p>
-                            <InfoTooltip text="Promedio de ((últimoPrecioVenta − últimoCostoCompra) ÷ últimoPrecioVenta × 100) de los productos visibles. Verde ≥30%, amarillo ≥15%, rojo <15%." position="bottom" />
-                        </div>
-                        <p className={`text-2xl font-bold ${margenProm >= 30 ? 'text-green-600' : margenProm >= 15 ? 'text-amber-500' : 'text-red-500'}`}>{margenProm.toFixed(1)}%</p>
-                        <p className="text-xs text-gray-400 mt-1">productos visibles</p>
-                    </div>
-                    <div className={`rounded-xl border shadow-sm p-4 ${bajosStock > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
-                        <div className="flex items-center gap-1 mb-1">
-                            <p className={`text-xs ${bajosStock > 0 ? 'text-orange-500' : 'text-gray-400'}`}>Stock bajo mínimo</p>
-                            <InfoTooltip text="Productos visibles donde stock actual ≤ stock mínimo definido en el catálogo. Haz clic en el filtro 'Bajo mínimo' para verlos." position="bottom" />
-                        </div>
-                        <p className={`text-2xl font-bold ${bajosStock > 0 ? 'text-orange-600' : 'text-gray-800'}`}>{bajosStock}</p>
-                        <p className={`text-xs mt-1 ${bajosStock > 0 ? 'text-orange-400' : 'text-gray-400'}`}>{bajosStock > 0 ? 'requieren atención' : 'todo en orden'}</p>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                        <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Categorías</p>
-                            <InfoTooltip text="Número de categorías distintas en los productos visibles. Haz clic en una tarjeta de categoría para filtrar." position="bottom" />
-                        </div>
-                        <p className="text-2xl font-bold text-gray-800">{catsActivas}</p>
-                        <p className="text-xs text-gray-400 mt-1">en selección actual</p>
-                    </div>
+            {/* ── Filtro global ─────────────────────────────────────── */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <Calendar size={16} className="text-blue-500" />
+                    <span className="text-sm font-medium text-gray-600">Filtrar período:</span>
                 </div>
-            )}
-
-            {/* ── Distribución por categoría ──────────────────────────── */}
-            {!loading && catStats.length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div className="flex items-center justify-between mb-4">
-                        <p className="text-sm font-semibold text-gray-700">Distribución por categoría</p>
-                        <div className="flex items-center gap-3">
-                            <button onClick={() => setShowTendencia(v => !v)}
-                                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${showTendencia ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                                <BarChart2 size={13} /> {showTendencia ? 'Ocultar tendencia' : 'Ver tendencia'}
-                            </button>
-
-                            <p className="text-xs text-gray-400">Haz clic para filtrar</p>
-                        </div>
-                    </div>
-                    {catStats.length <= 6 ? (
-                        <div className={`grid gap-3 ${catStats.length <= 2 ? 'grid-cols-2' : catStats.length === 3 ? 'grid-cols-3' : catStats.length === 4 ? 'grid-cols-2 md:grid-cols-4' : catStats.length === 5 ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
-                            {catStats.map(({ cat, count, valor, mg }) => {
-                                const color = getCatColor(cat);
-                                const isActive = filterCat === cat;
-                                return (
-                                    <button key={cat} onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
-                                        className={`text-left rounded-xl p-3 border transition-all cursor-pointer ${isActive ? 'border-2' : 'border hover:shadow-sm'}`}
-                                        style={{ borderColor: isActive ? color : color + '30', background: color + '08' }}>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-semibold truncate max-w-[80px]" style={{ color }}>{cat}</span>
-                                            <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ background: color + '20', color }}>{count}</span>
-                                        </div>
-                                        <p className="text-base font-bold text-gray-800 mb-0.5">${valor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                                        <p className="text-xs text-gray-400 mb-2">Margen <span className="font-semibold text-green-600">{mg.toFixed(1)}%</span></p>
-                                        <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(valor / maxCatValor) * 100}%`, background: color }} />
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div>
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                {catStats.map(({ cat, count, valor, mg }) => {
-                                    const color = getCatColor(cat);
-                                    const isActive = filterCat === cat;
-                                    return (
-                                        <button key={cat} onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border cursor-pointer hover:shadow-sm"
-                                            style={{
-                                                background: isActive ? color : color + '12',
-                                                color: isActive ? 'white' : color,
-                                                borderColor: isActive ? color : color + '40',
-                                            }}>
-                                            <span>{cat}</span>
-                                            <span className="font-bold opacity-80">·{count}</span>
-                                            <span className="opacity-60">${valor >= 1000 ? (valor/1000).toFixed(0)+'k' : valor}</span>
-                                            <span className="opacity-60">{mg.toFixed(0)}%mg</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <p className="text-xs text-gray-400">{catStats.length} categorías · haz clic para filtrar</p>
-                        </div>
+                <div className="flex flex-wrap gap-1.5">
+                    {PERIODS.map(p => (
+                        <button
+                            key={p.key}
+                            onClick={() => handlePeriodButton(p.key)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                                period === p.key
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                            }`}
+                        >
+                            {p.shortLabel}
+                        </button>
+                    ))}
+                    {period === 'personalizado' && (
+                        <span className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 text-white border border-purple-600 shadow-sm">
+                            Personalizado
+                        </span>
                     )}
-                    {filterCat !== 'Todas' && <button onClick={() => setFilterCat('Todas')} className="mt-3 text-xs text-blue-500 hover:underline">✕ Quitar filtro de categoría</button>}
-
-
                 </div>
-            )}
-
-            {/* ── Tendencia de movimientos ────────────────────────────── */}
-            {!loading && showTendencia && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <AnalyticsChart
-                        externalMovements={filteredMovements}
-                        title={filterCat !== 'Todas' ? filterCat : undefined}
-                        compact
-                    />
-                </div>
-            )}
-
-            {/* ── Barra de acciones masivas ───────────────────────────── */}
-            {selected.size > 0 && (
-                <div className="bg-blue-600 rounded-xl px-5 py-3 flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <Check size={16} className="text-white" />
-                        <span className="text-sm font-medium text-white">{selected.size} producto{selected.size !== 1 ? 's' : ''} seleccionado{selected.size !== 1 ? 's' : ''}</span>
+                <div className="hidden sm:block w-px h-5 bg-gray-200 flex-shrink-0" />
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-400 font-medium flex-shrink-0">Desde</span>
+                        <input
+                            type="date"
+                            value={manualDesde}
+                            onChange={e => handleManualDesde(e.target.value)}
+                            className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition-colors">
-                            <Download size={13} /> Exportar selección
-                        </button>
-                        <button onClick={async () => {
-                            if (!confirm(`¿Desactivar ${selected.size} productos?`)) return;
-                            for (const id of Array.from(selected)) {
-                                try { await fetchApi(`/products/${id}`, { method: 'PUT', body: JSON.stringify({ activo: false }) }); } catch {}
-                            }
-                            setSelected(new Set()); loadProducts();
-                        }} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition-colors">
-                            Desactivar
-                        </button>
-                        <button onClick={async () => {
-                            if (!confirm(`¿Eliminar ${selected.size} productos?`)) return;
-                            for (const id of Array.from(selected)) {
-                                try { await fetchApi(`/products/${id}`, { method: 'DELETE' }); } catch {}
-                            }
-                            setProducts(p => p.filter(x => !selected.has(x.id)));
-                            setSelected(new Set());
-                        }} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg transition-colors">
-                            <Trash2 size={13} /> Eliminar
-                        </button>
-                        <button onClick={() => setSelected(new Set())} className="p-1.5 text-white/70 hover:text-white"><X size={16} /></button>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-400 font-medium flex-shrink-0">Hasta</span>
+                        <input
+                            type="date"
+                            value={manualHasta}
+                            onChange={e => handleManualHasta(e.target.value)}
+                            className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        />
                     </div>
-                </div>
-            )}
-
-            {/* ── Toolbar ─────────────────────────────────────────────── */}
-            <div className="flex flex-wrap gap-3 items-center">
-                <div className="relative flex-1 min-w-[200px] max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                    <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="Buscar por SKU, nombre o categoría..."
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800" />
-                </div>
-                <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                    {categories.map(c => <option key={c}>{c}</option>)}
-                </select>
-                <select value={filterStock} onChange={e => setFilterStock(e.target.value)} className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                    <option>Todos</option><option>Bajo mínimo</option><option>Sin stock</option>
-                </select>
-                <div className="flex border border-gray-200 rounded-lg overflow-hidden ml-auto">
-                    <button onClick={() => setView('list')} className={`p-2 transition-colors ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-400 hover:text-gray-600'}`}><List size={18} /></button>
-                    <button onClick={() => setView('grid')} className={`p-2 transition-colors border-l border-gray-200 ${view === 'grid' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-400 hover:text-gray-600'}`}><LayoutGrid size={18} /></button>
                 </div>
             </div>
 
-            {/* ── VISTA GRILLA ────────────────────────────────────────── */}
-            {view === 'grid' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {loading ? <p className="col-span-full text-center text-gray-500 py-10">Cargando...</p>
-                        : sorted.length === 0 ? <p className="col-span-full text-center text-gray-500 py-10">No se encontraron productos.</p>
-                        : sorted.map(product => {
-                            const isLow = product.stock <= product.stockMinimo;
-                            const mg = getMargen(product).toFixed(0);
-                            const isSelected = selected.has(product.id);
-                            return (
-                                <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
-                                    <div className="relative">
-                                        <Link href={`/dashboard/products/${product.id}`}>
-                                            <div className="h-28 bg-gray-50 flex items-center justify-center border-b border-gray-100">
-                                                <ProductImage imagen={product.imagen} nombre={product.nombre} categoria={product.categoria?.nombre} size={64} />
-                                            </div>
-                                        </Link>
-                                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)}
-                                            className="absolute top-2 left-2 w-4 h-4 cursor-pointer accent-blue-600" />
-                                    </div>
-                                    <div className="p-3">
-                                        <p className="text-xs text-gray-400 font-mono mb-1">{product.sku}</p>
-                                        <Link href={`/dashboard/products/${product.id}`}><p className="text-sm font-semibold text-gray-800 leading-tight hover:text-blue-600 line-clamp-2 mb-2">{product.nombre}</p></Link>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>{product.categoria?.nombre || 'Sin cat.'}</span>
-                                            <span className={`text-xs font-semibold ${Number(mg) >= 30 ? 'text-green-600' : Number(mg) >= 15 ? 'text-amber-500' : 'text-red-500'}`}>{mg}%</span>
-                                        </div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                            <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-800'}`}>{product.stock}</span>
-                                            <span className="text-sm font-semibold text-gray-800">{product.ultimoPrecioVenta ? `$${Number(product.ultimoPrecioVenta).toLocaleString()}` : '—'}</span>
-                                        </div>
-                                        {isLow && <div className="mt-1"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
-                                        <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
-                                            <button onClick={() => setQuickMov({ product, type: 'entrada' })} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors">
-                                                <ArrowUpCircle size={13} /> Entrada
-                                            </button>
-                                            <button onClick={() => setQuickMov({ product, type: 'salida' })} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                                                <ArrowDownCircle size={13} /> Salida
-                                            </button>
-                                            <Link href={`/dashboard/products/${product.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors">
-                                                <Edit size={13} />
-                                            </Link>
-                                            <button onClick={() => handleDelete(product.id, product.nombre)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-red-50 hover:text-red-500 rounded-md transition-colors">
-                                                <Trash2 size={13} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                </div>
-            )}
-
-            {/* ── VISTA LISTA ─────────────────────────────────────────── */}
-            {view === 'list' && (
-                <Card>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                    <th className="p-3 w-10">
-                                        <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} className="w-4 h-4 cursor-pointer accent-blue-600" />
-                                    </th>
-                                    <th className="p-3 w-10"></th>
-                                    <th className={thClass('sku')} onClick={() => handleSort('sku')}>SKU <SortIcon col="sku" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={thClass('nombre')} onClick={() => handleSort('nombre')}>Producto <SortIcon col="nombre" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Categoría</th>
-                                    <th className={`${thClass('stock')} text-right`} onClick={() => handleSort('stock')}>Stock <SortIcon col="stock" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>Últ. Compra <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('precioVenta')} text-right`} onClick={() => handleSort('precioVenta')}>Últ. Venta <SortIcon col="precioVenta" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('margen')} text-right`} onClick={() => handleSort('margen')}>
-                                        <span className="inline-flex items-center gap-1 justify-end w-full">
-                                            Margen <SortIcon col="margen" sortKey={sortKey} sortDir={sortDir} />
-                                            <InfoTooltip text="(último precioVenta − último costoCompra) ÷ último precioVenta × 100. Verde ≥30%, amarillo ≥15%, rojo <15%." position="top" />
-                                        </span>
-                                    </th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {loading ? <tr><td colSpan={10} className="p-8 text-center text-gray-500">Cargando...</td></tr>
-                                    : sorted.length === 0 ? <tr><td colSpan={10} className="p-8 text-center text-gray-500">No se encontraron productos.</td></tr>
-                                    : sorted.map(product => {
-                                        const isLow = product.stock <= product.stockMinimo;
-                                        const mg = getMargen(product);
-                                        const isSelected = selected.has(product.id);
-                                        return (
-                                            <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
-                                                <td className="p-3">
-                                                    <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)} className="w-4 h-4 cursor-pointer accent-blue-600" />
-                                                </td>
-                                                <td className="p-2"><ProductImage imagen={product.imagen} nombre={product.nombre} categoria={product.categoria?.nombre} size={32} /></td>
-                                                <td className="p-3 text-xs font-mono text-gray-500">{product.sku}</td>
-                                                <td className="p-3">
-                                                    <Link href={`/dashboard/products/${product.id}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">{product.nombre}</Link>
-                                                    {isLow && <div className="mt-0.5"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
-                                                </td>
-                                                <td className="p-3">
-                                                    <span className="px-2 py-1 rounded-full text-xs font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>
-                                                        {product.categoria?.nombre || 'Sin categoría'}
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 text-right">
-                                                    <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-700'}`}>{product.stock ?? 0}</span>
-                                                    <span className="text-xs text-gray-400 ml-1">/ {product.stockMinimo}</span>
-                                                </td>
-                                                <td className="p-3 text-sm text-gray-500 text-right">{product.ultimoPrecioCompra ? `$${Number(product.ultimoPrecioCompra).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-sm font-semibold text-gray-800 text-right">{product.ultimoPrecioVenta ? `$${Number(product.ultimoPrecioVenta).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-right">
-                                                    <span className={`text-sm font-semibold ${mg >= 30 ? 'text-green-600' : mg >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{mg.toFixed(1)}%</span>
-                                                    <div className="h-1 mt-1 rounded-full bg-gray-100 overflow-hidden w-16 ml-auto">
-                                                        <div className="h-full rounded-full" style={{ width: `${(mg / maxMargen) * 100}%`, background: mg >= 30 ? '#22c55e' : mg >= 15 ? '#f59e0b' : '#ef4444' }} />
-                                                    </div>
-                                                </td>
-                                                <td className="p-3 text-right">
-                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => setQuickMov({ product, type: 'entrada' })} className="p-1.5 text-green-500 hover:bg-green-50 rounded-md transition-colors" title="Entrada rápida">
-                                                            <ArrowUpCircle size={15} />
-                                                        </button>
-                                                        <button onClick={() => setQuickMov({ product, type: 'salida' })} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md transition-colors" title="Salida rápida">
-                                                            <ArrowDownCircle size={15} />
-                                                        </button>
-                                                        <Link href={`/dashboard/products/${product.id}/edit`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors inline-flex">
-                                                            <Edit size={15} />
-                                                        </Link>
-                                                        <button onClick={() => handleDelete(product.id, product.nombre)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
-                                                            <Trash2 size={15} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                            </tbody>
-                        </table>
+            {/* ══════════════════════════════════════════════════════════
+                SECCIÓN 1 — INVENTARIO
+            ══════════════════════════════════════════════════════════ */}
+            <div>
+                <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Inventario</p>
+                    <div className="flex items-center gap-2">
+                        {/* MEJORA 5: aclarar qué KPIs son "estado actual" vs "del período" */}
+                        <span className="text-xs text-gray-400 italic hidden sm:inline">Valor · Productos · Stock mínimo = estado actual</span>
+                        <span className="text-xs text-blue-500 font-medium px-2 py-0.5 bg-blue-50 rounded-full border border-blue-100">
+                            {selectedPeriodLabel}
+                        </span>
                     </div>
-                    {!loading && (
-                        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-                            <span>{sorted.length} producto{sorted.length !== 1 ? 's' : ''} · {selected.size > 0 && <span className="text-blue-600 font-medium">{selected.size} seleccionado{selected.size !== 1 ? 's' : ''}</span>}</span>
-                            {sortKey !== 'nombre' && (
-                                <span className="text-xs text-blue-500">Ordenado por <strong>{sortKey}</strong> {sortDir === 'asc' ? '↑' : '↓'} ·{' '}
-                                    <button onClick={() => { setSortKey('nombre'); setSortDir('asc'); }} className="underline">limpiar</button>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+
+                    {/* Valor inventario */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Valor inventario</p>
+                                <InfoTooltip text="Snapshot del valor del inventario al cierre del período: Σ(entradas×costo) − Σ(salidas×costo). Refleja el estado real del almacén." />
+                            </div>
+                            <div className="p-2 bg-blue-50 rounded-lg"><DollarSign size={16} className="text-blue-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-800">
+                            {loading ? '...' : `$${fmt(valorSnapshotHasta)}`}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={valuePct} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                    {/* Total productos */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Total productos</p>
+                                <InfoTooltip text="Número de SKUs en el catálogo. Estado actual del sistema, independiente del período." />
+                            </div>
+                            <div className="p-2 bg-purple-50 rounded-lg"><Package size={16} className="text-purple-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-800">{loading ? '...' : products.length}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? (
+                                <p className="text-xs text-gray-400">Cargando...</p>
+                            ) : productosNuevosMes > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+                                    <TrendingUp size={11} />+{productosNuevosMes} en período
                                 </span>
+                            ) : (
+                                <p className="text-xs text-gray-400">{categories} categorías activas</p>
                             )}
                         </div>
-                    )}
-                </Card>
+                    </div>
+
+                    {/* Stock bajo mínimo */}
+                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${lowStockProducts.length > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className={`text-sm font-medium ${lowStockProducts.length > 0 ? 'text-orange-600' : 'text-gray-500'}`}>Stock bajo mínimo</p>
+                                <InfoTooltip text="Productos donde stock actual ≤ stock mínimo. Estado actual, siempre global." position="top" />
+                            </div>
+                            <div className={`p-2 rounded-lg ${lowStockProducts.length > 0 ? 'bg-orange-100' : 'bg-gray-100'}`}>
+                                <AlertTriangle size={16} className={lowStockProducts.length > 0 ? 'text-orange-500' : 'text-gray-400'} />
+                            </div>
+                        </div>
+                        <p className={`text-3xl font-bold ${lowStockProducts.length > 0 ? 'text-orange-600' : 'text-gray-800'}`}>
+                            {loading ? '...' : `${lowStockProducts.length} productos`}
+                        </p>
+                        <Link
+                            href="/dashboard/products"
+                            className={`text-xs mt-2 inline-flex items-center gap-1 hover:underline ${lowStockProducts.length > 0 ? 'text-orange-500' : 'text-gray-400'}`}
+                        >
+                            {lowStockProducts.length > 0 ? <>Ver detalles <ExternalLink size={10}/></> : 'Todo en orden'}
+                        </Link>
+                    </div>
+
+                    {/* Entradas */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">
+                                    {period === 'general' ? 'Entradas totales' : period === 'este_mes' ? 'Entradas hoy' : 'Entradas período'}
+                                </p>
+                                <InfoTooltip text="Suma de unidades de ENTRADA y AJUSTE_POSITIVO en el período seleccionado." />
+                            </div>
+                            <div className="p-2 bg-green-50 rounded-lg"><ArrowUpCircle size={16} className="text-green-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-green-600">
+                            {loading ? '...' : `+${period === 'este_mes' ? entradasHoy : entradasActual}`}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
+                                period === 'este_mes' ? (
+                                    <>
+                                        <DeltaBadge pct={entradasHoyPct} label="vs ayer" />
+                                        <span className="text-xs text-gray-400">· +{entradasActual} mes</span>
+                                        {entradasPct !== null && <DeltaBadge pct={entradasPct} label={compareLabel} />}
+                                    </>
+                                ) : (
+                                    <DeltaBadge pct={entradasPct} label={compareLabel || undefined} />
+                                )
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Salidas */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">
+                                    {period === 'general' ? 'Salidas totales' : period === 'este_mes' ? 'Salidas hoy' : 'Salidas período'}
+                                </p>
+                                <InfoTooltip text="Suma de unidades de SALIDA y AJUSTE_NEGATIVO en el período seleccionado." />
+                            </div>
+                            <div className="p-2 bg-red-50 rounded-lg"><ArrowDownCircle size={16} className="text-red-500" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-red-500">
+                            {loading ? '...' : `-${period === 'este_mes' ? salidasHoy : salidasActual}`}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
+                                period === 'este_mes' ? (
+                                    <>
+                                        <DeltaBadge pct={salidasHoyPct} label="vs ayer" />
+                                        <span className="text-xs text-gray-400">· -{salidasActual} mes</span>
+                                        {salidasPct !== null && <DeltaBadge pct={salidasPct} label={compareLabel} />}
+                                    </>
+                                ) : (
+                                    <DeltaBadge pct={salidasPct} label={compareLabel || undefined} />
+                                )
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Rotación */}
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Rotación del período</p>
+                                <InfoTooltip text="(Salidas del período ÷ Stock total actual) × 100." position="top" />
+                            </div>
+                            <div className="p-2 bg-teal-50 rounded-lg"><RotateCcw size={16} className="text-teal-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-800">{loading ? '...' : `${rotacion}%`}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={rotacionPct} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            {/* ══════════════════════════════════════════════════════════
+                SECCIÓN 2 — FINANZAS
+            ══════════════════════════════════════════════════════════ */}
+            <div>
+                <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Finanzas</p>
+                    <span className="text-xs text-blue-500 font-medium px-2 py-0.5 bg-blue-50 rounded-full border border-blue-100">
+                        {selectedPeriodLabel}
+                    </span>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Costo de entradas</p>
+                                <InfoTooltip text="Σ(cantidad × costoUnitario) de todas las entradas en el período. Capital invertido en compras." />
+                            </div>
+                            <div className="p-2 bg-blue-50 rounded-lg"><ShoppingCart size={16} className="text-blue-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-gray-800">{loading ? '...' : `$${fmt(costoEntradas)}`}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={costoEntradasDelta} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Ingresos por salidas</p>
+                                <InfoTooltip text="Σ(cantidad × precioVenta) de salidas tipo SALIDA en el período. No incluye ajustes." />
+                            </div>
+                            <div className="p-2 bg-green-50 rounded-lg"><TrendingUp size={16} className="text-green-600" /></div>
+                        </div>
+                        <p className="text-3xl font-bold text-green-600">{loading ? '...' : `$${fmt(ingresosSalidas)}`}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={ingresosSalidasDelta} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Margen bruto</p>
+                                <InfoTooltip text="Ingresos por salidas − Costo de entradas del período." position="top" />
+                            </div>
+                            <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={16} className="text-emerald-600" /></div>
+                        </div>
+                        <p className={`text-3xl font-bold ${margenBruto >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {loading ? '...' : `$${fmt(margenBruto)}`}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={margenBrutoDelta} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                    {/* MEJORA 1: Margen % con tooltip contextual + alerta visual si es muy alto */}
+                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${!loading && margenPct > 80 && ingresosSalidas > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-500 font-medium">Margen %</p>
+                                {!loading && <MargenTooltipDetalle margenPct={margenPct} costoEntradas={costoEntradas} ingresosSalidas={ingresosSalidas} />}
+                            </div>
+                            <div className="p-2 bg-emerald-50 rounded-lg"><Percent size={16} className="text-emerald-600" /></div>
+                        </div>
+                        <p className={`text-3xl font-bold ${margenPct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {loading ? '...' : `${margenPct.toFixed(1)}%`}
+                        </p>
+                        {!loading && margenPct > 80 && ingresosSalidas > 0 && (
+                            <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                <AlertTriangle size={11} /> Margen alto — revisa el tooltip
+                            </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-2">
+                            {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={margenPorcentDelta} label={compareLabel || undefined} />}
+                        </div>
+                    </div>
+
+                    {/* MEJORA 2: Sin movimiento — accionable con lista desplegable */}
+                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${sinMovimiento.length > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className={`text-sm font-medium ${sinMovimiento.length > 0 ? 'text-red-600' : 'text-gray-500'}`}>Sin movimiento</p>
+                                <InfoTooltip text="Productos sin ninguna entrada ni salida en el período seleccionado." position="top" />
+                            </div>
+                            <div className={`p-2 rounded-lg ${sinMovimiento.length > 0 ? 'bg-red-100' : 'bg-gray-100'}`}>
+                                <Ban size={16} className={sinMovimiento.length > 0 ? 'text-red-500' : 'text-gray-400'} />
+                            </div>
+                        </div>
+                        <p className={`text-3xl font-bold ${sinMovimiento.length > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                            {loading ? '...' : `${sinMovimiento.length} items`}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            {loading ? (
+                                <p className="text-xs text-gray-400">Cargando...</p>
+                            ) : sinMovimiento.length > 0 ? (
+                                <>
+                                    <DeltaBadge pct={sinMovimientoDelta} label={compareLabel || undefined} />
+                                    <button
+                                        onClick={() => setShowSinMovimiento(v => !v)}
+                                        className="text-xs text-red-500 hover:underline"
+                                    >
+                                        {showSinMovimiento ? 'Ocultar ▲' : 'Ver productos ▼'}
+                                    </button>
+                                </>
+                            ) : (
+                                <DeltaBadge pct={sinMovimientoDelta} label={compareLabel || undefined} />
+                            )}
+                        </div>
+
+                        {/* Lista desplegable */}
+                        {showSinMovimiento && sinMovimiento.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-red-100 space-y-1 max-h-40 overflow-y-auto">
+                                {sinMovimiento.map((p: any) => (
+                                    <Link
+                                        key={p.id}
+                                        href={`/dashboard/products/${p.id}`}
+                                        className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-red-100 transition-colors group"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-medium text-gray-700 truncate group-hover:text-red-700">{p.nombre}</p>
+                                            <p className="text-xs text-gray-400">{p.sku} · Stock: {p.stock}</p>
+                                        </div>
+                                        <ExternalLink size={11} className="text-gray-300 group-hover:text-red-400 flex-shrink-0 ml-2" />
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Valor inmovilizado */}
+                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${valorInmovilizado > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-1.5">
+                                <p className={`text-sm font-medium ${valorInmovilizado > 0 ? 'text-red-600' : 'text-gray-500'}`}>Valor inmovilizado</p>
+                                <InfoTooltip text="Σ(stock × costoUnitario) de los productos sin movimiento en el período." position="top" />
+                            </div>
+                            <div className={`p-2 rounded-lg ${valorInmovilizado > 0 ? 'bg-red-100' : 'bg-gray-100'}`}>
+                                <Warehouse size={16} className={valorInmovilizado > 0 ? 'text-red-500' : 'text-gray-400'} />
+                            </div>
+                        </div>
+                        <p className={`text-3xl font-bold ${valorInmovilizado > 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                            {loading ? '...' : `$${fmt(valorInmovilizado)}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-2">
+                            {loading ? '' : valorInmovilizado === 0
+                                ? 'Sin capital inmovilizado en el período'
+                                : `${pctInmovilizado.toFixed(1)}% del inventario total`
+                            }
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+
+            {/* ══════════════════════════════════════════════════════════
+                SECCIÓN 3 — TENDENCIA
+                MEJORA 3: estados vacío / pocos datos
+            ══════════════════════════════════════════════════════════ */}
+            {!loading && graficaVacia ? (
+                <EmptyChartState desde={manualDesde} hasta={manualHasta} />
+            ) : !loading && graficaPocaData ? (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                        <AlertTriangle size={14} className="flex-shrink-0" />
+                        <span>
+                            Pocos datos en el período — la gráfica puede no ser representativa.{' '}
+                            Prueba con{' '}
+                            <button onClick={() => handlePeriodButton('este_mes')} className="underline font-semibold">Este mes</button>
+                            {' '}o{' '}
+                            <button onClick={() => handlePeriodButton('ultimos_3m')} className="underline font-semibold">Últimos 3 meses</button>.
+                        </span>
+                    </div>
+                    <AnalyticsChart externalMovements={movements} externalDateRange={chartDateRange} />
+                </div>
+            ) : (
+                <AnalyticsChart externalMovements={movements} externalDateRange={chartDateRange} />
             )}
 
-            {/* ── Modales ──────────────────────────────────────────────── */}
-            {showStockModal && (
-                <StockBarChart products={sorted} onClose={() => setShowStockModal(false)} />
-            )}
-            {quickMov && (
-                <QuickMovModal
-                    product={quickMov.product}
-                    type={quickMov.type}
-                    onClose={() => setQuickMov(null)}
-                    onDone={() => { setQuickMov(null); loadProducts(); }}
-                />
-            )}
-            {showImport && (
-                <ImportModal
-                    onClose={() => setShowImport(false)}
-                    onDone={() => { setShowImport(false); loadProducts(); }}
-                />
-            )}
+            {/* ══════════════════════════════════════════════════════════
+                SECCIÓN 4 — OPERACIONES
+            ══════════════════════════════════════════════════════════ */}
+            <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Operaciones</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-base font-semibold text-gray-800">Stock crítico</h2>
+                            <Link href="/dashboard/products" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                                Ver todos <ExternalLink size={10} />
+                            </Link>
+                        </div>
+                        {loading ? (
+                            <p className="text-sm text-gray-400 text-center py-6">Cargando...</p>
+                        ) : lowStockProducts.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-6 gap-2">
+                                <div className="p-3 bg-green-50 rounded-full">
+                                    <Package size={20} className="text-green-500" />
+                                </div>
+                                <p className="text-sm text-gray-500 font-medium">Todo el inventario está sobre el mínimo</p>
+                                <p className="text-xs text-gray-400">No hay productos en estado crítico</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-50">
+                                {lowStockProducts.slice(0, 6).map((p: any) => {
+                                    const isCritical = p.stock <= Math.floor(p.stockMinimo * 0.5);
+                                    return (
+                                        <Link
+                                            key={p.id}
+                                            href={`/dashboard/products/${p.id}`}
+                                            className="flex items-center justify-between py-2.5 group hover:bg-gray-50 px-1 rounded-lg transition-colors"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">{p.nombre}</p>
+                                                <p className="text-xs text-gray-400">{p.sku || '—'}</p>
+                                            </div>
+                                            <div className="flex items-center gap-3 ml-3 flex-shrink-0">
+                                                <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${isCritical ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    Stock: {p.stock}
+                                                </span>
+                                                <span className="text-xs text-gray-400">Mín: {p.stockMinimo}</span>
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                                {lowStockProducts.length > 6 && (
+                                    <div className="pt-2">
+                                        <Link href="/dashboard/products" className="text-xs text-blue-500 hover:underline">
+                                            + {lowStockProducts.length - 6} productos más con stock crítico →
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-base font-semibold text-gray-800">Compras pendientes</h2>
+                            <Link href="/dashboard/purchases" className="text-xs text-blue-500 hover:underline">Ver todas →</Link>
+                        </div>
+                        {loading ? (
+                            <p className="text-sm text-gray-400 text-center py-6">Cargando...</p>
+                        ) : (
+                            <p className="text-sm text-gray-400 text-center py-6">
+                                Conecta el módulo de órdenes de compra para ver las pendientes.
+                            </p>
+                        )}
+                    </div>
+
+                </div>
+            </div>
         </div>
     );
 }
