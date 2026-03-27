@@ -1,15 +1,53 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import {
     Search, Plus, X, UserCircle2, Calendar, ChevronRight,
     AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown,
     TrendingDown, ShoppingCart, Coffee, AlertTriangle,
-    PlusCircle, MinusCircle, UserX,
+    MinusCircle, UserX, HelpCircle,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 
+// ── Tooltip de ayuda ──────────────────────────────────────────────────────────
+function KpiTooltip({ text }: { text: string }) {
+    const [visible, setVisible] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const close = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setVisible(false);
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, []);
+
+    return (
+        <div ref={ref} className="relative inline-flex items-center">
+            <button
+                onMouseEnter={() => setVisible(true)}
+                onMouseLeave={() => setVisible(false)}
+                onClick={() => setVisible(v => !v)}
+                className="text-gray-300 hover:text-gray-400 transition-colors cursor-pointer ml-1"
+                aria-label="Más información"
+            >
+                <HelpCircle size={13}/>
+            </button>
+            {visible && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50
+                                w-52 bg-gray-900 text-white text-xs rounded-lg px-3 py-2
+                                shadow-xl leading-relaxed pointer-events-none">
+                    {text}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2
+                                    border-4 border-transparent border-t-gray-900"/>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
 interface DetalleSalida {
     id: string;
     productoId: string;
@@ -30,20 +68,19 @@ interface Salida {
 }
 
 // ── Config visual por tipo ────────────────────────────────────────────────────
-const tipoConfig: Record<string, {
-    label: string;
-    cls: string;
-    Icon: React.ElementType;
-}> = {
+// AJUSTE_POSITIVO se excluye de esta página completamente.
+const tipoConfig: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
     VENTA:           { label: 'Salida',          cls: 'bg-blue-100 text-blue-700',     Icon: ShoppingCart  },
     CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-amber-100 text-amber-700',   Icon: Coffee        },
     PERDIDA:         { label: 'Pérdida / Merma', cls: 'bg-red-100 text-red-600',       Icon: AlertTriangle },
-    AJUSTE_POSITIVO: { label: 'Ajuste (+)',       cls: 'bg-green-100 text-green-700',   Icon: PlusCircle    },
     AJUSTE_NEGATIVO: { label: 'Ajuste (−)',       cls: 'bg-purple-100 text-purple-700', Icon: MinusCircle   },
 };
 
 const getTipoConfig = (tipo: string) =>
     tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600', Icon: TrendingDown };
+
+// Tipos que SÍ se muestran en esta página (sin AJUSTE_POSITIVO)
+const TIPOS_VISIBLES = ['VENTA', 'CONSUMO_INTERNO', 'PERDIDA', 'AJUSTE_NEGATIVO'];
 
 const PAGE_SIZE = 20;
 
@@ -67,13 +104,14 @@ function sortSalidas(list: Salida[], key: SortKey, dir: SortDir): Salida[] {
     });
 }
 
+// ── Componente principal ──────────────────────────────────────────────────────
 export default function SalesPage() {
-    const [salidas,     setSalidas]     = useState<Salida[]>([]);
-    const [loading,     setLoading]     = useState(true);
-    const [error,       setError]       = useState('');
-    const [detalle,     setDetalle]     = useState<Salida | null>(null);
-    const [page,        setPage]        = useState(1);
-    const [showFiltros, setShowFiltros] = useState(false);
+    const [todasSalidas, setTodasSalidas] = useState<Salida[]>([]);
+    const [loading,      setLoading]      = useState(true);
+    const [error,        setError]        = useState('');
+    const [detalle,      setDetalle]      = useState<Salida | null>(null);
+    const [page,         setPage]         = useState(1);
+    const [showFiltros,  setShowFiltros]  = useState(false);
 
     const [busqueda,       setBusqueda]       = useState('');
     const [filtroTipo,     setFiltroTipo]     = useState<string>('todos');
@@ -86,13 +124,16 @@ export default function SalesPage() {
 
     useEffect(() => {
         fetchApi('/sales')
-            .then(setSalidas)
+            .then((data: Salida[]) => {
+                // Filtrar AJUSTE_POSITIVO — no pertenece a esta página
+                setTodasSalidas(data.filter(s => TIPOS_VISIBLES.includes(s.tipo)));
+            })
             .catch((err: any) => setError(err.message || 'Error al cargar salidas'))
             .finally(() => setLoading(false));
     }, []);
 
     const salidasFiltradas = useMemo(() => {
-        let result = salidas.filter(s => {
+        let result = todasSalidas.filter(s => {
             if (busqueda.trim()) {
                 const q = busqueda.toLowerCase();
                 const match =
@@ -113,7 +154,7 @@ export default function SalesPage() {
             return true;
         });
         return sortSalidas(result, sortKey, sortDir);
-    }, [salidas, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
+    }, [todasSalidas, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const kpiTotal     = salidasFiltradas.reduce((a, s) => a + calcTotal(s), 0);
@@ -123,7 +164,6 @@ export default function SalesPage() {
     const kpiPromedio  = kpiCount > 0 ? kpiTotal / kpiCount : 0;
     const kpiVentas    = salidasFiltradas.filter(s => s.tipo === 'VENTA').length;
     const kpiPerdidas  = salidasFiltradas.filter(s => s.tipo === 'PERDIDA').length;
-    const kpiAjustePos = salidasFiltradas.filter(s => s.tipo === 'AJUSTE_POSITIVO').length;
     const kpiAjusteNeg = salidasFiltradas.filter(s => s.tipo === 'AJUSTE_NEGATIVO').length;
 
     const totalPages = Math.max(1, Math.ceil(salidasFiltradas.length / PAGE_SIZE));
@@ -149,18 +189,18 @@ export default function SalesPage() {
         </span>
     );
 
+    // Conteo por tipo para los tabs (solo tipos visibles)
     const tiposCounts = useMemo(() => {
-        const counts: Record<string, number> = { todos: salidas.length };
-        salidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
+        const counts: Record<string, number> = { todos: todasSalidas.length };
+        todasSalidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
         return counts;
-    }, [salidas]);
+    }, [todasSalidas]);
 
     const tabsVisibles = [
         { key: 'todos',           label: 'Todas'           },
         { key: 'VENTA',           label: 'Salidas'         },
         { key: 'CONSUMO_INTERNO', label: 'Consumo interno' },
         { key: 'PERDIDA',         label: 'Pérdidas'        },
-        { key: 'AJUSTE_POSITIVO', label: 'Ajuste (+)'      },
         { key: 'AJUSTE_NEGATIVO', label: 'Ajuste (−)'      },
     ].filter(t => t.key === 'todos' || (tiposCounts[t.key] ?? 0) > 0);
 
@@ -172,7 +212,7 @@ export default function SalesPage() {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Registrar Salidas</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Registra salidas, consumos internos, mermas o ajustes de inventario.
+                        Registra salidas, consumos internos, mermas o ajustes negativos de inventario.
                     </p>
                 </div>
                 <Link href="/dashboard/sales/new"
@@ -183,39 +223,54 @@ export default function SalesPage() {
             </div>
 
             {/* ── KPIs ───────────────────────────────────────────────────── */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
+                {/* Salidas totales */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Salidas totales</p>
+                    <p className="text-xs text-gray-500 mb-1 flex items-center">
+                        Salidas totales
+                        <KpiTooltip text="Total de registros: salidas, consumos, mermas y ajustes negativos." />
+                    </p>
                     <p className="text-2xl font-bold text-gray-800">{kpiCount}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiMes} este mes</p>
                 </div>
+
+                {/* Total despachado */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Total despachado</p>
+                    <p className="text-xs text-gray-500 mb-1 flex items-center">
+                        Total despachado
+                        <KpiTooltip text="Suma del valor de todas las salidas según el precio unitario registrado." />
+                    </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">{hayFiltros ? 'en selección' : 'todas las salidas'}</p>
                 </div>
+
+                {/* Ticket promedio */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Ticket promedio</p>
+                    <p className="text-xs text-gray-500 mb-1 flex items-center">
+                        Ticket promedio
+                        <KpiTooltip text="Total despachado dividido entre el número de salidas registradas." />
+                    </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiPromedio.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">por salida</p>
                 </div>
+
+                {/* Salidas + Ajustes negativos */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Salidas</p>
-                    <p className="text-2xl font-bold text-blue-600">{kpiVentas}</p>
-                    <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas / mermas</p>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Ajustes</p>
-                    <div className="flex items-center gap-3 mt-1">
-                        <span className="text-lg font-bold text-green-600">+{kpiAjustePos}</span>
-                        <span className="text-gray-300">|</span>
-                        <span className="text-lg font-bold text-purple-600">−{kpiAjusteNeg}</span>
+                    <p className="text-xs text-gray-500 mb-1 flex items-center">
+                        Salidas / Ajustes (−)
+                        <KpiTooltip text="Salidas: movimientos por venta. Ajustes (−): correcciones manuales que reducen el stock sin ser una venta." />
+                    </p>
+                    <div className="flex items-baseline gap-3 mt-0.5">
+                        <span className="text-2xl font-bold text-blue-600">{kpiVentas}</span>
+                        <span className="text-gray-300 text-lg">/</span>
+                        <span className="text-2xl font-bold text-purple-600">{kpiAjusteNeg}</span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">positivos / negativos</p>
+                    <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas / mermas</p>
                 </div>
             </div>
 
@@ -254,11 +309,15 @@ export default function SalesPage() {
                             <button key={t.key}
                                 onClick={() => { setFiltroTipo(t.key); setPage(1); }}
                                 className={`px-3 py-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5
-                                    ${filtroTipo === t.key ? 'bg-gray-800 text-white' : 'hover:bg-gray-50 text-gray-600'}`}>
+                                    ${filtroTipo === t.key
+                                        ? 'bg-gray-800 text-white'
+                                        : 'hover:bg-gray-50 text-gray-600'}`}>
                                 {t.label}
                                 {(tiposCounts[t.key] ?? 0) > 0 && (
                                     <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium
-                                        ${filtroTipo === t.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                        ${filtroTipo === t.key
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-gray-100 text-gray-500'}`}>
                                         {tiposCounts[t.key]}
                                     </span>
                                 )}
@@ -437,7 +496,7 @@ export default function SalesPage() {
                                                 })}
                                             </td>
 
-                                            {/* Cliente — advertencia naranja si VENTA sin cliente */}
+                                            {/* Cliente */}
                                             <td className="px-4 py-3 text-sm">
                                                 {salida.clienteNombre ? (
                                                     <span className="font-medium text-gray-700">
@@ -524,6 +583,8 @@ export default function SalesPage() {
                      onClick={() => setDetalle(null)}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
                          onClick={e => e.stopPropagation()}>
+
+                        {/* Header modal */}
                         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between
                                         sticky top-0 bg-white rounded-t-2xl z-10">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -549,6 +610,7 @@ export default function SalesPage() {
 
                         <div className="px-6 py-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
+                                {/* Cliente */}
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
                                         <UserCircle2 size={11}/> Cliente
@@ -563,6 +625,7 @@ export default function SalesPage() {
                                         <p className="text-sm text-gray-400 italic">N/A</p>
                                     )}
                                 </div>
+                                {/* Fecha */}
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
                                         <Calendar size={11}/> Fecha
@@ -579,6 +642,7 @@ export default function SalesPage() {
                                 </div>
                             </div>
 
+                            {/* Productos */}
                             <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                                     Productos despachados
