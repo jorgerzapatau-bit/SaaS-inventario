@@ -329,55 +329,56 @@ export default function AnalyticsChart({ externalMovements, title, compact = fal
                     ))}
                 </div>
 
-                <div className={`flex flex-wrap items-center gap-3 mb-5 py-3 px-4 rounded-lg border ${isExternallyControlled ? 'bg-blue-50/30 border-blue-100' : 'bg-gray-50 border-gray-100'}`}>
-                    <div className="flex bg-gray-200/50 rounded-md p-0.5">
-                        {btnPeriod('7d','7d')}{btnPeriod('30d','30d')}{btnPeriod('90d','90d')}{btnPeriod('1y','1 año')}{btnPeriod('all','Todo')}
+                {/* Filtro interno: solo visible cuando NO está controlado por el filtro global */}
+                {!isExternallyControlled && (
+                    <div className="flex flex-wrap items-center gap-3 mb-5 py-3 px-4 rounded-lg border bg-gray-50 border-gray-100">
+                        <div className="flex bg-gray-200/50 rounded-md p-0.5">
+                            {btnPeriod('7d','7d')}{btnPeriod('30d','30d')}{btnPeriod('90d','90d')}{btnPeriod('1y','1 año')}{btnPeriod('all','Todo')}
+                        </div>
+                        <div className="w-px h-4 bg-gray-200"/>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 font-medium">Desde</span>
+                            <input type="date" value={desde} onChange={e => handleDesde(e.target.value)}
+                                className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"/>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 font-medium">Hasta</span>
+                            <input type="date" value={hasta} onChange={e => handleHasta(e.target.value)}
+                                className="text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"/>
+                        </div>
+                        <div className="ml-auto flex items-center gap-4 text-xs font-semibold">
+                            {metric === 'cantidad' && <>
+                                <span className="text-blue-600">+{totalEntradas} entradas</span>
+                                <span className="text-red-500">-{totalSalidas} salidas</span>
+                            </>}
+                            {metric === 'costo' && <>
+                                <span className="text-blue-600">Compras: ${totalCostoCompras.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                                <span className="text-orange-500">Costo vendido: ${totalCostoVendido.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                            </>}
+                            {metric === 'ingresos' && <>
+                                <span className="text-blue-600">Inversión: ${totalCostoCompras.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                                <span className="text-teal-600">Ingresos: ${totalIngresos.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                            </>}
+                            {metric === 'margen' && <>
+                                <span className={margenBruto >= 0 ? 'text-green-600' : 'text-red-500'}>
+                                    Margen: ${margenBruto.toLocaleString('es-MX',{maximumFractionDigits:0})}
+                                </span>
+                                {totalIngresos > 0 && <span className="text-purple-600">{((margenBruto/totalIngresos)*100).toFixed(1)}%</span>}
+                            </>}
+                            {metric === 'valorAlmacen' && <>
+                                <span className="text-amber-600">
+                                    Valor actual: ${movements.reduce((a, m) => {
+                                        const qty = Number(m.cantidad||0);
+                                        const costo = Number(m.costoUnitario||0);
+                                        const isE = ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
+                                        const isS = ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento);
+                                        return a + (isE ? qty*costo : 0) - (isS ? qty*costo : 0);
+                                    }, 0).toLocaleString('es-MX',{maximumFractionDigits:0})}
+                                </span>
+                            </>}
+                        </div>
                     </div>
-                    <div className="w-px h-4 bg-gray-200"/>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 font-medium">Desde</span>
-                        <input type="date" value={desde} onChange={e => handleDesde(e.target.value)}
-                            disabled={isExternallyControlled}
-                            className={`text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isExternallyControlled ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}/>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 font-medium">Hasta</span>
-                        <input type="date" value={hasta} onChange={e => handleHasta(e.target.value)}
-                            disabled={isExternallyControlled}
-                            className={`text-xs border border-gray-200 rounded-md px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isExternallyControlled ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}/>
-                    </div>
-                    <div className="ml-auto flex items-center gap-4 text-xs font-semibold">
-                        {metric === 'cantidad' && <>
-                            <span className="text-blue-600">+{totalEntradas} entradas</span>
-                            <span className="text-red-500">-{totalSalidas} salidas</span>
-                        </>}
-                        {metric === 'costo' && <>
-                            <span className="text-blue-600">Compras: ${totalCostoCompras.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
-                            <span className="text-orange-500">Costo vendido: ${totalCostoVendido.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
-                        </>}
-                        {metric === 'ingresos' && <>
-                            <span className="text-blue-600">Inversión: ${totalCostoCompras.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
-                            <span className="text-teal-600">Ingresos: ${totalIngresos.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
-                        </>}
-                        {metric === 'margen' && <>
-                            <span className={margenBruto >= 0 ? 'text-green-600' : 'text-red-500'}>
-                                Margen: ${margenBruto.toLocaleString('es-MX',{maximumFractionDigits:0})}
-                            </span>
-                            {totalIngresos > 0 && <span className="text-purple-600">{((margenBruto/totalIngresos)*100).toFixed(1)}%</span>}
-                        </>}
-                        {metric === 'valorAlmacen' && <>
-                            <span className="text-amber-600">
-                                Valor actual: ${movements.reduce((a, m) => {
-                                    const qty = Number(m.cantidad||0);
-                                    const costo = Number(m.costoUnitario||0);
-                                    const isE = ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
-                                    const isS = ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento);
-                                    return a + (isE ? qty*costo : 0) - (isS ? qty*costo : 0);
-                                }, 0).toLocaleString('es-MX',{maximumFractionDigits:0})}
-                            </span>
-                        </>}
-                    </div>
-                </div>
+                )}
 
                 {loading ? (
                     <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">Cargando datos...</div>
