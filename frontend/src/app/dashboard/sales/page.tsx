@@ -16,7 +16,7 @@ interface DetalleSalida {
 
 interface Salida {
     id: string;
-    tipo: 'VENTA' | 'CONSUMO_INTERNO' | 'PERDIDA';
+    tipo: string;
     referencia: string | null;
     fecha: string;
     clienteNombre: string | null;
@@ -25,11 +25,13 @@ interface Salida {
     detalles: DetalleSalida[];
 }
 
-const tipoConfig = {
-    VENTA:           { label: 'Venta',           cls: 'bg-orange-100 text-orange-700' },
-    CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-blue-100 text-blue-700'    },
+const tipoConfig: Record<string, { label: string; cls: string }> = {
+    VENTA:           { label: 'Venta',           cls: 'bg-blue-100 text-blue-700'    },
+    CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-amber-100 text-amber-700'  },
     PERDIDA:         { label: 'Pérdida / Merma', cls: 'bg-red-100 text-red-600'      },
 };
+
+const getTipoConfig = (tipo: string) => tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600' };
 
 const PAGE_SIZE = 20;
 
@@ -61,12 +63,12 @@ export default function SalesPage() {
     const [page,        setPage]        = useState(1);
     const [showFiltros, setShowFiltros] = useState(false);
 
-    const [busqueda,      setBusqueda]      = useState('');
-    const [filtroTipo,    setFiltroTipo]    = useState<string>('todos');
-    const [filtroDesde,   setFiltroDesde]   = useState('');
-    const [filtroHasta,   setFiltroHasta]   = useState('');
-    const [filtroMontoMin,setFiltroMontoMin]= useState('');
-    const [filtroMontoMax,setFiltroMontoMax]= useState('');
+    const [busqueda,      setBusqueda]       = useState('');
+    const [filtroTipo,    setFiltroTipo]     = useState<string>('todos');
+    const [filtroDesde,   setFiltroDesde]    = useState('');
+    const [filtroHasta,   setFiltroHasta]    = useState('');
+    const [filtroMontoMin,setFiltroMontoMin] = useState('');
+    const [filtroMontoMax,setFiltroMontoMax] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('fecha');
     const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -82,7 +84,11 @@ export default function SalesPage() {
             if (busqueda.trim()) {
                 const q = busqueda.toLowerCase();
                 const match = (s.referencia || '').toLowerCase().includes(q) ||
-                    s.detalles?.some(d => d.producto?.nombre?.toLowerCase().includes(q) || d.producto?.sku?.toLowerCase().includes(q));
+                    (s.clienteNombre || '').toLowerCase().includes(q) ||
+                    s.detalles?.some(d =>
+                        d.producto?.nombre?.toLowerCase().includes(q) ||
+                        d.producto?.sku?.toLowerCase().includes(q)
+                    );
                 if (!match) return false;
             }
             if (filtroTipo !== 'todos' && s.tipo !== filtroTipo) return false;
@@ -96,6 +102,7 @@ export default function SalesPage() {
         return sortSalidas(result, sortKey, sortDir);
     }, [salidas, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
 
+    // KPIs
     const kpiTotal    = salidasFiltradas.reduce((a, s) => a + calcTotal(s), 0);
     const kpiCount    = salidasFiltradas.length;
     const mesActual   = new Date().getMonth();
@@ -126,6 +133,20 @@ export default function SalesPage() {
         </span>
     );
 
+    // Tabs dinámicos: solo mostrar los que tienen datos
+    const tiposCounts = useMemo(() => {
+        const counts: Record<string, number> = { todos: salidas.length };
+        salidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
+        return counts;
+    }, [salidas]);
+
+    const tabsVisibles = [
+        { key: 'todos',           label: 'Todas' },
+        { key: 'VENTA',           label: 'Ventas' },
+        { key: 'CONSUMO_INTERNO', label: 'Consumo interno' },
+        { key: 'PERDIDA',         label: 'Pérdidas' },
+    ];
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
 
@@ -144,7 +165,7 @@ export default function SalesPage() {
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    <p className="text-xs text-gray-500 mb-1">Salidas</p>
+                    <p className="text-xs text-gray-500 mb-1">Salidas totales</p>
                     <p className="text-2xl font-bold text-gray-800">{kpiCount}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiMes} este mes</p>
                 </div>
@@ -164,8 +185,8 @@ export default function SalesPage() {
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1">Ventas</p>
-                    <p className="text-2xl font-bold text-orange-600">{kpiVentas}</p>
-                    <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas/mermas</p>
+                    <p className="text-2xl font-bold text-blue-600">{kpiVentas}</p>
+                    <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas / mermas</p>
                 </div>
             </div>
 
@@ -186,7 +207,7 @@ export default function SalesPage() {
                             type="text"
                             value={busqueda}
                             onChange={e => { setBusqueda(e.target.value); setPage(1); }}
-                            placeholder="Referencia o producto..."
+                            placeholder="Referencia, cliente o producto..."
                             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                         />
                         {busqueda && (
@@ -196,13 +217,18 @@ export default function SalesPage() {
                         )}
                     </div>
 
-                    {/* Filtro rápido por tipo */}
+                    {/* Tabs por tipo */}
                     <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
-                        {(['todos', 'VENTA', 'CONSUMO_INTERNO', 'PERDIDA'] as const).map(t => (
-                            <button key={t}
-                                onClick={() => { setFiltroTipo(t); setPage(1); }}
-                                className={`px-3 py-2 transition-colors cursor-pointer whitespace-nowrap ${filtroTipo === t ? 'bg-gray-800 text-white' : 'hover:bg-gray-50 text-gray-600'}`}>
-                                {t === 'todos' ? 'Todos' : tipoConfig[t].label}
+                        {tabsVisibles.map(t => (
+                            <button key={t.key}
+                                onClick={() => { setFiltroTipo(t.key); setPage(1); }}
+                                className={`px-3 py-2 transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${filtroTipo === t.key ? 'bg-gray-800 text-white' : 'hover:bg-gray-50 text-gray-600'}`}>
+                                {t.label}
+                                {tiposCounts[t.key] > 0 && (
+                                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 font-medium ${filtroTipo === t.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                        {tiposCounts[t.key]}
+                                    </span>
+                                )}
                             </button>
                         ))}
                     </div>
@@ -215,7 +241,7 @@ export default function SalesPage() {
                         Filtros
                         {hayFiltros && (
                             <span className="bg-orange-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold">
-                                {[filtroTipo !== 'todos', !!filtroDesde, !!filtroHasta, !!filtroMontoMin, !!filtroMontoMax].filter(Boolean).length}
+                                {[!!filtroDesde, !!filtroHasta, !!filtroMontoMin, !!filtroMontoMax].filter(Boolean).length}
                             </span>
                         )}
                         <ChevronDown size={12} className={`transition-transform ${showFiltros ? 'rotate-180' : ''}`}/>
@@ -223,7 +249,7 @@ export default function SalesPage() {
 
                     <p className="text-sm text-gray-400 whitespace-nowrap ml-auto">
                         {salidasFiltradas.length} {salidasFiltradas.length === 1 ? 'resultado' : 'resultados'}
-                        {hayFiltros && (
+                        {(busqueda || hayFiltros) && (
                             <button onClick={resetFiltros} className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">limpiar</button>
                         )}
                     </p>
@@ -287,11 +313,11 @@ export default function SalesPage() {
                                 <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('fecha')}>
                                     Fecha <SortIcon col="fecha"/>
                                 </th>
+                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
                                 <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Productos</th>
                                 <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-600 select-none" onClick={() => handleSort('total')}>
                                     Total <SortIcon col="total"/>
                                 </th>
-                                <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente / Registrada por</th>
                                 <th className="px-4 py-3"></th>
                             </tr>
                         </thead>
@@ -314,7 +340,7 @@ export default function SalesPage() {
                                 </tr>
                             ) : (
                                 salidasPag.map(salida => {
-                                    const tc = tipoConfig[salida.tipo] ?? tipoConfig.VENTA;
+                                    const tc = getTipoConfig(salida.tipo);
                                     const total = calcTotal(salida);
                                     const totalItems = salida.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0;
                                     return (
@@ -334,16 +360,19 @@ export default function SalesPage() {
                                             <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                                                 {new Date(salida.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
                                             </td>
+                                            <td className="px-4 py-3 text-sm">
+                                                {salida.clienteNombre
+                                                    ? <span className="font-medium text-gray-700">{salida.clienteNombre}</span>
+                                                    : <span className="text-gray-400">—</span>
+                                                }
+                                            </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
                                                 {salida.detalles?.length ?? 0} {salida.detalles?.length === 1 ? 'producto' : 'productos'} · {totalItems} uds
                                             </td>
                                             <td className="px-4 py-3 text-sm font-bold text-gray-800">
-                                                ${total.toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-500">
-                                                {salida.clienteNombre
-                                                    ? <span className="font-medium text-gray-700">{salida.clienteNombre}</span>
-                                                    : <span className="text-gray-400">{salida.usuario?.nombre || salida.usuario?.email || '—'}</span>
+                                                {total > 0
+                                                    ? `$${total.toLocaleString('es-MX', { maximumFractionDigits: 2 })}`
+                                                    : <span className="text-gray-400 font-normal">—</span>
                                                 }
                                             </td>
                                             <td className="px-4 py-3 text-right">
@@ -394,23 +423,25 @@ export default function SalesPage() {
                 <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDetalle(null)}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white rounded-t-2xl z-10">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-lg font-bold text-gray-900">{detalle.referencia || 'Sin referencia'}</span>
-                                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${tipoConfig[detalle.tipo]?.cls}`}>
-                                    {tipoConfig[detalle.tipo]?.label}
+                                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${getTipoConfig(detalle.tipo).cls}`}>
+                                    {getTipoConfig(detalle.tipo).label}
                                 </span>
                             </div>
-                            <button onClick={() => setDetalle(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer">
+                            <button onClick={() => setDetalle(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer flex-shrink-0">
                                 <X size={18}/>
                             </button>
                         </div>
                         <div className="px-6 py-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
+                                {/* Cliente — siempre visible */}
                                 <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><UserCircle2 size={11}/> {detalle.clienteNombre ? 'Cliente' : 'Registrado por'}</p>
-                                    <p className="text-sm font-semibold text-gray-800">
-                                        {detalle.clienteNombre || detalle.usuario?.nombre || detalle.usuario?.email || '—'}
-                                    </p>
+                                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><UserCircle2 size={11}/> Cliente</p>
+                                    {detalle.clienteNombre
+                                        ? <p className="text-sm font-semibold text-gray-800">{detalle.clienteNombre}</p>
+                                        : <p className="text-sm text-gray-400 italic">Sin cliente registrado</p>
+                                    }
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Calendar size={11}/> Fecha</p>
@@ -419,6 +450,7 @@ export default function SalesPage() {
                                     </p>
                                     <p className="text-xs text-gray-400 mt-0.5">
                                         {new Date(detalle.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                        {detalle.usuario?.nombre && ` · ${detalle.usuario.nombre}`}
                                     </p>
                                 </div>
                             </div>
@@ -432,21 +464,29 @@ export default function SalesPage() {
                                                 <p className="text-xs text-gray-400">{d.producto?.sku} · {d.cantidad} {d.producto?.unidad}</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-sm font-bold text-gray-800">
-                                                    ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                                </p>
-                                                <p className="text-xs text-gray-400">${Number(d.precioUnitario).toLocaleString()} c/u</p>
+                                                {Number(d.precioUnitario) > 0 ? (
+                                                    <>
+                                                        <p className="text-sm font-bold text-gray-800">
+                                                            ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400">${Number(d.precioUnitario).toLocaleString()} c/u</p>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-xs text-gray-400">Sin precio</p>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                <span className="text-sm font-semibold text-gray-700">Total despachado</span>
-                                <span className="text-xl font-bold text-gray-900">
-                                    ${calcTotal(detalle).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                </span>
-                            </div>
+                            {calcTotal(detalle) > 0 && (
+                                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                                    <span className="text-sm font-semibold text-gray-700">Total despachado</span>
+                                    <span className="text-xl font-bold text-gray-900">
+                                        ${calcTotal(detalle).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                         <div className="px-6 pb-5">
                             <button onClick={() => setDetalle(null)}

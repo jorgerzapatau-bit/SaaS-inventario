@@ -121,6 +121,12 @@ const MOTIVOS_AJUSTE = [
     'Error de captura', 'Muestra / regalo', 'Devolución de cliente', 'Otro',
 ];
 
+const TIPOS_SALIDA = [
+    { value: 'VENTA',           label: 'Venta',           desc: 'Venta a cliente' },
+    { value: 'CONSUMO_INTERNO', label: 'Consumo interno', desc: 'Uso propio de la empresa' },
+    { value: 'PERDIDA',         label: 'Pérdida / Merma', desc: 'Deterioro, robo o baja' },
+];
+
 export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
     const cfg = CONFIG[tipo];
     const isEntrada = tipo === 'entrada';
@@ -139,10 +145,11 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
         almacenId:      '',
         proveedorId:    '',
         clienteId:      '',
-        clienteNombre:  '',   // fallback texto libre si no se selecciona del catálogo
+        clienteNombre:  '',
         referencia:     '',
         motivo:         MOTIVOS_AJUSTE[0],
         tipoAjuste:     'positivo' as 'positivo' | 'negativo',
+        tipoSalida:     'VENTA' as 'VENTA' | 'CONSUMO_INTERNO' | 'PERDIDA',
         fecha:          new Date().toISOString().slice(0, 16),
     });
 
@@ -178,6 +185,13 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
 
         setSaving(true); setError('');
         try {
+            // Encode tipoSalida as prefix in referencia: "VENTA|FAC-001", "CONSUMO_INTERNO|", "PERDIDA|nota"
+            const referenciaFinal = isSalida
+                ? `${form.tipoSalida}|${form.referencia || ''}`
+                : isAjuste
+                    ? (form.motivo === 'Otro' ? form.referencia : form.motivo)
+                    : (form.referencia || null);
+
             await fetchApi('/inventory/movements', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -192,9 +206,7 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
                     proveedorId:     isEntrada && form.proveedorId ? form.proveedorId : null,
                     clienteId:       isSalida && form.clienteId ? form.clienteId : null,
                     clienteNombre:   isSalida ? (form.clienteNombre || null) : null,
-                    referencia:      isAjuste
-                        ? (form.motivo === 'Otro' ? form.referencia : form.motivo)
-                        : (form.referencia || null),
+                    referencia:      referenciaFinal,
                     fecha: form.fecha ? new Date(form.fecha).toISOString() : undefined,
                 }),
             });
@@ -312,9 +324,33 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
                         </div>
                     )}
 
-                    {/* Salida: precio venta + cliente del catálogo */}
+                    {/* Salida: tipo de salida + precio venta + cliente del catálogo */}
                     {isSalida && (
                         <>
+                            {/* Tipo de salida */}
+                            <div>
+                                <label className="text-xs font-medium text-gray-700 block mb-1.5">Tipo de salida *</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {TIPOS_SALIDA.map(ts => (
+                                        <button key={ts.value} type="button"
+                                            onClick={() => set('tipoSalida', ts.value)}
+                                            className={`py-2 px-2 rounded-lg text-xs font-medium border transition-all text-center ${
+                                                form.tipoSalida === ts.value
+                                                    ? ts.value === 'VENTA'
+                                                        ? 'bg-blue-600 text-white border-blue-600'
+                                                        : ts.value === 'CONSUMO_INTERNO'
+                                                            ? 'bg-amber-500 text-white border-amber-500'
+                                                            : 'bg-red-500 text-white border-red-500'
+                                                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                                            }`}>
+                                            <div>{ts.label}</div>
+                                            <div className={`text-[10px] mt-0.5 ${form.tipoSalida === ts.value ? 'opacity-80' : 'text-gray-400'}`}>{ts.desc}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Precio venta + Cliente — solo para VENTA */}
+                            {form.tipoSalida === 'VENTA' && (
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs font-medium text-gray-700 block mb-1.5">Precio de venta al cliente</label>
@@ -340,8 +376,9 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
                                     />
                                 </div>
                             </div>
-                            {/* Si no está en catálogo, permite texto libre */}
-                            {!form.clienteId && (
+                            )}
+                            {/* Si no está en catálogo, permite texto libre — solo VENTA */}
+                            {form.tipoSalida === 'VENTA' && !form.clienteId && (
                                 <div>
                                     <label className="text-xs font-medium text-gray-700 block mb-1.5">
                                         <User size={11} className="inline mr-1 text-gray-400"/>
@@ -353,8 +390,8 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
                                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
                                 </div>
                             )}
-                            {/* Datos fiscales del cliente seleccionado */}
-                            {form.clienteId && (() => {
+                            {/* Datos fiscales del cliente seleccionado — solo VENTA */}
+                            {form.tipoSalida === 'VENTA' && form.clienteId && (() => {
                                 const clientes = (window as any).__cachedClientes as any[];
                                 const cli = clientes?.find((c: any) => c.id === form.clienteId);
                                 if (!cli?.rfc && !cli?.regimenFiscal) return null;
@@ -439,18 +476,24 @@ export function MovimientoModal({ producto, tipo, onClose, onDone }: Props) {
                         <div className={`px-4 py-3 rounded-xl border text-sm ${isEntrada ? 'bg-green-50 border-green-200' : isSalida ? 'bg-red-50 border-red-200' : form.tipoAjuste === 'positivo' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                             <div className="flex justify-between items-center">
                                 <span className={isEntrada || (isAjuste && form.tipoAjuste === 'positivo') ? 'text-green-700' : 'text-red-600'}>
-                                    {isEntrada ? 'Inversión total' : isSalida ? 'Ingresos estimados' : `Ajuste ${form.tipoAjuste === 'positivo' ? '+' : '-'}${qty} ${producto.unidad}`}
+                                    {isEntrada ? 'Inversión total'
+                                        : isSalida && form.tipoSalida === 'VENTA' ? 'Ingresos estimados'
+                                        : isSalida && form.tipoSalida === 'CONSUMO_INTERNO' ? 'Unidades a consumir'
+                                        : isSalida && form.tipoSalida === 'PERDIDA' ? 'Unidades a dar de baja'
+                                        : `Ajuste ${form.tipoAjuste === 'positivo' ? '+' : '-'}${qty} ${producto.unidad}`}
                                 </span>
                                 <span className={`font-bold text-base ${isEntrada || (isAjuste && form.tipoAjuste === 'positivo') ? 'text-green-700' : 'text-red-600'}`}>
-                                    {isEntrada && costo > 0 ? `$${(qty * costo).toLocaleString('es-MX', {maximumFractionDigits:0})}` :
-                                     isSalida && pventa > 0 ? `$${(qty * pventa).toLocaleString('es-MX', {maximumFractionDigits:0})}` :
-                                     isAjuste ? `${form.tipoAjuste === 'positivo' ? '+' : '-'}${qty}` : '—'}
+                                    {isEntrada && costo > 0 ? `$${(qty * costo).toLocaleString('es-MX', {maximumFractionDigits:0})}`
+                                        : isSalida && form.tipoSalida === 'VENTA' && pventa > 0 ? `$${(qty * pventa).toLocaleString('es-MX', {maximumFractionDigits:0})}`
+                                        : isSalida ? `${qty} ${producto.unidad}`
+                                        : isAjuste ? `${form.tipoAjuste === 'positivo' ? '+' : '-'}${qty}` : '—'}
                                 </span>
                             </div>
                             <p className="text-xs text-gray-400 mt-0.5">
-                                {isEntrada && costo > 0 ? `${qty} ${producto.unidad} × $${costo.toLocaleString()} c/u` :
-                                 isSalida && pventa > 0 ? `${qty} ${producto.unidad} × $${pventa.toLocaleString()} c/u` :
-                                 isAjuste ? `Stock: ${producto.stock} → ${stockDespues} ${producto.unidad}` : ''}
+                                {isEntrada && costo > 0 ? `${qty} ${producto.unidad} × $${costo.toLocaleString()} c/u`
+                                    : isSalida && form.tipoSalida === 'VENTA' && pventa > 0 ? `${qty} ${producto.unidad} × $${pventa.toLocaleString()} c/u`
+                                    : isSalida ? `Stock: ${producto.stock} → ${stockDespues} ${producto.unidad}`
+                                    : isAjuste ? `Stock: ${producto.stock} → ${stockDespues} ${producto.unidad}` : ''}
                             </p>
                         </div>
                     )}

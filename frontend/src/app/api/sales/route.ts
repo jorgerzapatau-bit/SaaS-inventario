@@ -2,11 +2,27 @@ import { NextRequest } from 'next/server';
 import prisma from '../lib/prisma';
 import { getAuthUser, unauthorized } from '../lib/auth';
 
+// Helper: parse "TIPO|referencia_real" stored in the referencia field of MovimientoInventario
+function parseTipoYRef(referencia: string | null): { tipo: string; refLimpia: string | null } {
+    if (!referencia) return { tipo: 'VENTA', refLimpia: null };
+    const TIPOS = ['VENTA', 'CONSUMO_INTERNO', 'PERDIDA'];
+    const pipeIdx = referencia.indexOf('|');
+    if (pipeIdx !== -1) {
+        const prefix = referencia.slice(0, pipeIdx);
+        if (TIPOS.includes(prefix)) {
+            const refLimpia = referencia.slice(pipeIdx + 1) || null;
+            return { tipo: prefix, refLimpia };
+        }
+    }
+    // Legacy data without prefix — keep as-is and default to VENTA
+    return { tipo: 'VENTA', refLimpia: referencia };
+}
+
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        // 1. Salidas formales (creadas desde /sales/new → modelo Salida)
+        // 1. Salidas formales (modelo Salida, creadas desde /sales/new)
         const salidasFormales = await prisma.salida.findMany({
             where: { empresaId: user.empresaId },
             include: {
@@ -16,13 +32,12 @@ export async function GET(req: NextRequest) {
             orderBy: { fecha: 'desc' }
         });
 
-        // Convertir al shape unificado
         const formalesNormalizadas = salidasFormales.map(s => ({
             id:            s.id,
             tipo:          s.tipo as string,
             referencia:    s.referencia,
             fecha:         s.fecha,
-            clienteNombre: null,
+            clienteNombre: null as string | null,
             usuario:       s.usuario,
             esFormal:      true,
             detalles: s.detalles.map(d => ({
@@ -34,7 +49,7 @@ export async function GET(req: NextRequest) {
             })),
         }));
 
-        // 2. Salidas registradas desde MovimientoModal (modelo MovimientoInventario)
+        // 2. Salidas desde MovimientoModal (modelo MovimientoInventario con tipoMovimiento = 'SALIDA')
         const movSalidas = await prisma.movimientoInventario.findMany({
             where: {
                 empresaId:      user.empresaId,
@@ -43,31 +58,32 @@ export async function GET(req: NextRequest) {
             orderBy: { fecha: 'desc' },
             include: {
                 producto:  { select: { nombre: true, sku: true, unidad: true } },
-                almacen:   { select: { nombre: true } },
                 usuario:   { select: { nombre: true, email: true } },
                 cliente:   { select: { nombre: true } },
             }
         });
 
-        // Convertir movimientos al mismo shape
-        const movNormalizados = movSalidas.map(m => ({
-            id:            m.id,
-            tipo:          'VENTA',   // los movimientos de salida son ventas por defecto
-            referencia:    m.referencia || null,
-            fecha:         m.fecha,
-            clienteNombre: m.clienteNombre || m.cliente?.nombre || null,
-            usuario:       m.usuario,
-            esFormal:      false,
-            detalles: [{
-                id:             m.id,
-                productoId:     m.productoId,
-                producto:       m.producto,
-                cantidad:       m.cantidad,
-                precioUnitario: Number(m.precioVenta ?? m.costoUnitario),
-            }],
-        }));
+        const movNormalizados = movSalidas.map(m => {
+            const { tipo, refLimpia } = parseTipoYRef(m.referencia);
+            return {
+                id:            m.id,
+                tipo,
+                referencia:    refLimpia,
+                fecha:         m.fecha,
+                clienteNombre: m.clienteNombre || m.cliente?.nombre || null,
+                usuario:       m.usuario,
+                esFormal:      false,
+                detalles: [{
+                    id:             m.id,
+                    productoId:     m.productoId,
+                    producto:       m.producto,
+                    cantidad:       m.cantidad,
+                    precioUnitario: Number(m.precioVenta ?? m.costoUnitario),
+                }],
+            };
+        });
 
-        // Unir y ordenar por fecha
+        // Unir y ordenar por fecha descendente
         const todas = [...formalesNormalizadas, ...movNormalizados]
             .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
@@ -104,7 +120,7 @@ export async function POST(req: NextRequest) {
                 data: detalles.map((d: { productoId: string; cantidad: number; precioUnitario?: number }) => ({
                     empresaId, productoId: d.productoId, almacenId: targetAlmacenId,
                     tipoMovimiento: 'SALIDA', cantidad: d.cantidad, costoUnitario: d.precioUnitario || 0,
-                    referencia: `Salida #${salida.id} - ${referencia || ''}`, usuarioId
+                    referencia: `${tipo}|${referencia || ''}`, usuarioId
                 }))
             });
             return salida;
