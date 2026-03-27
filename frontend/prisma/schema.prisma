@@ -178,23 +178,28 @@ model DetalleCompra {
   precioUnitario Decimal
 }
 
+// ── CAMBIO 1: se agregaron AJUSTE_POSITIVO y AJUSTE_NEGATIVO al enum ──────────
 enum TipoSalida {
   VENTA
   CONSUMO_INTERNO
   PERDIDA
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
 }
 
 model Salida {
-  id         String     @id @default(uuid())
-  empresaId  String
-  empresa    Empresa    @relation(fields: [empresaId], references: [id])
-  tipo       TipoSalida
-  fecha      DateTime   @default(now())
-  referencia String?
-  usuarioId  String
-  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id            String     @id @default(uuid())
+  empresaId     String
+  empresa       Empresa    @relation(fields: [empresaId], references: [id])
+  tipo          TipoSalida
+  fecha         DateTime   @default(now())
+  referencia    String?
+  // ── CAMBIO 2: columna nueva para guardar el nombre del cliente ────────────
+  clienteNombre String?
+  usuarioId     String
+  usuario       Usuario    @relation(fields: [usuarioId], references: [id])
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   detalles DetalleSalida[]
 }

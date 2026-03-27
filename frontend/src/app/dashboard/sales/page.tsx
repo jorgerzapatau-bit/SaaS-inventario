@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo } from 'react';
-import { Search, Plus, X, UserCircle2, Calendar, ChevronRight,
-         AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown, TrendingDown } from 'lucide-react';
+import {
+    Search, Plus, X, UserCircle2, Calendar, ChevronRight,
+    AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown,
+    TrendingDown, ShoppingCart, Coffee, AlertTriangle,
+    PlusCircle, MinusCircle, UserX,
+} from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 
@@ -25,19 +29,21 @@ interface Salida {
     detalles: DetalleSalida[];
 }
 
-// ── Labels visuales ─────────────────────────────────────────────────────────
-// El enum de BD se mantiene (VENTA, CONSUMO_INTERNO, PERDIDA, AJUSTE_POSITIVO,
-// AJUSTE_NEGATIVO). Solo cambia lo que ve el usuario.
-const tipoConfig: Record<string, { label: string; cls: string }> = {
-    VENTA:            { label: 'Salida por venta',  cls: 'bg-blue-100 text-blue-700'    },
-    CONSUMO_INTERNO:  { label: 'Consumo interno',   cls: 'bg-amber-100 text-amber-700'  },
-    PERDIDA:          { label: 'Pérdida / Merma',   cls: 'bg-red-100 text-red-600'      },
-    AJUSTE_POSITIVO:  { label: 'Ajuste (+)',         cls: 'bg-green-100 text-green-700'  },
-    AJUSTE_NEGATIVO:  { label: 'Ajuste (−)',         cls: 'bg-purple-100 text-purple-700'},
+// ── Config visual por tipo ────────────────────────────────────────────────────
+const tipoConfig: Record<string, {
+    label: string;
+    cls: string;
+    Icon: React.ElementType;
+}> = {
+    VENTA:           { label: 'Salida',          cls: 'bg-blue-100 text-blue-700',     Icon: ShoppingCart  },
+    CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-amber-100 text-amber-700',   Icon: Coffee        },
+    PERDIDA:         { label: 'Pérdida / Merma', cls: 'bg-red-100 text-red-600',       Icon: AlertTriangle },
+    AJUSTE_POSITIVO: { label: 'Ajuste (+)',       cls: 'bg-green-100 text-green-700',   Icon: PlusCircle    },
+    AJUSTE_NEGATIVO: { label: 'Ajuste (−)',       cls: 'bg-purple-100 text-purple-700', Icon: MinusCircle   },
 };
 
 const getTipoConfig = (tipo: string) =>
-    tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600' };
+    tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600', Icon: TrendingDown };
 
 const PAGE_SIZE = 20;
 
@@ -99,8 +105,8 @@ export default function SalesPage() {
                 if (!match) return false;
             }
             if (filtroTipo !== 'todos' && s.tipo !== filtroTipo) return false;
-            if (filtroDesde && new Date(s.fecha) < new Date(filtroDesde))                    return false;
-            if (filtroHasta && new Date(s.fecha) > new Date(filtroHasta + 'T23:59:59'))      return false;
+            if (filtroDesde && new Date(s.fecha) < new Date(filtroDesde))               return false;
+            if (filtroHasta && new Date(s.fecha) > new Date(filtroHasta + 'T23:59:59')) return false;
             const total = calcTotal(s);
             if (filtroMontoMin && total < Number(filtroMontoMin)) return false;
             if (filtroMontoMax && total > Number(filtroMontoMax)) return false;
@@ -109,15 +115,16 @@ export default function SalesPage() {
         return sortSalidas(result, sortKey, sortDir);
     }, [salidas, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
 
-    // KPIs
-    const kpiTotal    = salidasFiltradas.reduce((a, s) => a + calcTotal(s), 0);
-    const kpiCount    = salidasFiltradas.length;
-    const mesActual   = new Date().getMonth();
-    const kpiMes      = salidasFiltradas.filter(s => new Date(s.fecha).getMonth() === mesActual).length;
-    const kpiPromedio = kpiCount > 0 ? kpiTotal / kpiCount : 0;
-    // "Salidas por venta" en vez de "Ventas" para no confundir
-    const kpiVentas   = salidasFiltradas.filter(s => s.tipo === 'VENTA').length;
-    const kpiPerdidas = salidasFiltradas.filter(s => s.tipo === 'PERDIDA').length;
+    // ── KPIs ─────────────────────────────────────────────────────────────────
+    const kpiTotal     = salidasFiltradas.reduce((a, s) => a + calcTotal(s), 0);
+    const kpiCount     = salidasFiltradas.length;
+    const mesActual    = new Date().getMonth();
+    const kpiMes       = salidasFiltradas.filter(s => new Date(s.fecha).getMonth() === mesActual).length;
+    const kpiPromedio  = kpiCount > 0 ? kpiTotal / kpiCount : 0;
+    const kpiVentas    = salidasFiltradas.filter(s => s.tipo === 'VENTA').length;
+    const kpiPerdidas  = salidasFiltradas.filter(s => s.tipo === 'PERDIDA').length;
+    const kpiAjustePos = salidasFiltradas.filter(s => s.tipo === 'AJUSTE_POSITIVO').length;
+    const kpiAjusteNeg = salidasFiltradas.filter(s => s.tipo === 'AJUSTE_NEGATIVO').length;
 
     const totalPages = Math.max(1, Math.ceil(salidasFiltradas.length / PAGE_SIZE));
     const salidasPag = salidasFiltradas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -142,17 +149,15 @@ export default function SalesPage() {
         </span>
     );
 
-    // Conteo por tipo para los tabs
     const tiposCounts = useMemo(() => {
         const counts: Record<string, number> = { todos: salidas.length };
         salidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
         return counts;
     }, [salidas]);
 
-    // Solo muestra tabs que tienen al menos 1 registro (excepto "Todas")
     const tabsVisibles = [
         { key: 'todos',           label: 'Todas'           },
-        { key: 'VENTA',           label: 'Salidas por venta' },
+        { key: 'VENTA',           label: 'Salidas'         },
         { key: 'CONSUMO_INTERNO', label: 'Consumo interno' },
         { key: 'PERDIDA',         label: 'Pérdidas'        },
         { key: 'AJUSTE_POSITIVO', label: 'Ajuste (+)'      },
@@ -162,22 +167,23 @@ export default function SalesPage() {
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
 
-            {/* Header */}
+            {/* ── Header ─────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Registrar Salidas</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Registra salidas por venta, consumos internos, mermas o ajustes de inventario.
+                        Registra salidas, consumos internos, mermas o ajustes de inventario.
                     </p>
                 </div>
                 <Link href="/dashboard/sales/new"
-                    className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
+                    className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700
+                               text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
                     <Plus size={16}/> Nueva Salida
                 </Link>
             </div>
 
-            {/* KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* ── KPIs ───────────────────────────────────────────────────── */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1">Salidas totales</p>
                     <p className="text-2xl font-bold text-gray-800">{kpiCount}</p>
@@ -198,10 +204,18 @@ export default function SalesPage() {
                     <p className="text-xs text-gray-400 mt-1">por salida</p>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                    {/* Antes decía "Ventas" — ahora "Salidas por venta" para no confundir */}
-                    <p className="text-xs text-gray-500 mb-1">Salidas por venta</p>
+                    <p className="text-xs text-gray-500 mb-1">Salidas</p>
                     <p className="text-2xl font-bold text-blue-600">{kpiVentas}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiPerdidas} pérdidas / mermas</p>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                    <p className="text-xs text-gray-500 mb-1">Ajustes</p>
+                    <div className="flex items-center gap-3 mt-1">
+                        <span className="text-lg font-bold text-green-600">+{kpiAjustePos}</span>
+                        <span className="text-gray-300">|</span>
+                        <span className="text-lg font-bold text-purple-600">−{kpiAjusteNeg}</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">positivos / negativos</p>
                 </div>
             </div>
 
@@ -211,7 +225,7 @@ export default function SalesPage() {
                 </div>
             )}
 
-            {/* Tabla */}
+            {/* ── Tabla ──────────────────────────────────────────────────── */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
 
                 {/* Barra superior */}
@@ -227,15 +241,14 @@ export default function SalesPage() {
                                        focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                         />
                         {busqueda && (
-                            <button
-                                onClick={() => { setBusqueda(''); setPage(1); }}
+                            <button onClick={() => { setBusqueda(''); setPage(1); }}
                                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                 <X size={13}/>
                             </button>
                         )}
                     </div>
 
-                    {/* Tabs por tipo */}
+                    {/* Tabs */}
                     <div className="flex flex-wrap rounded-lg border border-gray-200 overflow-hidden text-xs">
                         {tabsVisibles.map(t => (
                             <button key={t.key}
@@ -273,7 +286,8 @@ export default function SalesPage() {
                     <p className="text-sm text-gray-400 whitespace-nowrap ml-auto">
                         {salidasFiltradas.length} {salidasFiltradas.length === 1 ? 'resultado' : 'resultados'}
                         {(busqueda || hayFiltros) && (
-                            <button onClick={resetFiltros} className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">
+                            <button onClick={resetFiltros}
+                                className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">
                                 limpiar
                             </button>
                         )}
@@ -389,46 +403,72 @@ export default function SalesPage() {
                                 </tr>
                             ) : (
                                 salidasPag.map(salida => {
-                                    const tc        = getTipoConfig(salida.tipo);
-                                    const total     = calcTotal(salida);
+                                    const tc         = getTipoConfig(salida.tipo);
+                                    const total      = calcTotal(salida);
                                     const totalItems = salida.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0;
+                                    const sinCliente = salida.tipo === 'VENTA' && !salida.clienteNombre;
+
                                     return (
                                         <tr key={salida.id}
                                             onClick={() => setDetalle(salida)}
                                             className="hover:bg-orange-50/30 transition-colors cursor-pointer group">
+
+                                            {/* Referencia */}
                                             <td className="px-4 py-3">
                                                 <span className="text-sm font-bold text-gray-800
                                                                  group-hover:text-orange-600 transition-colors">
                                                     {salida.referencia || '—'}
                                                 </span>
                                             </td>
+
+                                            {/* Tipo con ícono */}
                                             <td className="px-4 py-3">
-                                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tc.cls}`}>
+                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1
+                                                                  text-xs font-semibold rounded-full ${tc.cls}`}>
+                                                    <tc.Icon size={11}/>
                                                     {tc.label}
                                                 </span>
                                             </td>
+
+                                            {/* Fecha */}
                                             <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                                                 {new Date(salida.fecha).toLocaleDateString('es-MX', {
                                                     day: '2-digit', month: 'short', year: 'numeric'
                                                 })}
                                             </td>
+
+                                            {/* Cliente — advertencia naranja si VENTA sin cliente */}
                                             <td className="px-4 py-3 text-sm">
-                                                {salida.clienteNombre
-                                                    ? <span className="font-medium text-gray-700">{salida.clienteNombre}</span>
-                                                    : <span className="text-gray-400">—</span>
-                                                }
+                                                {salida.clienteNombre ? (
+                                                    <span className="font-medium text-gray-700">
+                                                        {salida.clienteNombre}
+                                                    </span>
+                                                ) : sinCliente ? (
+                                                    <span className="inline-flex items-center gap-1 text-orange-500
+                                                                     text-xs font-medium">
+                                                        <UserX size={13}/>
+                                                        Sin cliente
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400">—</span>
+                                                )}
                                             </td>
+
+                                            {/* Productos */}
                                             <td className="px-4 py-3 text-sm text-gray-600">
                                                 {salida.detalles?.length ?? 0}{' '}
                                                 {salida.detalles?.length === 1 ? 'producto' : 'productos'}{' '}
                                                 · {totalItems} uds
                                             </td>
+
+                                            {/* Total */}
                                             <td className="px-4 py-3 text-sm font-bold text-gray-800">
                                                 {total > 0
                                                     ? `$${total.toLocaleString('es-MX', { maximumFractionDigits: 2 })}`
                                                     : <span className="text-gray-400 font-normal">—</span>
                                                 }
                                             </td>
+
                                             <td className="px-4 py-3 text-right">
                                                 <ChevronRight size={16}
                                                     className="text-gray-300 group-hover:text-orange-400 transition-colors"/>
@@ -455,7 +495,7 @@ export default function SalesPage() {
                             </button>
                             {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                                 const p = totalPages <= 5 ? i + 1
-                                    : page <= 3             ? i + 1
+                                    : page <= 3              ? i + 1
                                     : page >= totalPages - 2 ? totalPages - 4 + i
                                     : page - 2 + i;
                                 return (
@@ -478,7 +518,7 @@ export default function SalesPage() {
                 )}
             </div>
 
-            {/* Modal detalle */}
+            {/* ── Modal detalle ──────────────────────────────────────────── */}
             {detalle && (
                 <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
                      onClick={() => setDetalle(null)}>
@@ -490,26 +530,38 @@ export default function SalesPage() {
                                 <span className="text-lg font-bold text-gray-900">
                                     {detalle.referencia || 'Sin referencia'}
                                 </span>
-                                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full
-                                    ${getTipoConfig(detalle.tipo).cls}`}>
-                                    {getTipoConfig(detalle.tipo).label}
-                                </span>
+                                {(() => {
+                                    const tc = getTipoConfig(detalle.tipo);
+                                    return (
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5
+                                                          text-xs font-semibold rounded-full ${tc.cls}`}>
+                                            <tc.Icon size={11}/>
+                                            {tc.label}
+                                        </span>
+                                    );
+                                })()}
                             </div>
                             <button onClick={() => setDetalle(null)}
                                 className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer flex-shrink-0">
                                 <X size={18}/>
                             </button>
                         </div>
+
                         <div className="px-6 py-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
                                         <UserCircle2 size={11}/> Cliente
                                     </p>
-                                    {detalle.clienteNombre
-                                        ? <p className="text-sm font-semibold text-gray-800">{detalle.clienteNombre}</p>
-                                        : <p className="text-sm text-gray-400 italic">Sin cliente registrado</p>
-                                    }
+                                    {detalle.clienteNombre ? (
+                                        <p className="text-sm font-semibold text-gray-800">{detalle.clienteNombre}</p>
+                                    ) : detalle.tipo === 'VENTA' ? (
+                                        <p className="text-sm text-orange-500 font-medium flex items-center gap-1">
+                                            <UserX size={13}/> Sin cliente registrado
+                                        </p>
+                                    ) : (
+                                        <p className="text-sm text-gray-400 italic">N/A</p>
+                                    )}
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
@@ -526,6 +578,7 @@ export default function SalesPage() {
                                     </p>
                                 </div>
                             </div>
+
                             <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                                     Productos despachados
@@ -559,6 +612,7 @@ export default function SalesPage() {
                                     ))}
                                 </div>
                             </div>
+
                             {calcTotal(detalle) > 0 && (
                                 <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                                     <span className="text-sm font-semibold text-gray-700">Total despachado</span>
@@ -568,6 +622,7 @@ export default function SalesPage() {
                                 </div>
                             )}
                         </div>
+
                         <div className="px-6 pb-5">
                             <button onClick={() => setDetalle(null)}
                                 className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100
