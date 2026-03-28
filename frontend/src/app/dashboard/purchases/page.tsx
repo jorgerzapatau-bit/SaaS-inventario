@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, Plus, X, Building2, Package, Calendar, ChevronRight,
          AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
@@ -51,7 +52,9 @@ function sortCompras(list: Compra[], key: SortKey, dir: SortDir): Compra[] {
     });
 }
 
-export default function PurchasesPage() {
+function PurchasesPageInner() {
+    const searchParams = useSearchParams();
+
     const [compras,  setCompras]  = useState<Compra[]>([]);
     const [loading,  setLoading]  = useState(true);
     const [error,    setError]    = useState('');
@@ -72,6 +75,17 @@ export default function PurchasesPage() {
     const [filtroMontoMax, setFiltroMontoMax] = useState('');
     const [sortKey,        setSortKey]        = useState<SortKey>('fecha');
     const [sortDir,        setSortDir]        = useState<SortDir>('desc');
+
+    // ── Leer filtros desde URL (ej: ?desde=2026-03-01&hasta=2026-03-28&status=PENDIENTE) ──
+    useEffect(() => {
+        const desde  = searchParams.get('desde');
+        const hasta  = searchParams.get('hasta');
+        const status = searchParams.get('status');
+        if (desde)  setFiltroDesde(desde);
+        if (hasta)  setFiltroHasta(hasta);
+        if (status) setFiltroStatus(status);
+        if (desde || hasta || status) setShowFiltros(true);
+    }, [searchParams]);
 
     useEffect(() => {
         fetchApi('/purchases')
@@ -583,5 +597,13 @@ export default function PurchasesPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function PurchasesPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Cargando...</div>}>
+            <PurchasesPageInner />
+        </Suspense>
     );
 }

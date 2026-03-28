@@ -117,13 +117,27 @@ function EmptyChartState({ desde, hasta, onChangePeriod }: {
     );
 }
 
-// ── Helper: construye URL al kardex con filtros de período ─────────────
+// ── Helpers: construyen URLs con filtros de período ────────────────────
 function buildKardexUrl(tipo: string, desde: string, hasta: string) {
     const params = new URLSearchParams();
     if (tipo)  params.set('tipo', tipo);
     if (desde) params.set('desde', desde);
     if (hasta) params.set('hasta', hasta);
     return `/dashboard/inventory?${params.toString()}`;
+}
+
+function buildPurchasesUrl(desde: string, hasta: string) {
+    const params = new URLSearchParams();
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    return `/dashboard/purchases?${params.toString()}`;
+}
+
+function buildSalesUrl(desde: string, hasta: string) {
+    const params = new URLSearchParams();
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    return `/dashboard/sales?${params.toString()}`;
 }
 
 // ── Componente principal ───────────────────────────────────────────────
@@ -582,7 +596,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
 
                     {/* Costo entradas */}
-                    <Link href="/dashboard/purchases" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group block p-5">
+                    <Link href={buildPurchasesUrl(manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Costo de entradas</p>
@@ -595,12 +609,12 @@ export default function DashboardPage() {
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={costoEntradasDelta} label={compareLabel || undefined} />}
                         </div>
                         <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <ExternalLink size={10} /> Ver compras
+                            <ExternalLink size={10} /> Ver compras del período
                         </p>
                     </Link>
 
                     {/* Ingresos salidas */}
-                    <Link href={buildKardexUrl('SALIDA', manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
+                    <Link href={buildSalesUrl(manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Ingresos por salidas</p>
@@ -612,9 +626,17 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={ingresosDelta} label={compareLabel || undefined} />}
                         </div>
-                        <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <ExternalLink size={10} /> Ver en kardex
-                        </p>
+                        <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-xs text-blue-400 flex items-center gap-1">
+                                <ExternalLink size={10} /> Ver ventas
+                            </span>
+                            <span className="text-xs text-gray-300">·</span>
+                            <a href={buildKardexUrl('SALIDA', manualDesde, manualHasta)}
+                               onClick={e => e.stopPropagation()}
+                               className="text-xs text-gray-400 hover:text-blue-400 flex items-center gap-1 transition-colors">
+                                <ExternalLink size={10} /> Kardex
+                            </a>
+                        </div>
                     </Link>
 
                     {/* Margen bruto */}
@@ -793,7 +815,7 @@ export default function DashboardPage() {
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-base font-semibold text-gray-800">Compras pendientes</h2>
-                            <Link href="/dashboard/purchases" className="text-xs text-blue-500 hover:underline">Ver todas →</Link>
+                            <Link href="/dashboard/purchases?status=PENDIENTE" className="text-xs text-blue-500 hover:underline">Ver todas →</Link>
                         </div>
                         {loading ? (
                             <p className="text-sm text-gray-400 text-center py-6">Cargando...</p>
@@ -809,7 +831,7 @@ export default function DashboardPage() {
                                     .filter((c: any) => c.status === 'PENDIENTE')
                                     .slice(0, 6)
                                     .map((c: any) => (
-                                        <Link key={c.id} href="/dashboard/purchases"
+                                        <Link key={c.id} href="/dashboard/purchases?status=PENDIENTE"
                                             className="flex items-center justify-between py-2.5 group hover:bg-gray-50 px-1 rounded-lg transition-colors">
                                             <div className="min-w-0 flex-1">
                                                 <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">

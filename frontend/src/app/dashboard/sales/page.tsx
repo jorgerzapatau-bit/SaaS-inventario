@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
     Search, Plus, X, UserCircle2, Calendar, ChevronRight,
     AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown,
@@ -105,7 +106,9 @@ function sortSalidas(list: Salida[], key: SortKey, dir: SortDir): Salida[] {
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function SalesPage() {
+function SalesPageInner() {
+    const searchParams = useSearchParams();
+
     const [todasSalidas, setTodasSalidas] = useState<Salida[]>([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
@@ -121,6 +124,17 @@ export default function SalesPage() {
     const [filtroMontoMax, setFiltroMontoMax] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('fecha');
     const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+    // ── Leer filtros desde URL (ej: ?desde=2026-03-01&hasta=2026-03-28&tipo=VENTA) ──
+    useEffect(() => {
+        const desde = searchParams.get('desde');
+        const hasta = searchParams.get('hasta');
+        const tipo  = searchParams.get('tipo');
+        if (desde) setFiltroDesde(desde);
+        if (hasta) setFiltroHasta(hasta);
+        if (tipo)  setFiltroTipo(tipo);
+        if (desde || hasta || tipo) setShowFiltros(true);
+    }, [searchParams]);
 
     useEffect(() => {
         fetchApi('/sales')
@@ -698,5 +712,13 @@ export default function SalesPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function SalesPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Cargando...</div>}>
+            <SalesPageInner />
+        </Suspense>
     );
 }

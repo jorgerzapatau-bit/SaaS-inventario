@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
     Search, Plus, Users, MapPin, Mail, Phone,
     Edit2, Trash2, X, Save, Package, TrendingUp,
@@ -128,7 +129,9 @@ function DeleteConfirmModal({ nombre, onConfirm, onClose, deleting, error }: {
     );
 }
 
-export default function ClientesPage() {
+function ClientesPageInner() {
+    const searchParams = useSearchParams();
+
     const [clientes, setClientes]       = useState<Cliente[]>([]);
     const [loading, setLoading]         = useState(true);
     const [search, setSearch]           = useState('');
@@ -152,6 +155,12 @@ export default function ClientesPage() {
     const [deleting, setDeleting]       = useState(false);
     const [modalError, setModalError]   = useState('');
     const [deleteError, setDeleteError] = useState('');
+
+    // ── Leer filtros desde URL (ej: ?cliente=NombreCliente) ──
+    useEffect(() => {
+        const cliente = searchParams.get('cliente');
+        if (cliente) setSearch(cliente);
+    }, [searchParams]);
 
     const load = async () => {
         setLoading(true);
@@ -544,5 +553,13 @@ export default function ClientesPage() {
             {modalOpen && <ClienteModal initial={editTarget} onSave={handleSave} onClose={() => setModalOpen(false)} saving={saving} error={modalError}/>}
             {deleteTarget && <DeleteConfirmModal nombre={deleteTarget.nombre} onConfirm={handleDelete} onClose={() => setDeleteTarget(null)} deleting={deleting} error={deleteError}/>}
         </div>
+    );
+}
+
+export default function ClientesPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Cargando...</div>}>
+            <ClientesPageInner />
+        </Suspense>
     );
 }
