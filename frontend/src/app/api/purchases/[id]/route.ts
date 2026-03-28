@@ -7,12 +7,12 @@ import { getAuthUser, unauthorized } from '../../lib/auth';
 // PENDIENTE → CANCELADA:  solo actualiza el estado, sin tocar el stock
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
 
-    const { id } = params;
+    const { id } = await params;
     const { status } = await req.json();
 
     if (!['COMPLETADA', 'CANCELADA'].includes(status)) {
