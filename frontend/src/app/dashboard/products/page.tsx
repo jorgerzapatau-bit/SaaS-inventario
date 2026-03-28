@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card';
 import {
     Search, Plus, Edit, Trash2, AlertTriangle, LayoutGrid, List,
     ChevronUp, ChevronDown, ChevronsUpDown, Download, Upload,
-    ArrowUpCircle, ArrowDownCircle, X, Check, BarChart2
+    ArrowUpCircle, ArrowDownCircle, X, Check, BarChart2, Filter
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
@@ -41,12 +41,24 @@ function StockBadge({ stock, stockMinimo }: { stock: number; stockMinimo: number
     return null;
 }
 
-type SortKey = 'nombre' | 'sku' | 'stock' | 'precioCompra' | 'precioVenta' | 'margen'; // precioCompra/Venta map to ultimoPrecio*
+type SortKey = 'nombre' | 'sku' | 'stock' | 'precioCompra' | 'precioVenta' | 'margen';
 type SortDir = 'asc' | 'desc';
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
     if (col !== sortKey) return <ChevronsUpDown size={12} className="text-gray-300 ml-1 inline" />;
     return sortDir === 'asc' ? <ChevronUp size={12} className="text-blue-500 ml-1 inline" /> : <ChevronDown size={12} className="text-blue-500 ml-1 inline" />;
+}
+
+// ── Pill de filtro activo ─────────────────────────────────────────────────────
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+    return (
+        <span className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+            {label}
+            <button onClick={onRemove} className="p-0.5 hover:bg-blue-200 rounded-full transition-colors">
+                <X size={11} />
+            </button>
+        </span>
+    );
 }
 
 // ── Quick Movement Modal ──────────────────────────────────────────────────────
@@ -180,8 +192,6 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     </div>
                     <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
                 </div>
-
-                {/* Plantilla descargable */}
                 <button onClick={() => {
                     const csv = 'sku,nombre,unidad,preciocompra,precioventa,stockminimo\nPRD-001,Producto ejemplo,pieza,100,150,5';
                     const blob = new Blob([csv], { type: 'text/csv' });
@@ -190,7 +200,6 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                 }} className="flex items-center gap-2 text-xs text-blue-500 hover:underline mb-4">
                     <Download size={13} /> Descargar plantilla CSV
                 </button>
-
                 <div onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
                     onDragOver={e => e.preventDefault()} onClick={() => fileRef.current?.click()}
                     className="w-full border-2 border-dashed border-gray-200 rounded-xl py-8 flex flex-col items-center gap-2 cursor-pointer hover:border-blue-400 hover:bg-blue-50/20 transition-all mb-4">
@@ -199,10 +208,8 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     {rows.length > 0 && <p className="text-xs text-green-600 font-medium">{rows.length} productos listos para importar</p>}
                 </div>
                 <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
-
                 {err && <p className="text-xs text-red-500 mb-3">{err}</p>}
                 {result && <p className="text-xs text-green-600 mb-3 font-medium">{result}</p>}
-
                 {rows.length > 0 && (
                     <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
                         <p className="text-xs font-semibold text-gray-500 mb-2">Vista previa:</p>
@@ -214,7 +221,6 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                         {rows.length > 5 && <p className="text-xs text-gray-400 mt-1">...y {rows.length - 5} más</p>}
                     </div>
                 )}
-
                 <div className="flex gap-2">
                     <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
                     <button onClick={handleImport} disabled={rows.length === 0 || importing}
@@ -227,31 +233,27 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
     );
 }
 
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ProductsPage() {
-    const [products, setProducts] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [search, setSearch] = useState('');
-    const [filterCat, setFilterCat] = useState('Todas');
+    const [products, setProducts]       = useState<any[]>([]);
+    const [loading, setLoading]         = useState(true);
+    const [error, setError]             = useState('');
+    const [search, setSearch]           = useState('');
+    const [filterCat, setFilterCat]     = useState('Todas');
     const [filterStock, setFilterStock] = useState('Todos');
-    const [view, setView] = useState<'list' | 'grid'>('list');
+    const [view, setView]               = useState<'list' | 'grid'>('list');
     const [showStockModal, setShowStockModal] = useState(false);
-    const [showTendencia, setShowTendencia] = useState(false);
-    const [allMovements, setAllMovements] = useState<any[]>([]);
-    const [sortKey, setSortKey] = useState<SortKey>('nombre');
-    const [sortDir, setSortDir] = useState<SortDir>('asc');
+    const [showTendencia, setShowTendencia]   = useState(false);
+    const [allMovements, setAllMovements]     = useState<any[]>([]);
+    const [sortKey, setSortKey]   = useState<SortKey>('nombre');
+    const [sortDir, setSortDir]   = useState<SortDir>('asc');
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [quickMov, setQuickMov] = useState<{ product: any; type: 'entrada' | 'salida' } | null>(null);
     const [showImport, setShowImport] = useState(false);
 
     const loadProducts = () => {
         setLoading(true);
-        Promise.all([
-            fetchApi('/products'),
-            fetchApi('/inventory/movements'),
-        ])
+        Promise.all([fetchApi('/products'), fetchApi('/inventory/movements')])
             .then(([prods, movs]) => { setProducts(prods); setAllMovements(movs); })
             .catch(err => setError(err.message || 'Error al cargar'))
             .finally(() => setLoading(false));
@@ -270,11 +272,17 @@ export default function ProductsPage() {
     };
 
     const toggleSelect = (id: string) => setSelected(prev => {
-        const next = new Set(prev);
-        next.has(id) ? next.delete(id) : next.add(id);
-        return next;
+        const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
     });
     const toggleAll = () => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(p => p.id)));
+
+    // ── Limpiar todos los filtros ─────────────────────────────────────────────
+    const clearAllFilters = () => {
+        setSearch('');
+        setFilterCat('Todas');
+        setFilterStock('Todos');
+    };
+    const hayFiltrosActivos = search !== '' || filterCat !== 'Todas' || filterStock !== 'Todos';
 
     // ── CSV Export ────────────────────────────────────────────────────────────
     const exportCSV = () => {
@@ -299,17 +307,17 @@ export default function ProductsPage() {
     const filtered = products.filter(p => {
         const q = search.toLowerCase();
         const matchSearch = !search || p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.categoria?.nombre || '').toLowerCase().includes(q);
-        const matchCat = filterCat === 'Todas' || p.categoria?.nombre === filterCat;
-        const matchStock = filterStock === 'Todos' || (filterStock === 'Bajo mínimo' && p.stock <= p.stockMinimo) || (filterStock === 'Sin stock' && p.stock === 0);
+        const matchCat    = filterCat === 'Todas' || p.categoria?.nombre === filterCat;
+        const matchStock  = filterStock === 'Todos' || (filterStock === 'Bajo mínimo' && p.stock <= p.stockMinimo) || (filterStock === 'Sin stock' && p.stock === 0);
         return matchSearch && matchCat && matchStock;
     });
 
     const sorted = [...filtered].sort((a, b) => {
         let va: any, vb: any;
-        if (sortKey === 'margen') { va = getMargen(a); vb = getMargen(b); }
-        else if (sortKey === 'stock') { va = a.stock ?? 0; vb = b.stock ?? 0; }
+        if (sortKey === 'margen')       { va = getMargen(a); vb = getMargen(b); }
+        else if (sortKey === 'stock')   { va = a.stock ?? 0; vb = b.stock ?? 0; }
         else if (sortKey === 'precioCompra') { va = Number(a.ultimoPrecioCompra??0); vb = Number(b.ultimoPrecioCompra??0); }
-        else if (sortKey === 'precioVenta') { va = Number(a.ultimoPrecioVenta??0); vb = Number(b.ultimoPrecioVenta??0); }
+        else if (sortKey === 'precioVenta')  { va = Number(a.ultimoPrecioVenta??0);  vb = Number(b.ultimoPrecioVenta??0); }
         else { va = (a[sortKey] || '').toLowerCase(); vb = (b[sortKey] || '').toLowerCase(); }
         if (va < vb) return sortDir === 'asc' ? -1 : 1;
         if (va > vb) return sortDir === 'asc' ? 1 : -1;
@@ -318,30 +326,28 @@ export default function ProductsPage() {
 
     const maxMargen = Math.max(...sorted.map(p => getMargen(p)), 1);
 
-    // ── KPIs reactivos ────────────────────────────────────────────────────────
+    // ── KPIs ─────────────────────────────────────────────────────────────────
     const totalValor = allMovements.reduce((a, m) => {
-        const qty   = Number(m.cantidad || 0);
-        const costo = Number(m.costoUnitario || 0);
+        const qty = Number(m.cantidad || 0), costo = Number(m.costoUnitario || 0);
         if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
         if (['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))  return a - qty * costo;
         return a;
     }, 0);
-    const margenProm = filtered.length > 0 ? filtered.reduce((a, p) => a + getMargen(p), 0) / filtered.length : 0;
-    const bajosStock = filtered.filter(p => p.stock <= p.stockMinimo).length;
+    const margenProm  = filtered.length > 0 ? filtered.reduce((a, p) => a + getMargen(p), 0) / filtered.length : 0;
+    const bajosStock  = filtered.filter(p => p.stock <= p.stockMinimo).length;
     const catsActivas = new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean)).size;
 
     // ── Category stats ────────────────────────────────────────────────────────
     const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
         const prods = products.filter(p => p.categoria?.nombre === cat);
         const valor = prods.reduce((a, p) => a + (p.stock * Number(p.ultimoPrecioCompra ?? 0)), 0);
-        const mg = prods.length > 0 ? prods.reduce((a, p) => a + getMargen(p), 0) / prods.length : 0;
+        const mg    = prods.length > 0 ? prods.reduce((a, p) => a + getMargen(p), 0) / prods.length : 0;
         return { cat, count: prods.length, valor, mg };
     }).sort((a, b) => b.valor - a.valor);
     const maxCatValor = catStats.length > 0 ? catStats[0].valor : 1;
 
-    // Movimientos filtrados por categoría activa
     const filteredProductIds = new Set(filtered.map(p => p.id));
-    const filteredMovements = filterCat === 'Todas'
+    const filteredMovements  = filterCat === 'Todas'
         ? allMovements
         : allMovements.filter(m => filteredProductIds.has(m.productoId));
 
@@ -351,7 +357,7 @@ export default function ProductsPage() {
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
 
-            {/* Header */}
+            {/* ── Header ─────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Productos</h1>
@@ -372,13 +378,13 @@ export default function ProductsPage() {
 
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-            {/* ── KPIs reactivos ──────────────────────────────────────── */}
+            {/* ── KPIs ───────────────────────────────────────────────── */}
             {!loading && (
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Productos</p>
-                            <InfoTooltip text="SKUs activos visibles según los filtros aplicados actualmente." position="bottom" />
+                            <InfoTooltip text="SKUs visibles según los filtros aplicados." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{filtered.length}</p>
                         <p className="text-xs text-gray-400 mt-1">de {products.length} totales</p>
@@ -386,7 +392,7 @@ export default function ProductsPage() {
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Valor inventario</p>
-                            <InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos. Misma fórmula que el KPI del dashboard — ambos siempre muestran el mismo número." position="bottom" />
+                            <InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo). Mismo cálculo que el dashboard." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">${totalValor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
                         <p className="text-xs text-gray-400 mt-1">mismo cálculo que dashboard</p>
@@ -394,23 +400,29 @@ export default function ProductsPage() {
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Margen promedio</p>
-                            <InfoTooltip text="Promedio de ((últimoPrecioVenta − últimoCostoCompra) ÷ últimoPrecioVenta × 100) de los productos visibles. Verde ≥30%, amarillo ≥15%, rojo <15%." position="bottom" />
+                            <InfoTooltip text="Promedio de margen de los productos visibles. Verde ≥30%, amarillo ≥15%, rojo <15%." position="bottom" />
                         </div>
                         <p className={`text-2xl font-bold ${margenProm >= 30 ? 'text-green-600' : margenProm >= 15 ? 'text-amber-500' : 'text-red-500'}`}>{margenProm.toFixed(1)}%</p>
                         <p className="text-xs text-gray-400 mt-1">productos visibles</p>
                     </div>
-                    <div className={`rounded-xl border shadow-sm p-4 ${bajosStock > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'}`}>
+                    {/* FIX: Stock bajo mínimo ahora es clickeable para activar el filtro */}
+                    <button
+                        onClick={() => setFilterStock(filterStock === 'Bajo mínimo' ? 'Todos' : 'Bajo mínimo')}
+                        className={`rounded-xl border shadow-sm p-4 text-left transition-all hover:shadow-md ${bajosStock > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'} ${filterStock === 'Bajo mínimo' ? 'ring-2 ring-orange-400' : ''}`}
+                    >
                         <div className="flex items-center gap-1 mb-1">
                             <p className={`text-xs ${bajosStock > 0 ? 'text-orange-500' : 'text-gray-400'}`}>Stock bajo mínimo</p>
-                            <InfoTooltip text="Productos visibles donde stock actual ≤ stock mínimo definido en el catálogo. Haz clic en el filtro 'Bajo mínimo' para verlos." position="bottom" />
+                            <InfoTooltip text="Haz clic para filtrar solo estos productos." position="bottom" />
                         </div>
                         <p className={`text-2xl font-bold ${bajosStock > 0 ? 'text-orange-600' : 'text-gray-800'}`}>{bajosStock}</p>
-                        <p className={`text-xs mt-1 ${bajosStock > 0 ? 'text-orange-400' : 'text-gray-400'}`}>{bajosStock > 0 ? 'requieren atención' : 'todo en orden'}</p>
-                    </div>
+                        <p className={`text-xs mt-1 ${bajosStock > 0 ? 'text-orange-400' : 'text-gray-400'}`}>
+                            {filterStock === 'Bajo mínimo' ? '✓ Filtro activo — clic para quitar' : bajosStock > 0 ? 'clic para filtrar' : 'todo en orden'}
+                        </p>
+                    </button>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Categorías</p>
-                            <InfoTooltip text="Número de categorías distintas en los productos visibles. Haz clic en una tarjeta de categoría para filtrar." position="bottom" />
+                            <InfoTooltip text="Categorías distintas en los productos visibles." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{catsActivas}</p>
                         <p className="text-xs text-gray-400 mt-1">en selección actual</p>
@@ -422,77 +434,87 @@ export default function ProductsPage() {
             {!loading && catStats.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4">
-                        <p className="text-sm font-semibold text-gray-700">Distribución por categoría</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-gray-700">Distribución por categoría</p>
+                            {/* FIX: indicador de filtro activo visible en el encabezado */}
+                            {filterCat !== 'Todas' && (
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                    style={{ background: getCatColor(filterCat) + '20', color: getCatColor(filterCat) }}>
+                                    Filtrando: {filterCat}
+                                </span>
+                            )}
+                        </div>
                         <div className="flex items-center gap-3">
                             <button onClick={() => setShowTendencia(v => !v)}
                                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${showTendencia ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                                 <BarChart2 size={13} /> {showTendencia ? 'Ocultar tendencia' : 'Ver tendencia'}
                             </button>
-
-                            <p className="text-xs text-gray-400">Haz clic para filtrar</p>
+                            <p className="text-xs text-gray-400 hidden sm:block">Clic en tarjeta para filtrar</p>
                         </div>
                     </div>
-                    {catStats.length <= 6 ? (
-                        <div className={`grid gap-3 ${catStats.length <= 2 ? 'grid-cols-2' : catStats.length === 3 ? 'grid-cols-3' : catStats.length === 4 ? 'grid-cols-2 md:grid-cols-4' : catStats.length === 5 ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
-                            {catStats.map(({ cat, count, valor, mg }) => {
-                                const color = getCatColor(cat);
-                                const isActive = filterCat === cat;
-                                return (
-                                    <button key={cat} onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
-                                        className={`text-left rounded-xl p-3 border transition-all cursor-pointer ${isActive ? 'border-2' : 'border hover:shadow-sm'}`}
-                                        style={{ borderColor: isActive ? color : color + '30', background: color + '08' }}>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-xs font-semibold truncate max-w-[80px]" style={{ color }}>{cat}</span>
-                                            <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ background: color + '20', color }}>{count}</span>
-                                        </div>
-                                        <p className="text-base font-bold text-gray-800 mb-0.5">${valor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                                        <p className="text-xs text-gray-400 mb-2">Margen <span className="font-semibold text-green-600">{mg.toFixed(1)}%</span></p>
-                                        <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(valor / maxCatValor) * 100}%`, background: color }} />
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div>
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                {catStats.map(({ cat, count, valor, mg }) => {
-                                    const color = getCatColor(cat);
-                                    const isActive = filterCat === cat;
-                                    return (
-                                        <button key={cat} onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border cursor-pointer hover:shadow-sm"
-                                            style={{
-                                                background: isActive ? color : color + '12',
-                                                color: isActive ? 'white' : color,
-                                                borderColor: isActive ? color : color + '40',
-                                            }}>
-                                            <span>{cat}</span>
-                                            <span className="font-bold opacity-80">·{count}</span>
-                                            <span className="opacity-60">${valor >= 1000 ? (valor/1000).toFixed(0)+'k' : valor}</span>
-                                            <span className="opacity-60">{mg.toFixed(0)}%mg</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <p className="text-xs text-gray-400">{catStats.length} categorías · haz clic para filtrar</p>
-                        </div>
-                    )}
-                    {filterCat !== 'Todas' && <button onClick={() => setFilterCat('Todas')} className="mt-3 text-xs text-blue-500 hover:underline">✕ Quitar filtro de categoría</button>}
 
-
+                    <div className={`grid gap-3 ${catStats.length <= 2 ? 'grid-cols-2' : catStats.length === 3 ? 'grid-cols-3' : catStats.length === 4 ? 'grid-cols-2 md:grid-cols-4' : catStats.length === 5 ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
+                        {catStats.map(({ cat, count, valor, mg }) => {
+                            const color    = getCatColor(cat);
+                            const isActive = filterCat === cat;
+                            return (
+                                <button key={cat}
+                                    onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
+                                    className={`text-left rounded-xl p-3 border transition-all cursor-pointer relative ${isActive ? 'border-2 shadow-md' : 'border hover:shadow-sm'}`}
+                                    style={{ borderColor: isActive ? color : color + '30', background: color + '08' }}
+                                >
+                                    {/* FIX: ícono X visible cuando está activo */}
+                                    {isActive && (
+                                        <span className="absolute top-2 right-2 flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold"
+                                            style={{ background: color }}>
+                                            ✕
+                                        </span>
+                                    )}
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-semibold truncate max-w-[80px]" style={{ color }}>{cat}</span>
+                                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 mr-5" style={{ background: color + '20', color }}>{count}</span>
+                                    </div>
+                                    <p className="text-base font-bold text-gray-800 mb-0.5">${valor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                                    <p className="text-xs text-gray-400 mb-2">Margen <span className="font-semibold text-green-600">{mg.toFixed(1)}%</span></p>
+                                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(valor / maxCatValor) * 100}%`, background: color }} />
+                                    </div>
+                                    {isActive && (
+                                        <p className="text-xs mt-2 font-medium" style={{ color }}>Clic para quitar filtro</p>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
-            {/* ── Tendencia de movimientos ────────────────────────────── */}
+            {/* ── Tendencia ──────────────────────────────────────────── */}
             {!loading && showTendencia && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <AnalyticsChart
-                        externalMovements={filteredMovements}
-                        title={filterCat !== 'Todas' ? filterCat : undefined}
-                        compact
-                    />
+                    <AnalyticsChart externalMovements={filteredMovements} title={filterCat !== 'Todas' ? filterCat : undefined} compact />
+                </div>
+            )}
+
+            {/* ── Barra de filtros activos ─────────────────────────────
+                Siempre visible cuando hay filtros, con pills removibles
+            ──────────────────────────────────────────────────────────── */}
+            {hayFiltrosActivos && (
+                <div className="flex items-center gap-2 flex-wrap px-1">
+                    <Filter size={13} className="text-gray-400 flex-shrink-0" />
+                    <span className="text-xs text-gray-400 font-medium">Filtros activos:</span>
+                    {search && (
+                        <FilterPill label={`Búsqueda: "${search}"`} onRemove={() => setSearch('')} />
+                    )}
+                    {filterCat !== 'Todas' && (
+                        <FilterPill label={`Categoría: ${filterCat}`} onRemove={() => setFilterCat('Todas')} />
+                    )}
+                    {filterStock !== 'Todos' && (
+                        <FilterPill label={`Stock: ${filterStock}`} onRemove={() => setFilterStock('Todos')} />
+                    )}
+                    <button onClick={clearAllFilters} className="text-xs text-red-400 hover:text-red-600 hover:underline ml-1">
+                        Limpiar todo
+                    </button>
                 </div>
             )}
 
@@ -537,28 +559,65 @@ export default function ProductsPage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                         placeholder="Buscar por SKU, nombre o categoría..."
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800" />
+                        className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800" />
+                    {/* FIX: botón limpiar búsqueda dentro del input */}
+                    {search && (
+                        <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <X size={14} />
+                        </button>
+                    )}
                 </div>
-                <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                {/* FIX: selects con indicador visual cuando tienen filtro activo */}
+                <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
+                    className={`py-2 px-3 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${filterCat !== 'Todas' ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-200'}`}>
                     {categories.map(c => <option key={c}>{c}</option>)}
                 </select>
-                <select value={filterStock} onChange={e => setFilterStock(e.target.value)} className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                <select value={filterStock} onChange={e => setFilterStock(e.target.value)}
+                    className={`py-2 px-3 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${filterStock !== 'Todos' ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-200'}`}>
                     <option>Todos</option><option>Bajo mínimo</option><option>Sin stock</option>
                 </select>
+                {/* FIX: botón limpiar filtros junto a los selects */}
+                {hayFiltrosActivos && (
+                    <button onClick={clearAllFilters}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">
+                        <X size={13} /> Limpiar filtros
+                    </button>
+                )}
                 <div className="flex border border-gray-200 rounded-lg overflow-hidden ml-auto">
                     <button onClick={() => setView('list')} className={`p-2 transition-colors ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-400 hover:text-gray-600'}`}><List size={18} /></button>
                     <button onClick={() => setView('grid')} className={`p-2 transition-colors border-l border-gray-200 ${view === 'grid' ? 'bg-blue-50 text-blue-600' : 'bg-white text-gray-400 hover:text-gray-600'}`}><LayoutGrid size={18} /></button>
                 </div>
             </div>
 
+            {/* ── Estado vacío cuando filtros no dan resultados ─────────
+                Muestra qué filtros están activos y ofrece limpiarlos
+            ──────────────────────────────────────────────────────────── */}
+            {!loading && sorted.length === 0 && hayFiltrosActivos && (
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 flex flex-col items-center gap-3 text-center">
+                    <div className="p-3 bg-gray-100 rounded-full">
+                        <Search size={22} className="text-gray-400" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-semibold text-gray-700">Sin resultados con los filtros actuales</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                            {filterCat !== 'Todas' && `Categoría: "${filterCat}" `}
+                            {filterStock !== 'Todos' && `· Stock: "${filterStock}" `}
+                            {search && `· Búsqueda: "${search}"`}
+                        </p>
+                    </div>
+                    <button onClick={clearAllFilters} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        Limpiar todos los filtros
+                    </button>
+                </div>
+            )}
+
             {/* ── VISTA GRILLA ────────────────────────────────────────── */}
-            {view === 'grid' && (
+            {view === 'grid' && sorted.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {loading ? <p className="col-span-full text-center text-gray-500 py-10">Cargando...</p>
-                        : sorted.length === 0 ? <p className="col-span-full text-center text-gray-500 py-10">No se encontraron productos.</p>
                         : sorted.map(product => {
-                            const isLow = product.stock <= product.stockMinimo;
-                            const mg = getMargen(product).toFixed(0);
+                            const isLow    = product.stock <= product.stockMinimo;
+                            const mg       = getMargen(product).toFixed(0);
                             const isSelected = selected.has(product.id);
                             return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
@@ -605,7 +664,7 @@ export default function ProductsPage() {
             )}
 
             {/* ── VISTA LISTA ─────────────────────────────────────────── */}
-            {view === 'list' && (
+            {view === 'list' && (sorted.length > 0 || loading) && (
                 <Card>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
@@ -624,7 +683,7 @@ export default function ProductsPage() {
                                     <th className={`${thClass('margen')} text-right`} onClick={() => handleSort('margen')}>
                                         <span className="inline-flex items-center gap-1 justify-end w-full">
                                             Margen <SortIcon col="margen" sortKey={sortKey} sortDir={sortDir} />
-                                            <InfoTooltip text="(último precioVenta − último costoCompra) ÷ último precioVenta × 100. Verde ≥30%, amarillo ≥15%, rojo <15%." position="top" />
+                                            <InfoTooltip text="(últimoPrecioVenta − últimoCosto) ÷ últimoPrecioVenta × 100." position="top" />
                                         </span>
                                     </th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
@@ -632,10 +691,9 @@ export default function ProductsPage() {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {loading ? <tr><td colSpan={10} className="p-8 text-center text-gray-500">Cargando...</td></tr>
-                                    : sorted.length === 0 ? <tr><td colSpan={10} className="p-8 text-center text-gray-500">No se encontraron productos.</td></tr>
                                     : sorted.map(product => {
-                                        const isLow = product.stock <= product.stockMinimo;
-                                        const mg = getMargen(product);
+                                        const isLow      = product.stock <= product.stockMinimo;
+                                        const mg         = getMargen(product);
                                         const isSelected = selected.has(product.id);
                                         return (
                                             <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
@@ -649,9 +707,14 @@ export default function ProductsPage() {
                                                     {isLow && <div className="mt-0.5"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
                                                 </td>
                                                 <td className="p-3">
-                                                    <span className="px-2 py-1 rounded-full text-xs font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>
+                                                    {/* FIX: clic en categoría dentro de la tabla también filtra */}
+                                                    <button
+                                                        onClick={() => setFilterCat(filterCat === product.categoria?.nombre ? 'Todas' : (product.categoria?.nombre || 'Todas'))}
+                                                        className="px-2 py-1 rounded-full text-xs font-medium transition-all hover:opacity-80"
+                                                        style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}
+                                                    >
                                                         {product.categoria?.nombre || 'Sin categoría'}
-                                                    </span>
+                                                    </button>
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-700'}`}>{product.stock ?? 0}</span>
@@ -689,7 +752,16 @@ export default function ProductsPage() {
                     </div>
                     {!loading && (
                         <div className="p-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-                            <span>{sorted.length} producto{sorted.length !== 1 ? 's' : ''} · {selected.size > 0 && <span className="text-blue-600 font-medium">{selected.size} seleccionado{selected.size !== 1 ? 's' : ''}</span>}</span>
+                            <span>
+                                {sorted.length} producto{sorted.length !== 1 ? 's' : ''}
+                                {hayFiltrosActivos && products.length !== sorted.length && (
+                                    <span className="text-xs text-blue-500 ml-1">
+                                        (de {products.length} totales —{' '}
+                                        <button onClick={clearAllFilters} className="underline">ver todos</button>)
+                                    </span>
+                                )}
+                                {selected.size > 0 && <span className="text-blue-600 font-medium ml-2">{selected.size} seleccionado{selected.size !== 1 ? 's' : ''}</span>}
+                            </span>
                             {sortKey !== 'nombre' && (
                                 <span className="text-xs text-blue-500">Ordenado por <strong>{sortKey}</strong> {sortDir === 'asc' ? '↑' : '↓'} ·{' '}
                                     <button onClick={() => { setSortKey('nombre'); setSortDir('asc'); }} className="underline">limpiar</button>
@@ -701,22 +773,14 @@ export default function ProductsPage() {
             )}
 
             {/* ── Modales ──────────────────────────────────────────────── */}
-            {showStockModal && (
-                <StockBarChart products={sorted} onClose={() => setShowStockModal(false)} />
-            )}
+            {showStockModal && <StockBarChart products={sorted} onClose={() => setShowStockModal(false)} />}
             {quickMov && (
-                <QuickMovModal
-                    product={quickMov.product}
-                    type={quickMov.type}
+                <QuickMovModal product={quickMov.product} type={quickMov.type}
                     onClose={() => setQuickMov(null)}
-                    onDone={() => { setQuickMov(null); loadProducts(); }}
-                />
+                    onDone={() => { setQuickMov(null); loadProducts(); }} />
             )}
             {showImport && (
-                <ImportModal
-                    onClose={() => setShowImport(false)}
-                    onDone={() => { setShowImport(false); loadProducts(); }}
-                />
+                <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
         </div>
     );
