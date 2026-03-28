@@ -121,6 +121,7 @@ function EmptyChartState({ desde, hasta, onChangePeriod }: {
 export default function DashboardPage() {
     const [products, setProducts]   = useState<any[]>([]);
     const [movements, setMovements] = useState<any[]>([]);
+    const [purchases, setPurchases] = useState<any[]>([]);
     const [loading, setLoading]     = useState(true);
     const [period, setPeriod]       = useState<PeriodKey>('general');
     const [showSinMovimiento, setShowSinMovimiento] = useState(false);
@@ -132,9 +133,10 @@ export default function DashboardPage() {
     useEffect(() => {
         const load = async () => {
             try {
-                const [prods, movs] = await Promise.all([fetchApi('/products'), fetchApi('/inventory/movements')]);
+                const [prods, movs, purch] = await Promise.all([fetchApi('/products'), fetchApi('/inventory/movements'), fetchApi('/purchases')]);
                 setProducts(prods);
                 setMovements(movs);
+                setPurchases(Array.isArray(purch) ? purch : []);
             } catch (e) { console.error(e); }
             finally { setLoading(false); }
         };
@@ -721,10 +723,41 @@ export default function DashboardPage() {
                         </div>
                         {loading ? (
                             <p className="text-sm text-gray-400 text-center py-6">Cargando...</p>
+                        ) : purchases.filter((c: any) => c.status === 'PENDIENTE').length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-6 gap-2">
+                                <div className="p-3 bg-green-50 rounded-full"><ShoppingCart size={20} className="text-green-500" /></div>
+                                <p className="text-sm text-gray-500 font-medium">Sin compras pendientes</p>
+                                <p className="text-xs text-gray-400">Todas las órdenes están completadas</p>
+                            </div>
                         ) : (
-                            <p className="text-sm text-gray-400 text-center py-6">
-                                Conecta el módulo de órdenes de compra para ver las pendientes.
-                            </p>
+                            <div className="divide-y divide-gray-50">
+                                {purchases
+                                    .filter((c: any) => c.status === 'PENDIENTE')
+                                    .slice(0, 6)
+                                    .map((c: any) => (
+                                        <Link key={c.id} href="/dashboard/purchases"
+                                            className="flex items-center justify-between py-2.5 group hover:bg-gray-50 px-1 rounded-lg transition-colors">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">
+                                                    {c.proveedor?.nombre || 'Sin proveedor'}
+                                                </p>
+                                                <p className="text-xs text-gray-400">{c.referencia || '—'} · {new Date(c.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-700">
+                                                    ${Number(c.total).toLocaleString('es-MX')}
+                                                </span>
+                                            </div>
+                                        </Link>
+                                    ))}
+                                {purchases.filter((c: any) => c.status === 'PENDIENTE').length > 6 && (
+                                    <div className="pt-2">
+                                        <Link href="/dashboard/purchases" className="text-xs text-blue-500 hover:underline">
+                                            + {purchases.filter((c: any) => c.status === 'PENDIENTE').length - 6} compras pendientes más →
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
 
