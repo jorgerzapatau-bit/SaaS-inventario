@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { StockBarChart } from '@/components/dashboard/StockBarChart';
@@ -235,7 +235,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function ProductsPage() {
+function ProductsPageInner() {
     const [products, setProducts]       = useState<any[]>([]);
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState('');
@@ -791,5 +791,13 @@ export default function ProductsPage() {
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
         </div>
+    );
+}
+
+export default function ProductsPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando productos...</div>}>
+            <ProductsPageInner />
+        </Suspense>
     );
 }
