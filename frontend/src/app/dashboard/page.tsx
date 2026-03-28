@@ -122,7 +122,7 @@ export default function DashboardPage() {
     const [products, setProducts]   = useState<any[]>([]);
     const [movements, setMovements] = useState<any[]>([]);
     const [loading, setLoading]     = useState(true);
-    const [period, setPeriod]       = useState<PeriodKey>('este_mes');
+    const [period, setPeriod]       = useState<PeriodKey>('general');
     const [showSinMovimiento, setShowSinMovimiento] = useState(false);
 
     const now = new Date();
@@ -438,20 +438,20 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-500 font-medium">
-                                    {period === 'general' ? 'Entradas totales' : period === 'este_mes' ? 'Entradas hoy' : 'Entradas período'}
+                                    {period === 'general' ? 'Entradas totales' : period === 'este_mes' ? 'Entradas del mes' : 'Entradas período'}
                                 </p>
                                 <InfoTooltip text="Suma de unidades ENTRADA + AJUSTE_POSITIVO en el período." />
                             </div>
                             <div className="p-2 bg-green-50 rounded-lg"><ArrowUpCircle size={16} className="text-green-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-green-600">
-                            {loading ? '...' : `+${period === 'este_mes' ? entradasHoy : entradasActual}`}
+                            {loading ? '...' : `+${entradasActual}`}
                         </p>
                         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
                                 period === 'este_mes' ? (
                                     <><DeltaBadge pct={entradasHoyPct} label="vs ayer" />
-                                    <span className="text-xs text-gray-400">· +{entradasActual} mes</span>
+                                    <span className="text-xs text-gray-400">· hoy: +{entradasHoy}</span>
                                     {entradasPct !== null && <DeltaBadge pct={entradasPct} label={compareLabel} />}</>
                                 ) : <DeltaBadge pct={entradasPct} label={compareLabel || undefined} />
                             )}
@@ -463,20 +463,20 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-500 font-medium">
-                                    {period === 'general' ? 'Salidas totales' : period === 'este_mes' ? 'Salidas hoy' : 'Salidas período'}
+                                    {period === 'general' ? 'Salidas totales' : period === 'este_mes' ? 'Salidas del mes' : 'Salidas período'}
                                 </p>
                                 <InfoTooltip text="Suma de unidades SALIDA + AJUSTE_NEGATIVO en el período." />
                             </div>
                             <div className="p-2 bg-red-50 rounded-lg"><ArrowDownCircle size={16} className="text-red-500" /></div>
                         </div>
                         <p className="text-3xl font-bold text-red-500">
-                            {loading ? '...' : `-${period === 'este_mes' ? salidasHoy : salidasActual}`}
+                            {loading ? '...' : `-${salidasActual}`}
                         </p>
                         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : (
                                 period === 'este_mes' ? (
                                     <><DeltaBadge pct={salidasHoyPct} label="vs ayer" />
-                                    <span className="text-xs text-gray-400">· -{salidasActual} mes</span>
+                                    <span className="text-xs text-gray-400">· hoy: -{salidasHoy}</span>
                                     {salidasPct !== null && <DeltaBadge pct={salidasPct} label={compareLabel} />}</>
                                 ) : <DeltaBadge pct={salidasPct} label={compareLabel || undefined} />
                             )}
