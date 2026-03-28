@@ -5,7 +5,7 @@ import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import {
     Package, AlertTriangle, DollarSign, ArrowUpCircle, ArrowDownCircle,
     RotateCcw, TrendingUp, TrendingDown, Minus, Percent,
-    ShoppingCart, Ban, Warehouse, Calendar, ExternalLink, Clock
+    ShoppingCart, Ban, Warehouse, Calendar, ExternalLink, Clock, FileText
 } from 'lucide-react';
 import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
 import { fetchApi } from '@/lib/api';
@@ -115,6 +115,15 @@ function EmptyChartState({ desde, hasta, onChangePeriod }: {
             </div>
         </div>
     );
+}
+
+// ── Helper: construye URL al kardex con filtros de período ─────────────
+function buildKardexUrl(tipo: string, desde: string, hasta: string) {
+    const params = new URLSearchParams();
+    if (tipo)  params.set('tipo', tipo);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    return `/dashboard/inventory?${params.toString()}`;
 }
 
 // ── Componente principal ───────────────────────────────────────────────
@@ -284,6 +293,49 @@ export default function DashboardPage() {
     // Fecha y hora actual para mostrar en la zona estática
     const fechaActual = now.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+    const exportPDF = () => {
+        const lines: string[] = [];
+        lines.push(`RESUMEN GENERAL DE INVENTARIO`);
+        lines.push(`Generado: ${now.toLocaleString('es-MX')}`);
+        lines.push(`Período: ${selectedPeriodLabel}`);
+        lines.push('');
+        lines.push('═══ ESTADO ACTUAL DEL INVENTARIO ═══');
+        lines.push(`Valor inventario:     $${fmt(valorActualTotal)}`);
+        lines.push(`Total productos:      ${products.length} SKUs · ${categories} categorías`);
+        lines.push(`Unidades en stock:    ${totalStock.toLocaleString()}`);
+        lines.push(`Stock bajo mínimo:    ${lowStockProducts.length} productos`);
+        lines.push('');
+        lines.push('═══ MOVIMIENTOS DEL PERÍODO ═══');
+        lines.push(`Entradas:             +${entradasActual} unidades`);
+        lines.push(`Salidas:              -${salidasActual} unidades`);
+        lines.push(`Rotación:             ${rotacionNum.toFixed(1)}%`);
+        lines.push('');
+        lines.push('═══ FINANZAS DEL PERÍODO ═══');
+        lines.push(`Costo de entradas:    $${fmt(costoEntradas)}`);
+        lines.push(`Ingresos por salidas: $${fmt(ingresosSalidas)}`);
+        lines.push(`Margen bruto:         $${fmt(margenBruto)}`);
+        lines.push(`Margen %:             ${margenPct.toFixed(1)}%`);
+        lines.push(`Sin movimiento:       ${sinMovimiento.length} productos`);
+        lines.push(`Valor inmovilizado:   $${fmt(valorInmovilizado)}`);
+        if (sinMovimiento.length > 0) {
+            lines.push('');
+            lines.push('─── Productos sin movimiento ───');
+            sinMovimiento.forEach(p => lines.push(`  · ${p.nombre} (${p.sku}) — Stock: ${p.stock}`));
+        }
+        if (lowStockProducts.length > 0) {
+            lines.push('');
+            lines.push('─── Productos bajo mínimo ───');
+            lowStockProducts.forEach(p => lines.push(`  · ${p.nombre} (${p.sku}) — Stock: ${p.stock} / Mín: ${p.stockMinimo}`));
+        }
+        const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `resumen-inventario-${toInputDate(now)}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
 
@@ -294,6 +346,10 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-400 mt-0.5 capitalize">{fechaActual}</p>
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
+                    <button onClick={exportPDF}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-medium rounded-lg transition-colors shadow-sm">
+                        <FileText size={16} /> Exportar resumen
+                    </button>
                     <Link href="/dashboard/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
                         <ArrowUpCircle size={16} /> Nueva Entrada
                     </Link>
@@ -322,10 +378,10 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
                     {/* Valor inventario AHORA */}
-                    <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+                    <Link href="/dashboard/products" className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:shadow-md hover:border-blue-200 transition-all group block">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Valor inventario</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Valor inventario</p>
                                 <InfoTooltip text="Valor actual del inventario: Σ(todas las entradas×costo) − Σ(todas las salidas×costo) desde el inicio. Siempre refleja el estado real del almacén hoy." />
                             </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><DollarSign size={16} className="text-blue-600" /></div>
@@ -333,21 +389,27 @@ export default function DashboardPage() {
                         <p className="text-3xl font-bold text-gray-800">
                             {loading ? '...' : `$${fmt(valorActualTotal)}`}
                         </p>
-                        <p className="text-xs text-gray-400 mt-2">{products.length} SKUs · {categories} categorías</p>
-                    </div>
+                        <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                            {products.length} SKUs · {categories} categorías
+                            <ExternalLink size={10} className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-blue-400" />
+                        </p>
+                    </Link>
 
                     {/* Total productos AHORA */}
-                    <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+                    <Link href="/dashboard/products" className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:shadow-md hover:border-purple-200 transition-all group block">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Total productos</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-purple-600 transition-colors">Total productos</p>
                                 <InfoTooltip text="Número total de SKUs en el catálogo. Estado actual del sistema." />
                             </div>
                             <div className="p-2 bg-purple-50 rounded-lg"><Package size={16} className="text-purple-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-gray-800">{loading ? '...' : products.length}</p>
-                        <p className="text-xs text-gray-400 mt-2">{categories} categorías · {totalStock.toLocaleString()} unidades en stock</p>
-                    </div>
+                        <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                            {categories} categorías · {totalStock.toLocaleString()} unidades en stock
+                            <ExternalLink size={10} className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity text-purple-400" />
+                        </p>
+                    </Link>
 
                     {/* Stock bajo mínimo AHORA */}
                     <div className={`rounded-xl border shadow-sm p-5 ${lowStockProducts.length > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-100'}`}>
@@ -436,10 +498,10 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
 
                     {/* Entradas */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href={buildKardexUrl('ENTRADA', manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">
                                     {period === 'general' ? 'Entradas totales' : period === 'este_mes' ? 'Entradas del mes' : 'Entradas período'}
                                 </p>
                                 <InfoTooltip text="Suma de unidades ENTRADA + AJUSTE_POSITIVO en el período." />
@@ -458,13 +520,16 @@ export default function DashboardPage() {
                                 ) : <DeltaBadge pct={entradasPct} label={compareLabel || undefined} />
                             )}
                         </div>
-                    </div>
+                        <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver en kardex
+                        </p>
+                    </Link>
 
                     {/* Salidas */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href={buildKardexUrl('SALIDA', manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-red-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-red-500 transition-colors">
                                     {period === 'general' ? 'Salidas totales' : period === 'este_mes' ? 'Salidas del mes' : 'Salidas período'}
                                 </p>
                                 <InfoTooltip text="Suma de unidades SALIDA + AJUSTE_NEGATIVO en el período." />
@@ -483,7 +548,10 @@ export default function DashboardPage() {
                                 ) : <DeltaBadge pct={salidasPct} label={compareLabel || undefined} />
                             )}
                         </div>
-                    </div>
+                        <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver en kardex
+                        </p>
+                    </Link>
 
                     {/* Rotación */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
@@ -514,10 +582,10 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
 
                     {/* Costo entradas */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href="/dashboard/purchases" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Costo de entradas</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Costo de entradas</p>
                                 <InfoTooltip text="Σ(cantidad × costoUnitario) de entradas en el período. Capital invertido en compras." />
                             </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><ShoppingCart size={16} className="text-blue-600" /></div>
@@ -526,13 +594,16 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={costoEntradasDelta} label={compareLabel || undefined} />}
                         </div>
-                    </div>
+                        <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver compras
+                        </p>
+                    </Link>
 
                     {/* Ingresos salidas */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href={buildKardexUrl('SALIDA', manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Ingresos por salidas</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Ingresos por salidas</p>
                                 <InfoTooltip text="Σ(cantidad × precioVenta) de salidas tipo SALIDA en el período." />
                             </div>
                             <div className="p-2 bg-green-50 rounded-lg"><TrendingUp size={16} className="text-green-600" /></div>
@@ -541,7 +612,10 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={ingresosDelta} label={compareLabel || undefined} />}
                         </div>
-                    </div>
+                        <p className="text-xs text-blue-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver en kardex
+                        </p>
+                    </Link>
 
                     {/* Margen bruto */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">

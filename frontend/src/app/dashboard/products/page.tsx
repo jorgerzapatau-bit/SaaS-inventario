@@ -254,10 +254,13 @@ function ProductsPageInner() {
 
     const searchParams = useSearchParams();
 
-    // Leer parámetros de URL al montar (ej: ?stock=bajo desde el dashboard)
+    // Leer parámetros de URL al montar (ej: ?stock=bajo o ?sinMovimiento=1 desde el dashboard)
     useEffect(() => {
         if (searchParams.get('stock') === 'bajo') {
             setFilterStock('Bajo mínimo');
+        }
+        if (searchParams.get('stock') === 'sinStock') {
+            setFilterStock('Sin stock');
         }
     }, [searchParams]);
 

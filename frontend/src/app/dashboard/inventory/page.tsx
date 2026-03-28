@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, X, Building2, User, ChevronRight, ChevronLeft,
          SlidersHorizontal, ChevronDown, ArrowDownToLine, ArrowUpFromLine,
          Package, TrendingDown, TrendingUp, Activity } from 'lucide-react';
@@ -47,7 +48,8 @@ const PAGE_SIZE = 30;
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
-export default function KardexPage() {
+function KardexPageInner() {
+    const searchParams = useSearchParams();
     const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
     const [loading,     setLoading]     = useState(true);
     const [error,       setError]       = useState('');
@@ -66,6 +68,17 @@ export default function KardexPage() {
     const [filtroMontoMax, setFiltroMontoMax]   = useState('');
     const [sortKey,        setSortKey]          = useState<SortKey>('fecha');
     const [sortDir,        setSortDir]          = useState<SortDir>('desc');
+
+    // Leer filtros desde URL (ej: ?tipo=ENTRADA&desde=2026-03-01&hasta=2026-03-28)
+    useEffect(() => {
+        const tipo  = searchParams.get('tipo');
+        const desde = searchParams.get('desde');
+        const hasta = searchParams.get('hasta');
+        if (tipo)  setFiltroTipo(tipo);
+        if (desde) setFiltroDesde(desde);
+        if (hasta) setFiltroHasta(hasta);
+        if (tipo || desde || hasta) setShowPanel(true);
+    }, [searchParams]);
 
     useEffect(() => {
         fetchApi('/inventory/movements')
@@ -533,5 +546,13 @@ export default function KardexPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function KardexPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando movimientos...</div>}>
+            <KardexPageInner />
+        </Suspense>
     );
 }
