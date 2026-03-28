@@ -16,7 +16,7 @@ export default function NewPurchasePage() {
     const [formData, setFormData] = useState({
         referencia: "",
         proveedorId: "",
-        estado: "COMPLETADA",
+        estado: "PENDIENTE",
     });
 
     const [detalles, setDetalles] = useState<any[]>([
@@ -94,7 +94,8 @@ export default function NewPurchasePage() {
                 body: JSON.stringify({
                     proveedorId: formData.proveedorId || undefined,
                     detalles: processedDetalles,
-                    total
+                    total,
+                    status: formData.estado,
                 }),
             });
 
@@ -144,6 +145,28 @@ export default function NewPurchasePage() {
                                     <option key={s.id} value={s.id}>{s.nombre}</option>
                                 ))}
                             </select>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-semibold text-gray-700">Estado de la orden</label>
+                            <select
+                                name="estado"
+                                value={formData.estado}
+                                onChange={handleChange}
+                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg"
+                            >
+                                <option value="PENDIENTE">Pendiente — orden enviada, mercancía aún no llega</option>
+                                <option value="COMPLETADA">Completada — mercancía recibida, entra al inventario ahora</option>
+                            </select>
+                            {formData.estado === 'COMPLETADA' && (
+                                <p className="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                                    ✓ Se generarán entradas en el kardex al guardar.
+                                </p>
+                            )}
+                            {formData.estado === 'PENDIENTE' && (
+                                <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                                    ⏳ El stock no cambia hasta que marques la orden como completada.
+                                </p>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -246,7 +269,7 @@ export default function NewPurchasePage() {
                         {loading ? 'Guardando...' : (
                             <>
                                 <Save size={18} />
-                                Aprobar Compra
+                                {formData.estado === 'COMPLETADA' ? 'Guardar y recibir mercancía' : 'Guardar orden pendiente'}
                             </>
                         )}
                     </button>

@@ -58,6 +58,8 @@ export default function PurchasesPage() {
     const [detalle,  setDetalle]  = useState<Compra | null>(null);
     const [page,     setPage]     = useState(1);
     const [showFiltros, setShowFiltros] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
+    const [statusError,  setStatusError]  = useState('');
 
     // ── Filtros ───────────────────────────────────────────────────────────────
     const [busqueda,       setBusqueda]       = useState('');
@@ -134,6 +136,24 @@ export default function PurchasesPage() {
         setBusqueda(''); setFiltroStatus('todos'); setFiltroProveedor('todos');
         setFiltroTipo('todos'); setFiltroDesde(''); setFiltroHasta('');
         setFiltroMontoMin(''); setFiltroMontoMax(''); setPage(1);
+    };
+
+    const handleStatusChange = async (compraId: string, newStatus: 'COMPLETADA' | 'CANCELADA') => {
+        setSavingStatus(true);
+        setStatusError('');
+        try {
+            const updated = await fetchApi(`/purchases/${compraId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: newStatus }),
+            });
+            // Actualizar la lista local
+            setCompras(prev => prev.map(c => c.id === compraId ? { ...c, ...updated } : c));
+            setDetalle(prev => prev?.id === compraId ? { ...prev, ...updated } : prev);
+        } catch (e: any) {
+            setStatusError(e.message || 'Error al actualizar el estado');
+        } finally {
+            setSavingStatus(false);
+        }
     };
 
     const handleSort = (key: SortKey) => {
@@ -519,8 +539,42 @@ export default function PurchasesPage() {
                                 </span>
                             </div>
                         </div>
-                        <div className="px-6 pb-5">
-                            <button onClick={() => setDetalle(null)}
+                        <div className="px-6 pb-5 space-y-3">
+                            {statusError && (
+                                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                    {statusError}
+                                </p>
+                            )}
+                            {/* Acciones solo para compras PENDIENTES y no huérfanas */}
+                            {detalle.status === 'PENDIENTE' && !detalle.esHuerfana && (
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleStatusChange(detalle.id, 'COMPLETADA')}
+                                        disabled={savingStatus}
+                                        className="flex-1 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                                    >
+                                        {savingStatus ? 'Guardando...' : '✓ Marcar como completada'}
+                                    </button>
+                                    <button
+                                        onClick={() => handleStatusChange(detalle.id, 'CANCELADA')}
+                                        disabled={savingStatus}
+                                        className="flex-1 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                                    >
+                                        Cancelar orden
+                                    </button>
+                                </div>
+                            )}
+                            {detalle.status === 'COMPLETADA' && (
+                                <p className="text-xs text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-center">
+                                    ✓ Mercancía recibida — entradas registradas en el kardex
+                                </p>
+                            )}
+                            {detalle.status === 'CANCELADA' && (
+                                <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-center">
+                                    Esta orden fue cancelada y no afectó el inventario
+                                </p>
+                            )}
+                            <button onClick={() => { setDetalle(null); setStatusError(''); }}
                                 className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
                                 Cerrar
                             </button>

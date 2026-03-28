@@ -83,9 +83,12 @@ export async function POST(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        const { proveedorId, detalles, total, almacenId } = await req.json();
+        const { proveedorId, detalles, total, almacenId, status } = await req.json();
         const empresaId = user.empresaId;
         const usuarioId = user.id;
+
+        // Status válidos; si no se envía, queda PENDIENTE (default del schema)
+        const statusFinal: 'PENDIENTE' | 'COMPLETADA' = status === 'COMPLETADA' ? 'COMPLETADA' : 'PENDIENTE';
 
         let targetAlmacenId = almacenId;
         if (!targetAlmacenId) {
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
 
             const compra = await tx.compra.create({
                 data: {
-                    empresaId, proveedorId, total, referencia, status: 'COMPLETADA',
+                    empresaId, proveedorId, total, referencia, status: statusFinal,
                     detalles: {
                         create: detalles.map((d: { productoId: string; cantidad: number; precioUnitario: number }) => ({
                             productoId: d.productoId,
@@ -113,25 +116,28 @@ export async function POST(req: NextRequest) {
                 }
             });
 
-            // Crear movimientos de inventario vinculados a la compra
-            await Promise.all(
-                detalles.map((d: { productoId: string; cantidad: number; precioUnitario: number }) =>
-                    tx.movimientoInventario.create({
-                        data: {
-                            empresaId,
-                            productoId:     d.productoId,
-                            almacenId:      targetAlmacenId,
-                            tipoMovimiento: 'ENTRADA',
-                            cantidad:       d.cantidad,
-                            costoUnitario:  d.precioUnitario,
-                            proveedorId,
-                            compraId:       compra.id,
-                            referencia:     referencia,
-                            usuarioId,
-                        }
-                    })
-                )
-            );
+            // Solo crear movimientos de inventario si la compra se marca como COMPLETADA
+            // (los productos ya llegaron físicamente al almacén)
+            if (statusFinal === 'COMPLETADA') {
+                await Promise.all(
+                    detalles.map((d: { productoId: string; cantidad: number; precioUnitario: number }) =>
+                        tx.movimientoInventario.create({
+                            data: {
+                                empresaId,
+                                productoId:     d.productoId,
+                                almacenId:      targetAlmacenId,
+                                tipoMovimiento: 'ENTRADA',
+                                cantidad:       d.cantidad,
+                                costoUnitario:  d.precioUnitario,
+                                proveedorId,
+                                compraId:       compra.id,
+                                referencia:     referencia,
+                                usuarioId,
+                            }
+                        })
+                    )
+                );
+            }
 
             return compra;
         });
