@@ -242,6 +242,9 @@ function ProductsPageInner() {
     const [search, setSearch]           = useState('');
     const [filterCat, setFilterCat]     = useState('Todas');
     const [filterStock, setFilterStock] = useState('Todos');
+    const [filterSinMovimiento, setFilterSinMovimiento] = useState(false);
+    const [sinMovimientoDesde, setSinMovimientoDesde] = useState('');
+    const [sinMovimientoHasta, setSinMovimientoHasta] = useState('');
     const [view, setView]               = useState<'list' | 'grid'>('list');
     const [showStockModal, setShowStockModal] = useState(false);
     const [showTendencia, setShowTendencia]   = useState(false);
@@ -254,13 +257,16 @@ function ProductsPageInner() {
 
     const searchParams = useSearchParams();
 
-    // Leer parámetros de URL al montar (ej: ?stock=bajo o ?sinMovimiento=1 desde el dashboard)
+    // Leer parámetros de URL al montar (ej: ?stock=bajo, ?sinMovimiento=1 desde el dashboard)
     useEffect(() => {
-        if (searchParams.get('stock') === 'bajo') {
-            setFilterStock('Bajo mínimo');
-        }
-        if (searchParams.get('stock') === 'sinStock') {
-            setFilterStock('Sin stock');
+        if (searchParams.get('stock') === 'bajo')    setFilterStock('Bajo mínimo');
+        if (searchParams.get('stock') === 'sinStock') setFilterStock('Sin stock');
+        if (searchParams.get('sinMovimiento') === '1') {
+            setFilterSinMovimiento(true);
+            const desde = searchParams.get('desde');
+            const hasta = searchParams.get('hasta');
+            if (desde) setSinMovimientoDesde(desde);
+            if (hasta) setSinMovimientoHasta(hasta);
         }
     }, [searchParams]);
 
@@ -294,8 +300,11 @@ function ProductsPageInner() {
         setSearch('');
         setFilterCat('Todas');
         setFilterStock('Todos');
+        setFilterSinMovimiento(false);
+        setSinMovimientoDesde('');
+        setSinMovimientoHasta('');
     };
-    const hayFiltrosActivos = search !== '' || filterCat !== 'Todas' || filterStock !== 'Todos';
+    const hayFiltrosActivos = search !== '' || filterCat !== 'Todas' || filterStock !== 'Todos' || filterSinMovimiento;
 
     // ── CSV Export ────────────────────────────────────────────────────────────
     const exportCSV = () => {
@@ -322,7 +331,15 @@ function ProductsPageInner() {
         const matchSearch = !search || p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.categoria?.nombre || '').toLowerCase().includes(q);
         const matchCat    = filterCat === 'Todas' || p.categoria?.nombre === filterCat;
         const matchStock  = filterStock === 'Todos' || (filterStock === 'Bajo mínimo' && p.stock <= p.stockMinimo) || (filterStock === 'Sin stock' && p.stock === 0);
-        return matchSearch && matchCat && matchStock;
+        // Filtro "sin movimiento" — solo productos que no tuvieron movimientos en el período dado
+        let matchSinMov = true;
+        if (filterSinMovimiento) {
+            const desde = sinMovimientoDesde ? new Date(sinMovimientoDesde + 'T00:00:00') : new Date(0);
+            const hasta = sinMovimientoHasta ? new Date(sinMovimientoHasta + 'T23:59:59') : new Date();
+            const tuvMov = allMovements.some(m => m.productoId === p.id && new Date(m.fecha) >= desde && new Date(m.fecha) <= hasta);
+            matchSinMov = !tuvMov;
+        }
+        return matchSearch && matchCat && matchStock && matchSinMov;
     });
 
     const sorted = [...filtered].sort((a, b) => {

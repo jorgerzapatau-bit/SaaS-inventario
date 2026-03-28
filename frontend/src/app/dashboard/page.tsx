@@ -396,7 +396,7 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Valor inventario</p>
-                                <InfoTooltip text="Valor actual del inventario: Σ(todas las entradas×costo) − Σ(todas las salidas×costo) desde el inicio. Siempre refleja el estado real del almacén hoy." />
+                                <InfoTooltip text="Σ(entradas × costo) − Σ(salidas × costo) de todos los movimientos históricos. Refleja el valor en libros del inventario hoy. Para ver el desglose completo por producto, ve a Reportes → Inventario Valorizado." />
                             </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><DollarSign size={16} className="text-blue-600" /></div>
                         </div>
@@ -568,10 +568,10 @@ export default function DashboardPage() {
                     </Link>
 
                     {/* Rotación */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href={buildKardexUrl('', manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-teal-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Rotación del período</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-teal-600 transition-colors">Rotación del período</p>
                                 <InfoTooltip text="(Salidas del período ÷ Stock total actual) × 100." position="top" />
                             </div>
                             <div className="p-2 bg-teal-50 rounded-lg"><RotateCcw size={16} className="text-teal-600" /></div>
@@ -580,7 +580,10 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={rotacionPct} label={compareLabel || undefined} />}
                         </div>
-                    </div>
+                        <p className="text-xs text-teal-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver movimientos del período
+                        </p>
+                    </Link>
 
                 </div>
             </div>
@@ -640,10 +643,10 @@ export default function DashboardPage() {
                     </Link>
 
                     {/* Margen bruto */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5">
+                    <Link href={buildSalesUrl(manualDesde, manualHasta)} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Margen bruto</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-emerald-600 transition-colors">Margen bruto</p>
                                 <InfoTooltip text="Ingresos por salidas − Costo de entradas del período." position="top" />
                             </div>
                             <div className="p-2 bg-emerald-50 rounded-lg"><DollarSign size={16} className="text-emerald-600" /></div>
@@ -654,13 +657,16 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={margenBrutoDelta} label={compareLabel || undefined} />}
                         </div>
-                    </div>
+                        <p className="text-xs text-emerald-500 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <ExternalLink size={10} /> Ver ventas del período
+                        </p>
+                    </Link>
 
                     {/* Margen % */}
-                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${!loading && margenPct > 80 && ingresosSalidas > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'}`}>
+                    <Link href={buildKardexUrl('', manualDesde, manualHasta)} className={`rounded-xl border shadow-sm hover:shadow-md transition-all group block p-5 ${!loading && margenPct > 80 && ingresosSalidas > 0 ? 'bg-amber-50 border-amber-200 hover:border-amber-400' : 'bg-white border-gray-100 hover:border-emerald-200'}`}>
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-500 font-medium">Margen %</p>
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-emerald-600 transition-colors">Margen %</p>
                                 {!loading && <MargenTooltipDetalle margenPct={margenPct} costoEntradas={costoEntradas} ingresosSalidas={ingresosSalidas} />}
                             </div>
                             <div className="p-2 bg-emerald-50 rounded-lg"><Percent size={16} className="text-emerald-600" /></div>
@@ -676,10 +682,19 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                             {loading ? <p className="text-xs text-gray-400">Cargando...</p> : <DeltaBadge pct={margenPorcentDelta} label={compareLabel || undefined} />}
                         </div>
-                    </div>
+                        <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-xs text-emerald-500 flex items-center gap-1"><ExternalLink size={10} /> Ventas</span>
+                            <span className="text-xs text-gray-300">·</span>
+                            <a href={buildPurchasesUrl(manualDesde, manualHasta)}
+                               onClick={e => e.stopPropagation()}
+                               className="text-xs text-gray-400 hover:text-blue-400 flex items-center gap-1 transition-colors">
+                                <ExternalLink size={10} /> Compras
+                            </a>
+                        </div>
+                    </Link>
 
                     {/* Sin movimiento */}
-                    <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${sinMovimiento.length > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+                    <Link href={sinMovimiento.length > 0 ? `/dashboard/products?sinMovimiento=1&desde=${manualDesde}&hasta=${manualHasta}` : '/dashboard/products'} className={`rounded-xl border shadow-sm hover:shadow-md transition-all group block p-5 ${sinMovimiento.length > 0 ? 'bg-red-50 border-red-200 hover:border-red-400' : 'bg-white border-gray-100 hover:border-gray-300'}`}>
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1.5">
                                 <p className={`text-sm font-medium ${sinMovimiento.length > 0 ? 'text-red-600' : 'text-gray-500'}`}>Sin movimiento</p>
@@ -714,7 +729,12 @@ export default function DashboardPage() {
                                 ))}
                             </div>
                         )}
-                    </div>
+                        {sinMovimiento.length > 0 && (
+                            <p className="text-xs text-red-400 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                <ExternalLink size={10} /> Ver todos en productos
+                            </p>
+                        )}
+                    </Link>
 
                     {/* Valor inmovilizado */}
                     <div className={`rounded-xl border shadow-sm hover:shadow-md transition-shadow p-5 ${valorInmovilizado > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
