@@ -260,6 +260,8 @@ function ProductsPageInner() {
             setFilterStock('Bajo mínimo');
         }
     }, [searchParams]);
+
+    const loadProducts = async () => {
         setLoading(true);
         Promise.all([fetchApi('/products'), fetchApi('/inventory/movements')])
             .then(([prods, movs]) => { setProducts(prods); setAllMovements(movs); })
