@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { StockBarChart } from '@/components/dashboard/StockBarChart';
 import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
@@ -251,7 +252,14 @@ export default function ProductsPage() {
     const [quickMov, setQuickMov] = useState<{ product: any; type: 'entrada' | 'salida' } | null>(null);
     const [showImport, setShowImport] = useState(false);
 
-    const loadProducts = () => {
+    const searchParams = useSearchParams();
+
+    // Leer parámetros de URL al montar (ej: ?stock=bajo desde el dashboard)
+    useEffect(() => {
+        if (searchParams.get('stock') === 'bajo') {
+            setFilterStock('Bajo mínimo');
+        }
+    }, [searchParams]);
         setLoading(true);
         Promise.all([fetchApi('/products'), fetchApi('/inventory/movements')])
             .then(([prods, movs]) => { setProducts(prods); setAllMovements(movs); })

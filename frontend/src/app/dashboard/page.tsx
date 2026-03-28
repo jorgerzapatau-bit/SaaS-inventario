@@ -364,7 +364,7 @@ export default function DashboardPage() {
                             {loading ? '...' : `${lowStockProducts.length} productos`}
                         </p>
                         <Link
-                            href="/dashboard/products"
+                            href={lowStockProducts.length > 0 ? '/dashboard/products?stock=bajo' : '/dashboard/products'}
                             className={`text-xs mt-2 inline-flex items-center gap-1 hover:underline ${lowStockProducts.length > 0 ? 'text-orange-500' : 'text-gray-400'}`}
                         >
                             {lowStockProducts.length > 0 ? <>Ver detalles <ExternalLink size={10} /></> : 'Todo en orden ✓'}
