@@ -193,22 +193,26 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const exportPDF=async()=>{
         if(!product)return;
-        const jsPDF=(await import('jspdf')).default;
-        await import('jspdf-autotable');
-        const doc=new jsPDF({orientation:'landscape'});
-        const empresa=localStorage.getItem('companySlug')||'Empresa';
-        doc.setFontSize(18);doc.setFont('helvetica','bold');doc.text('Kardex de Producto',14,18);
-        doc.setFontSize(10);doc.setFont('helvetica','normal');
-        doc.text(`Empresa: ${empresa.toUpperCase()}`,14,26);doc.text(`Generado: ${new Date().toLocaleDateString('es-MX',{dateStyle:'long'})}`,14,31);
-        doc.setFillColor(245,247,250);doc.roundedRect(14,36,268,28,2,2,'F');
-        doc.setFontSize(13);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,45);
-        doc.setFontSize(9);doc.setFont('helvetica','normal');
-        doc.text(`SKU: ${product?.sku}`,18,51);doc.text(`Categoría: ${product?.categoria?.nombre}`,18,56);
-        doc.text(`Stock actual: ${product?.stock} ${product?.unidad}`,140,51);
-        doc.text(`Valor almacén: $${((product?.stock??0)*Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0)).toLocaleString()}`,140,56);
-        const tableData=[...movements].reverse().map(m=>[new Date(m.fecha).toLocaleDateString('es-MX'),tipoLabel(m.tipoMovimiento),m.referencia||'—',m.proveedor?.nombre||m.clienteNombre||'—',m.almacen?.nombre,['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?`+${m.cantidad}`:`-${m.cantidad}`,`$${Number(m.costoUnitario).toLocaleString()}`,m.precioVenta?`$${Number(m.precioVenta).toLocaleString()}`:'—',String(m.saldo),m.usuario?.nombre]);
-        (doc as any).autoTable({startY:70,head:[['Fecha','Tipo','Referencia','Prov/Cliente','Almacén','Cant.','Costo','P.Venta','Saldo','Usuario']],body:tableData,styles:{fontSize:7.5,cellPadding:2.5},headStyles:{fillColor:[37,99,235],textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[248,250,252]}});
-        doc.save(`kardex-${product?.sku}-${new Date().toISOString().split('T')[0]}.pdf`);
+        try{
+            const jsPDF=(await import('jspdf')).default;
+            await import('jspdf-autotable');
+            const doc=new jsPDF({orientation:'landscape'});
+            const empresa=localStorage.getItem('companySlug')||'Empresa';
+            const ultimaEntradaLocal=movements.find(m=>m.tipoMovimiento==='ENTRADA');
+            const costoRef=Number(ultimaEntradaLocal?.costoUnitario??product?.ultimoPrecioCompra??0);
+            doc.setFontSize(18);doc.setFont('helvetica','bold');doc.text('Kardex de Producto',14,18);
+            doc.setFontSize(10);doc.setFont('helvetica','normal');
+            doc.text(`Empresa: ${empresa.toUpperCase()}`,14,26);doc.text(`Generado: ${new Date().toLocaleDateString('es-MX',{dateStyle:'long'})}`,14,31);
+            doc.setFillColor(245,247,250);doc.roundedRect(14,36,268,28,2,2,'F');
+            doc.setFontSize(13);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,45);
+            doc.setFontSize(9);doc.setFont('helvetica','normal');
+            doc.text(`SKU: ${product?.sku}`,18,51);doc.text(`Categoría: ${product?.categoria?.nombre}`,18,56);
+            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}`,140,51);
+            doc.text(`Valor almacén: $${((product?.stock??0)*costoRef).toLocaleString()}`,140,56);
+            const tableData=[...movements].reverse().map(m=>[new Date(m.fecha).toLocaleDateString('es-MX'),tipoLabel(m.tipoMovimiento),m.referencia||'—',m.proveedor?.nombre||m.clienteNombre||'—',m.almacen?.nombre||'—',['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?`+${m.cantidad}`:`-${m.cantidad}`,`$${Number(m.costoUnitario).toLocaleString()}`,m.precioVenta?`$${Number(m.precioVenta).toLocaleString()}`:'—',String(m.saldo??''),m.usuario?.nombre||'']);
+            (doc as any).autoTable({startY:70,head:[['Fecha','Tipo','Referencia','Prov/Cliente','Almacén','Cant.','Costo','P.Venta','Saldo','Usuario']],body:tableData,styles:{fontSize:7.5,cellPadding:2.5},headStyles:{fillColor:[37,99,235],textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[248,250,252]}});
+            doc.save(`kardex-${product?.sku}-${new Date().toISOString().split('T')[0]}.pdf`);
+        }catch(err){console.error('Error generando PDF:',err);alert('Error al generar el PDF.');}
     };
 
     const exportCSV=()=>{
@@ -322,9 +326,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         :<><button onClick={()=>{setEditing(false);setSaveError('');}} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"><X size={16}/> Cancelar</button>
                         <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={16}/>{saving?'Creando...':(isNew?'Crear producto':'Guardar cambios')}</button></>
                     }
-                    {!isNew && <button onClick={()=>setMovModal('entrada')} className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors cursor-pointer"><Plus size={16}/> Entrada</button>}
-                    {!isNew && <button onClick={()=>setMovModal('salida')} className="flex items-center gap-2 px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer"><Minus size={16}/> Salida</button>}
-                    {!isNew && <button onClick={()=>setMovModal('ajuste')} className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors cursor-pointer"><SlidersHorizontal size={16}/> Ajuste</button>}
+                    {!isNew && <button onClick={()=>router.push(`/dashboard/purchases/new?productoId=${product?.id}`)} className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors cursor-pointer"><Plus size={16}/> Entrada</button>}
+                    {!isNew && <button onClick={()=>router.push(`/dashboard/sales/new?productoId=${product?.id}`)} className="flex items-center gap-2 px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer"><Minus size={16}/> Salida</button>}
                 </div>
             </div>
 
@@ -344,7 +347,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         </div>
                     </div>
                     <button
-                        onClick={()=>setMovModal('entrada')}
+                        onClick={()=>router.push(`/dashboard/purchases/new?productoId=${product?.id}`)}
                         className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors cursor-pointer flex-shrink-0"
                     >
                         <ShoppingCart size={15}/>
@@ -475,6 +478,24 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     {editData.activo?<ToggleRight size={32} className="text-green-500"/>:<ToggleLeft size={32} className="text-gray-300"/>}
                                 </button>
                             </div>
+                            {/* Notas internas — editable en modo edición */}
+                            {!isNew && (
+                                <div className="pt-1">
+                                    <label className="text-xs font-medium text-gray-700 block mb-1 flex items-center gap-1.5">
+                                        <StickyNote size={13} className="text-amber-400"/> Notas internas
+                                        <span className="text-gray-400 font-normal">(solo visible en esta pantalla)</span>
+                                    </label>
+                                    <textarea
+                                        value={notasTemp||notas}
+                                        onChange={e=>setNotasTemp(e.target.value)}
+                                        onBlur={()=>{if(notasTemp!==notas){localStorage.setItem(`notas_producto_${id}`,notasTemp);setNotas(notasTemp);}}}
+                                        rows={3}
+                                        placeholder="Ej: Pedir solo al proveedor X · Frágil · Requiere revisión técnica antes de despachar..."
+                                        className="w-full px-3 py-2 bg-amber-50/50 border border-amber-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 resize-none placeholder:text-gray-400"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">Se guarda automáticamente al salir del campo.</p>
+                                </div>
+                            )}
                         </div>
                     ):(
                         // ── Modo vista ──
@@ -514,6 +535,32 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                             <tr key={l}><td className="py-1.5 text-gray-500 text-xs">{l}</td><td className="py-1.5 text-right font-medium text-gray-800 text-xs">{v}</td></tr>
                                         ))}
                                     </tbody></table>
+                                    {/* Notas internas — dentro de Información General */}
+                                    <div className="mt-4 pt-3 border-t border-gray-100">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <StickyNote size={13} className="text-amber-400"/>
+                                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Notas internas</p>
+                                            </div>
+                                            {!notasEditando
+                                                ? <button onClick={()=>{setNotasTemp(notas);setNotasEditando(true);}} className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors cursor-pointer"><Edit size={11}/> Editar</button>
+                                                : <div className="flex gap-1.5">
+                                                    <button onClick={()=>setNotasEditando(false)} className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-400 transition-colors cursor-pointer"><X size={11}/> Cancelar</button>
+                                                    <button onClick={guardarNotas} disabled={notasGuardando} className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={11}/>{notasGuardando?'...':'Guardar'}</button>
+                                                </div>
+                                            }
+                                        </div>
+                                        {notasEditando ? (
+                                            <textarea value={notasTemp} onChange={e=>setNotasTemp(e.target.value)} rows={3}
+                                                placeholder="Ej: Pedir solo al proveedor X · Frágil · Requiere revisión técnica..."
+                                                className="w-full px-2.5 py-2 bg-amber-50/50 border border-amber-200 rounded-lg text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400/20 resize-none placeholder:text-gray-400"
+                                            />
+                                        ) : notas ? (
+                                            <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{notas}</p>
+                                        ) : (
+                                            <p className="text-xs text-gray-400 italic">Sin notas internas.</p>
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Resumen de movimientos</p>
@@ -600,40 +647,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 />
             )}
 
-            {/* ── NOTAS INTERNAS ──────────────────────────────────────────────── */}
-            {!isNew && !editing && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                            <StickyNote size={15} className="text-amber-400"/>
-                            <h2 className="text-base font-semibold text-gray-800">Notas internas</h2>
-                            <span className="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded-full">solo visible en esta pantalla</span>
-                        </div>
-                        {!notasEditando
-                            ? <button onClick={()=>{setNotasTemp(notas);setNotasEditando(true);}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"><Edit size={12}/> Editar</button>
-                            : <div className="flex gap-2">
-                                <button onClick={()=>setNotasEditando(false)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 transition-colors cursor-pointer"><X size={12}/> Cancelar</button>
-                                <button onClick={guardarNotas} disabled={notasGuardando} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={12}/>{notasGuardando?'Guardando...':'Guardar'}</button>
-                            </div>
-                        }
-                    </div>
-                    <div className="px-6 py-4">
-                        {notasEditando ? (
-                            <textarea
-                                value={notasTemp}
-                                onChange={e=>setNotasTemp(e.target.value)}
-                                rows={3}
-                                placeholder="Ej: Pedir solo al proveedor X · Frágil · Requiere revisión técnica antes de despachar..."
-                                className="w-full px-3 py-2.5 bg-amber-50/50 border border-amber-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 resize-none placeholder:text-gray-400"
-                            />
-                        ) : notas ? (
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{notas}</p>
-                        ) : (
-                            <p className="text-sm text-gray-400 italic">Sin notas. Usa este espacio para indicaciones del equipo: proveedores preferidos, manejo especial, observaciones, etc.</p>
-                        )}
-                    </div>
-                </div>
-            )}
+
 
             {/* Historial */}
             {!isNew && <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -720,7 +734,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                             {mov.tipoMovimiento==='ENTRADA'&&(
                                                 <button
                                                     title="Repetir esta entrada"
-                                                    onClick={e=>{e.stopPropagation();setMovModal('entrada');}}
+                                                    onClick={e=>{e.stopPropagation();router.push(`/dashboard/purchases/new?productoId=${product?.id}`);}}
                                                     className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg cursor-pointer"
                                                 >
                                                     <RefreshCw size={13}/>
