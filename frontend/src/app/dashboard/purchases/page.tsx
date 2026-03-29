@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { Search, Plus, X, Building2, Package, Calendar, ChevronRight,
-         AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown } from 'lucide-react';
+         AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown, Pencil } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 
@@ -54,6 +55,7 @@ function sortCompras(list: Compra[], key: SortKey, dir: SortDir): Compra[] {
 
 function PurchasesPageInner() {
     const searchParams = useSearchParams();
+    const router       = useRouter();
 
     const [compras,  setCompras]  = useState<Compra[]>([]);
     const [loading,  setLoading]  = useState(true);
@@ -61,8 +63,9 @@ function PurchasesPageInner() {
     const [detalle,  setDetalle]  = useState<Compra | null>(null);
     const [page,     setPage]     = useState(1);
     const [showFiltros, setShowFiltros] = useState(false);
-    const [savingStatus, setSavingStatus] = useState(false);
-    const [statusError,  setStatusError]  = useState('');
+    const [savingStatus,   setSavingStatus]   = useState(false);
+    const [statusError,    setStatusError]    = useState('');
+    const [confirmCancel,  setConfirmCancel]  = useState(false);
 
     // ── Filtros ───────────────────────────────────────────────────────────────
     const [busqueda,       setBusqueda]       = useState('');
@@ -489,7 +492,7 @@ function PurchasesPageInner() {
 
             {/* ── Modal detalle ───────────────────────────────────────────────── */}
             {detalle && (
-                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDetalle(null)}>
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => { setDetalle(null); setConfirmCancel(false); }}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white rounded-t-2xl z-10">
                             <div>
@@ -505,7 +508,7 @@ function PurchasesPageInner() {
                                     </p>
                                 )}
                             </div>
-                            <button onClick={() => setDetalle(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer">
+                            <button onClick={() => { setDetalle(null); setConfirmCancel(false); }} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg cursor-pointer">
                                 <X size={18}/>
                             </button>
                         </div>
@@ -561,21 +564,61 @@ function PurchasesPageInner() {
                             )}
                             {/* Acciones solo para compras PENDIENTES y no huérfanas */}
                             {detalle.status === 'PENDIENTE' && !detalle.esHuerfana && (
-                                <div className="flex gap-2">
+                                <div className="space-y-2">
+                                    {/* Botón Editar */}
                                     <button
-                                        onClick={() => handleStatusChange(detalle.id, 'COMPLETADA')}
-                                        disabled={savingStatus}
-                                        className="flex-1 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                                        onClick={() => {
+                                            setDetalle(null);
+                                            setConfirmCancel(false);
+                                            router.push(`/dashboard/purchases/edit?id=${detalle.id}`);
+                                        }}
+                                        className="w-full py-2.5 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                                     >
-                                        {savingStatus ? 'Guardando...' : '✓ Marcar como completada'}
+                                        <Pencil size={15}/> Editar orden
                                     </button>
-                                    <button
-                                        onClick={() => handleStatusChange(detalle.id, 'CANCELADA')}
-                                        disabled={savingStatus}
-                                        className="flex-1 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
-                                    >
-                                        Cancelar orden
-                                    </button>
+                                    {!confirmCancel ? (
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleStatusChange(detalle.id, 'COMPLETADA')}
+                                                disabled={savingStatus}
+                                                className="flex-1 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                                            >
+                                                {savingStatus ? 'Guardando...' : '✓ Marcar como completada'}
+                                            </button>
+                                            <button
+                                                onClick={() => setConfirmCancel(true)}
+                                                disabled={savingStatus}
+                                                className="flex-1 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors disabled:opacity-60 cursor-pointer"
+                                            >
+                                                Cancelar orden
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="border border-red-200 bg-red-50 rounded-xl p-3 space-y-2">
+                                            <p className="text-sm font-semibold text-red-700 text-center">
+                                                ¿Confirmar cancelación?
+                                            </p>
+                                            <p className="text-xs text-red-500 text-center">
+                                                Esta acción no se puede deshacer. La orden quedará como cancelada y no afectará el inventario.
+                                            </p>
+                                            <div className="flex gap-2 pt-1">
+                                                <button
+                                                    onClick={() => setConfirmCancel(false)}
+                                                    disabled={savingStatus}
+                                                    className="flex-1 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+                                                >
+                                                    No, volver
+                                                </button>
+                                                <button
+                                                    onClick={() => { setConfirmCancel(false); handleStatusChange(detalle.id, 'CANCELADA'); }}
+                                                    disabled={savingStatus}
+                                                    className="flex-1 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+                                                >
+                                                    {savingStatus ? 'Cancelando...' : 'Sí, cancelar'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {detalle.status === 'COMPLETADA' && (
@@ -588,7 +631,7 @@ function PurchasesPageInner() {
                                     Esta orden fue cancelada y no afectó el inventario
                                 </p>
                             )}
-                            <button onClick={() => { setDetalle(null); setStatusError(''); }}
+                            <button onClick={() => { setDetalle(null); setStatusError(''); setConfirmCancel(false); }}
                                 className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
                                 Cerrar
                             </button>

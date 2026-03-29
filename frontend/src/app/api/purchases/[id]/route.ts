@@ -96,3 +96,87 @@ export async function PATCH(
         return Response.json({ error: 'Error al actualizar la compra.' }, { status: 500 });
     }
 }
+
+// PUT /api/purchases/:id — Editar una compra PENDIENTE
+// Solo se puede editar proveedor y líneas de detalle.
+// El stock NO cambia hasta que la compra pase a COMPLETADA.
+export async function PUT(
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    const user = getAuthUser(req);
+    if (!user) return unauthorized();
+
+    const { id } = await params;
+
+    try {
+        const { proveedorId, detalles } = await req.json();
+
+        if (!proveedorId) {
+            return Response.json({ error: 'El proveedor es obligatorio.' }, { status: 400 });
+        }
+        if (!detalles || detalles.length === 0) {
+            return Response.json({ error: 'Debe haber al menos una línea de producto.' }, { status: 400 });
+        }
+        if (detalles.some((d: any) => !d.productoId || Number(d.cantidad) <= 0)) {
+            return Response.json({ error: 'Todas las líneas deben tener producto y cantidad mayor a 0.' }, { status: 400 });
+        }
+
+        // Verificar que la compra existe, pertenece a la empresa y está PENDIENTE
+        const compraExistente = await prisma.compra.findFirst({
+            where: { id, empresaId: user.empresaId },
+        });
+
+        if (!compraExistente) {
+            return Response.json({ error: 'Compra no encontrada.' }, { status: 404 });
+        }
+        if (compraExistente.status !== 'PENDIENTE') {
+            return Response.json(
+                { error: `Solo se pueden editar compras en estado PENDIENTE. Esta está ${compraExistente.status}.` },
+                { status: 400 }
+            );
+        }
+
+        const total = detalles.reduce(
+            (acc: number, d: any) => acc + Number(d.precioUnitario) * Number(d.cantidad),
+            0
+        );
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Eliminar todos los detalles anteriores
+            await tx.detalleCompra.deleteMany({ where: { compraId: id } });
+
+            // 2. Actualizar cabecera de la compra
+            const compraActualizada = await tx.compra.update({
+                where: { id },
+                data: { proveedorId, total },
+                include: {
+                    proveedor: true,
+                    detalles: {
+                        include: { producto: { select: { nombre: true, sku: true, unidad: true } } },
+                    },
+                    movimientos: {
+                        select: { id: true, cantidad: true, costoUnitario: true, fecha: true, almacen: { select: { nombre: true } } },
+                    },
+                },
+            });
+
+            // 3. Crear nuevos detalles
+            await tx.detalleCompra.createMany({
+                data: detalles.map((d: any) => ({
+                    compraId:       id,
+                    productoId:     d.productoId,
+                    cantidad:       Number(d.cantidad),
+                    precioUnitario: Number(d.precioUnitario),
+                })),
+            });
+
+            return compraActualizada;
+        });
+
+        return Response.json(result);
+    } catch (e: any) {
+        console.error(e);
+        return Response.json({ error: e.message || 'Error al editar la compra.' }, { status: 500 });
+    }
+}
