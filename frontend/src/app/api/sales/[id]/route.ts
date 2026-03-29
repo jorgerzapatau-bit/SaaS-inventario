@@ -60,7 +60,8 @@ export async function GET(
 }
 
 // ── PUT /api/sales/:id — Editar una salida formal ────────────────────────────
-// Estrategia: revertir los movimientos de stock originales → aplicar los nuevos
+// Estrategia: eliminar movimientos espejo originales → crear los nuevos
+// El stock NO se guarda en Producto.stock — se deriva de MovimientoInventario.
 export async function PUT(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -120,33 +121,22 @@ export async function PUT(
         );
 
         await prisma.$transaction(async (tx) => {
-            // ── 1. Revertir stock de los detalles originales ──────────────────
-            for (const det of salidaExistente.detalles) {
-                // Las salidas reducen el stock → revertir suma de vuelta
-                await tx.producto.update({
-                    where: { id: det.productoId },
-                    data:  { stock: { increment: det.cantidad } },
-                });
-            }
-
-            // ── 2. Eliminar movimientos espejo originales ─────────────────────
+            // ── 1. Eliminar movimientos espejo originales ─────────────────────
+            // Los movimientos de inventario son la fuente de verdad del stock;
+            // eliminarlos es equivalente a "revertir" el efecto de la salida original.
             await tx.movimientoInventario.deleteMany({
                 where: {
                     empresaId:  user.empresaId,
-                    referencia: { startsWith: `${salidaExistente.tipo}|` },
-                    // Solo los que corresponden a esta salida (misma referencia)
-                    ...(salidaExistente.referencia
-                        ? { referencia: `${salidaExistente.tipo}|${salidaExistente.referencia}` }
-                        : {}),
+                    referencia: `${salidaExistente.tipo}|${salidaExistente.referencia ?? ''}`,
                 },
             });
 
-            // ── 3. Eliminar detalles originales ───────────────────────────────
+            // ── 2. Eliminar detalles originales ───────────────────────────────
             await tx.detalleSalida.deleteMany({
                 where: { salidaId: id },
             });
 
-            // ── 4. Actualizar cabecera de la Salida ───────────────────────────
+            // ── 3. Actualizar cabecera de la Salida ───────────────────────────
             await tx.salida.update({
                 where: { id },
                 data: {
@@ -156,7 +146,7 @@ export async function PUT(
                 },
             });
 
-            // ── 5. Crear nuevos detalles ──────────────────────────────────────
+            // ── 4. Crear nuevos detalles ──────────────────────────────────────
             await tx.detalleSalida.createMany({
                 data: detalles.map((d: any) => ({
                     salidaId:       id,
@@ -166,15 +156,9 @@ export async function PUT(
                 })),
             });
 
-            // ── 6. Aplicar nuevo stock (reducir) ──────────────────────────────
-            for (const d of detalles) {
-                await tx.producto.update({
-                    where: { id: d.productoId },
-                    data:  { stock: { decrement: Number(d.cantidad) } },
-                });
-            }
-
-            // ── 7. Crear nuevos movimientos espejo ────────────────────────────
+            // ── 5. Crear nuevos movimientos espejo ────────────────────────────
+            // Estos son los que reducen el stock (cantidad negativa en el cálculo
+            // de stock disponible en las consultas del dashboard).
             await tx.movimientoInventario.createMany({
                 data: detalles.map((d: any) => ({
                     empresaId:      user.empresaId,
