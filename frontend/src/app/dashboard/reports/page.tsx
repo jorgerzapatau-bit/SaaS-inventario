@@ -20,8 +20,14 @@ interface Producto {
     nombre: string;
     sku: string;
     stock: number;
-    ultimoPrecioCompra?: number | null;
     categoria?: { nombre: string } | null;
+}
+
+interface Movimiento {
+    productoId: string;
+    tipoMovimiento: string;
+    cantidad: number;
+    costoUnitario: number;
 }
 
 interface FilaInventario {
@@ -29,8 +35,7 @@ interface FilaInventario {
     sku: string;
     categoria: string;
     stock: number;
-    costoUnitario: number;
-    valorTotal: number;
+    valorKardex: number; // Σ(entradas×costo) − Σ(salidas×costo) — igual que dashboard
 }
 
 // ── Generador de PDF en el browser ─────────────────────────────────────────────
@@ -77,26 +82,24 @@ async function generarPDFInventario(filas: FilaInventario[], total: number, fech
     // ── Tabla ──
     (doc as any).autoTable({
         startY: 44,
-        head: [['Producto', 'SKU', 'Categoría', 'Stock', 'Costo Unit.', 'Valor Total']],
+        head: [['Producto', 'SKU', 'Categoría', 'Stock', 'Valor en libros']],
         body: filas.map(f => [
             f.nombre,
             f.sku,
             f.categoria,
             f.stock.toString(),
-            `$${fmt(f.costoUnitario)}`,
-            `$${fmt(f.valorTotal)}`,
+            `$${fmt(f.valorKardex)}`,
         ]),
-        foot: [['TOTAL', '', '', '', '', `$${fmt(total)}`]],
+        foot: [['TOTAL', '', '', '', `$${fmt(total)}`]],
         styles: { fontSize: 8, cellPadding: 2.5 },
         headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
         footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
         columnStyles: {
-            0: { cellWidth: 55 },
-            1: { cellWidth: 25 },
-            2: { cellWidth: 28 },
-            3: { cellWidth: 16, halign: 'center' },
-            4: { cellWidth: 28, halign: 'right' },
-            5: { cellWidth: 30, halign: 'right' },
+            0: { cellWidth: 70 },
+            1: { cellWidth: 28 },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 35, halign: 'right' },
         },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         margin: { left: 14, right: 14 },
@@ -114,22 +117,38 @@ async function generarPDFInventario(filas: FilaInventario[], total: number, fech
     doc.save(`inventario-valorizado-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
+// ── Cálculo kardex: Σ(entradas×costo) − Σ(salidas×costo) por producto ──────────
+function calcularValorKardex(productoId: string, movimientos: Movimiento[]): number {
+    return movimientos
+        .filter(m => m.productoId === productoId)
+        .reduce((acc, m) => {
+            const v = Number(m.cantidad ?? 0) * Number(m.costoUnitario ?? 0);
+            const esEntrada = ['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
+            return acc + (esEntrada ? v : -v);
+        }, 0);
+}
+
 // ── Sección de Inventario Valorizado ──────────────────────────────────────────
 function InventarioValorizadoSection() {
-    const [productos, setProductos] = useState<Producto[]>([]);
-    const [loading, setLoading]     = useState(false);
-    const [loaded, setLoaded]       = useState(false);
-    const [error, setError]         = useState('');
-    const [generando, setGenerando] = useState(false);
+    const [productos, setProductos]     = useState<Producto[]>([]);
+    const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+    const [loading, setLoading]         = useState(false);
+    const [loaded, setLoaded]           = useState(false);
+    const [error, setError]             = useState('');
+    const [generando, setGenerando]     = useState(false);
 
     const cargar = async () => {
         setLoading(true); setError('');
         try {
-            const data = await fetchApi('/products');
-            setProductos(data);
+            const [prods, movs] = await Promise.all([
+                fetchApi('/products'),
+                fetchApi('/inventory/movements'),
+            ]);
+            setProductos(prods);
+            setMovimientos(movs);
             setLoaded(true);
         } catch (e: any) {
-            setError(e.message || 'Error al cargar productos');
+            setError(e.message || 'Error al cargar datos');
         } finally {
             setLoading(false);
         }
@@ -141,12 +160,11 @@ function InventarioValorizadoSection() {
             sku: p.sku,
             categoria: p.categoria?.nombre || 'Sin categoría',
             stock: Number(p.stock ?? 0),
-            costoUnitario: Number(p.ultimoPrecioCompra ?? 0),
-            valorTotal: Number(p.stock ?? 0) * Number(p.ultimoPrecioCompra ?? 0),
+            valorKardex: calcularValorKardex(p.id, movimientos),
         }))
-        .sort((a, b) => b.valorTotal - a.valorTotal);
+        .sort((a, b) => b.valorKardex - a.valorKardex);
 
-    const total = filas.reduce((a, f) => a + f.valorTotal, 0);
+    const total = filas.reduce((a, f) => a + f.valorKardex, 0);
 
     const handleDescargar = async () => {
         if (!loaded) await cargar();
@@ -171,8 +189,8 @@ function InventarioValorizadoSection() {
                     <div className="flex-1 min-w-0">
                         <h3 className="text-lg font-semibold text-gray-900">Inventario Valorizado</h3>
                         <p className="text-sm text-gray-500 mt-1 mb-4">
-                            Tabla completa: producto, SKU, stock actual, costo unitario y valor total por producto.
-                            El PDF se genera al momento con los datos actuales.
+                            Valor en libros por producto: Σ(entradas × costo) − Σ(salidas × costo) histórico,
+                            el mismo cálculo que usa el Dashboard. Coincide exactamente con el KPI "Valor inventario".
                         </p>
 
                         {error && (
@@ -192,7 +210,7 @@ function InventarioValorizadoSection() {
                                     <table className="w-full text-xs">
                                         <thead className="bg-slate-900 text-white sticky top-0">
                                             <tr>
-                                                {['Producto','SKU','Categoría','Stock','Costo Unit.','Valor Total'].map(h => (
+                                                {['Producto','SKU','Categoría','Stock','Valor en libros'].map(h => (
                                                     <th key={h} className="px-3 py-2 text-left font-semibold">{h}</th>
                                                 ))}
                                             </tr>
@@ -204,8 +222,7 @@ function InventarioValorizadoSection() {
                                                     <td className="px-3 py-2 text-gray-500 font-mono">{f.sku}</td>
                                                     <td className="px-3 py-2 text-gray-500">{f.categoria}</td>
                                                     <td className="px-3 py-2 text-center text-gray-700">{f.stock}</td>
-                                                    <td className="px-3 py-2 text-right text-gray-700">${fmt(f.costoUnitario)}</td>
-                                                    <td className="px-3 py-2 text-right font-semibold text-emerald-700">${fmt(f.valorTotal)}</td>
+                                                    <td className="px-3 py-2 text-right font-semibold text-emerald-700">${fmt(f.valorKardex)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
