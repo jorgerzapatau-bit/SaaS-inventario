@@ -191,28 +191,67 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         finally{setSaving(false);}
     };
 
+    // Carga dinámica de scripts CDN (igual que reports/page.tsx)
+    const cargarScriptKardex=(src:string):Promise<void>=>new Promise((resolve,reject)=>{
+        if(document.querySelector(`script[src="${src}"]`)){resolve();return;}
+        const s=document.createElement('script');s.src=src;
+        s.onload=()=>resolve();s.onerror=()=>reject(new Error(`No se pudo cargar: ${src}`));
+        document.head.appendChild(s);
+    });
+
     const exportPDF=async()=>{
         if(!product)return;
         try{
-            const jsPDF=(await import('jspdf')).default;
-            await import('jspdf-autotable');
-            const doc=new jsPDF({orientation:'landscape'});
+            // Usar CDN v2.5.1 — mismo patrón que reports/page.tsx
+            await cargarScriptKardex('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+            await cargarScriptKardex('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+            const {jsPDF}=(window as any).jspdf;
+            const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
             const empresa=localStorage.getItem('companySlug')||'Empresa';
             const ultimaEntradaLocal=movements.find(m=>m.tipoMovimiento==='ENTRADA');
             const costoRef=Number(ultimaEntradaLocal?.costoUnitario??product?.ultimoPrecioCompra??0);
-            doc.setFontSize(18);doc.setFont('helvetica','bold');doc.text('Kardex de Producto',14,18);
-            doc.setFontSize(10);doc.setFont('helvetica','normal');
-            doc.text(`Empresa: ${empresa.toUpperCase()}`,14,26);doc.text(`Generado: ${new Date().toLocaleDateString('es-MX',{dateStyle:'long'})}`,14,31);
-            doc.setFillColor(245,247,250);doc.roundedRect(14,36,268,28,2,2,'F');
-            doc.setFontSize(13);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,45);
-            doc.setFontSize(9);doc.setFont('helvetica','normal');
-            doc.text(`SKU: ${product?.sku}`,18,51);doc.text(`Categoría: ${product?.categoria?.nombre}`,18,56);
-            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}`,140,51);
-            doc.text(`Valor almacén: $${((product?.stock??0)*costoRef).toLocaleString()}`,140,56);
-            const tableData=[...movements].reverse().map(m=>[new Date(m.fecha).toLocaleDateString('es-MX'),tipoLabel(m.tipoMovimiento),m.referencia||'—',m.proveedor?.nombre||m.clienteNombre||'—',m.almacen?.nombre||'—',['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?`+${m.cantidad}`:`-${m.cantidad}`,`$${Number(m.costoUnitario).toLocaleString()}`,m.precioVenta?`$${Number(m.precioVenta).toLocaleString()}`:'—',String(m.saldo??''),m.usuario?.nombre||'']);
-            (doc as any).autoTable({startY:70,head:[['Fecha','Tipo','Referencia','Prov/Cliente','Almacén','Cant.','Costo','P.Venta','Saldo','Usuario']],body:tableData,styles:{fontSize:7.5,cellPadding:2.5},headStyles:{fillColor:[37,99,235],textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[248,250,252]}});
+            const pageW=doc.internal.pageSize.getWidth();
+            // ── Header ──
+            doc.setFillColor(15,23,42);doc.rect(0,0,pageW,22,'F');
+            doc.setTextColor(255,255,255);doc.setFontSize(14);doc.setFont('helvetica','bold');
+            doc.text('Kardex de Producto',14,10);
+            doc.setFontSize(8);doc.setFont('helvetica','normal');
+            doc.text(`Empresa: ${empresa.toUpperCase()}`,14,16);
+            doc.text(`Generado: ${new Date().toLocaleDateString('es-MX',{dateStyle:'long'})}`,pageW-14,16,{align:'right'});
+            // ── Info producto ──
+            doc.setTextColor(30,41,59);
+            doc.setFillColor(245,247,250);doc.roundedRect(14,26,pageW-28,22,2,2,'F');
+            doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,34);
+            doc.setFontSize(8);doc.setFont('helvetica','normal');
+            doc.text(`SKU: ${product?.sku}  ·  Categoría: ${product?.categoria?.nombre}`,18,40);
+            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}  ·  Valor almacén: $${((product?.stock??0)*costoRef).toLocaleString('es-MX')}`,pageW/2,40);
+            // ── Tabla ──
+            const tableData=[...movements].reverse().map(m=>[
+                new Date(m.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
+                tipoLabel(m.tipoMovimiento),
+                m.referencia||'—',
+                m.proveedor?.nombre||m.clienteNombre||'—',
+                m.almacen?.nombre||'—',
+                (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
+                `$${Number(m.costoUnitario).toLocaleString('es-MX')}`,
+                m.precioVenta?`$${Number(m.precioVenta).toLocaleString('es-MX')}`:'—',
+                String(m.saldo??''),
+                m.usuario?.nombre||'',
+            ]);
+            (doc as any).autoTable({
+                startY:52,
+                head:[['Fecha','Tipo','Referencia','Prov/Cliente','Almacén','Cant.','Costo','P.Venta','Saldo','Usuario']],
+                body:tableData,
+                styles:{fontSize:7,cellPadding:2},
+                headStyles:{fillColor:[15,23,42],textColor:255,fontStyle:'bold'},
+                alternateRowStyles:{fillColor:[248,250,252]},
+                columnStyles:{0:{cellWidth:22},1:{cellWidth:18},5:{cellWidth:12,halign:'right'},8:{cellWidth:12,halign:'right'}},
+            });
             doc.save(`kardex-${product?.sku}-${new Date().toISOString().split('T')[0]}.pdf`);
-        }catch(err){console.error('Error generando PDF:',err);alert('Error al generar el PDF.');}
+        }catch(err:any){
+            console.error('Error generando PDF:',err);
+            alert(`Error al generar el PDF: ${err?.message||'Error desconocido'}`);
+        }
     };
 
     const exportCSV=()=>{
