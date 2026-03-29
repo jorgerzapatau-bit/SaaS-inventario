@@ -5,10 +5,11 @@ import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import {
     Package, AlertTriangle, DollarSign, ArrowUpCircle, ArrowDownCircle,
     RotateCcw, TrendingUp, TrendingDown, Minus, Percent,
-    ShoppingCart, Ban, Warehouse, Calendar, ExternalLink, Clock, FileText
+    ShoppingCart, Ban, Warehouse, Calendar, ExternalLink, Clock, FileText, X
 } from 'lucide-react';
 import AnalyticsChart from '@/components/dashboard/AnalyticsChart';
 import { fetchApi } from '@/lib/api';
+import { useCompany } from '@/context/CompanyContext';
 import Link from 'next/link';
 
 // ── Tipos ──────────────────────────────────────────────────────────────
@@ -148,6 +149,10 @@ export default function DashboardPage() {
     const [loading, setLoading]     = useState(true);
     const [period, setPeriod]       = useState<PeriodKey>('general');
     const [showSinMovimiento, setShowSinMovimiento] = useState(false);
+    const [pdfGenerating, setPdfGenerating] = useState(false);
+    const [showPdfPreview, setShowPdfPreview] = useState(false);
+
+    const { company } = useCompany();
 
     const now = new Date();
     const [manualDesde, setManualDesde] = useState<string>(toInputDate(new Date(now.getFullYear(), now.getMonth(), 1)));
@@ -307,51 +312,218 @@ export default function DashboardPage() {
     // Fecha y hora actual para mostrar en la zona estática
     const fechaActual = now.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-    const exportPDF = () => {
-        const lines: string[] = [];
-        lines.push(`RESUMEN GENERAL DE INVENTARIO`);
-        lines.push(`Generado: ${now.toLocaleString('es-MX')}`);
-        lines.push(`Período: ${selectedPeriodLabel}`);
-        lines.push('');
-        lines.push('═══ ESTADO ACTUAL DEL INVENTARIO ═══');
-        lines.push(`Valor inventario:     $${fmt(valorActualTotal)}`);
-        lines.push(`Total productos:      ${products.length} SKUs · ${categories} categorías`);
-        lines.push(`Unidades en stock:    ${totalStock.toLocaleString()}`);
-        lines.push(`Stock bajo mínimo:    ${lowStockProducts.length} productos`);
-        lines.push('');
-        lines.push('═══ MOVIMIENTOS DEL PERÍODO ═══');
-        lines.push(`Entradas:             +${entradasActual} unidades`);
-        lines.push(`Salidas:              -${salidasActual} unidades`);
-        lines.push(`Rotación:             ${rotacionNum.toFixed(1)}%`);
-        lines.push('');
-        lines.push('═══ FINANZAS DEL PERÍODO ═══');
-        lines.push(`Costo de entradas:    $${fmt(costoEntradas)}`);
-        lines.push(`Ingresos por salidas: $${fmt(ingresosSalidas)}`);
-        lines.push(`Margen bruto:         $${fmt(margenBruto)}`);
-        lines.push(`Margen %:             ${margenPct.toFixed(1)}%`);
-        lines.push(`Sin movimiento:       ${sinMovimiento.length} productos`);
-        lines.push(`Valor inmovilizado:   $${fmt(valorInmovilizado)}`);
-        if (sinMovimiento.length > 0) {
-            lines.push('');
-            lines.push('─── Productos sin movimiento ───');
-            sinMovimiento.forEach(p => lines.push(`  · ${p.nombre} (${p.sku}) — Stock: ${p.stock}`));
-        }
-        if (lowStockProducts.length > 0) {
-            lines.push('');
-            lines.push('─── Productos bajo mínimo ───');
-            lowStockProducts.forEach(p => lines.push(`  · ${p.nombre} (${p.sku}) — Stock: ${p.stock} / Mín: ${p.stockMinimo}`));
-        }
-        const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = `resumen-inventario-${toInputDate(now)}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
+    // ── Helpers para el PDF ────────────────────────────────────────────
+    const margenColor  = margenBruto >= 0 ? '#16a34a' : '#dc2626';
+    const margenBgColor = margenBruto >= 0 ? '#f0fdf4' : '#fef2f2';
+
+    const buildPdfHtml = () => {
+        const empresaNombre = company?.nombre || 'Mi Empresa';
+        const empresaLogo   = company?.logo   || null;
+        const fechaGen = now.toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' });
+
+        const kpiCard = (label: string, value: string, sub?: string, color = '#1e293b') => `
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;flex:1;min-width:160px">
+                <p style="font-size:11px;color:#64748b;margin:0 0 6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">${label}</p>
+                <p style="font-size:22px;font-weight:800;color:${color};margin:0">${value}</p>
+                ${sub ? `<p style="font-size:11px;color:#94a3b8;margin:4px 0 0">${sub}</p>` : ''}
+            </div>`;
+
+        const finRow = (label: string, value: string, color = '#1e293b', bold = false) => `
+            <tr style="border-bottom:1px solid #f1f5f9">
+                <td style="padding:10px 0;font-size:13px;color:#475569">${label}</td>
+                <td style="padding:10px 0;font-size:13px;font-weight:${bold ? 700 : 500};color:${color};text-align:right">${value}</td>
+            </tr>`;
+
+        return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Resumen Ejecutivo — ${empresaNombre}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1e293b; background: #fff; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    @page { margin: 18mm 15mm; size: A4; }
+  }
+  .page { max-width: 780px; margin: 0 auto; padding: 32px 28px; }
+  h2 { font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .8px; margin: 28px 0 12px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+  .badge-green { background:#dcfce7; color:#16a34a; }
+  .badge-red   { background:#fee2e2; color:#dc2626; }
+  .badge-amber { background:#fef3c7; color:#d97706; }
+  .print-btn { position:fixed; bottom:24px; right:24px; background:#2563eb; color:#fff; border:none; padding:12px 24px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(37,99,235,.35); }
+  .print-btn:hover { background:#1d4ed8; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #2563eb;padding-bottom:18px;margin-bottom:4px">
+    <div style="display:flex;align-items:center;gap:14px">
+      ${empresaLogo
+        ? `<img src="${empresaLogo}" alt="${empresaNombre}" style="height:48px;width:auto;object-fit:contain;border-radius:6px"/>`
+        : `<div style="width:48px;height:48px;background:#2563eb;border-radius:8px;display:flex;align-items:center;justify-content:center">
+             <span style="color:#fff;font-size:22px;font-weight:800">${empresaNombre.charAt(0).toUpperCase()}</span>
+           </div>`}
+      <div>
+        <p style="font-size:20px;font-weight:800;color:#1e293b">${empresaNombre}</p>
+        <p style="font-size:12px;color:#64748b;margin-top:2px">Resumen Ejecutivo de Inventario</p>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <p style="font-size:12px;color:#94a3b8">Generado</p>
+      <p style="font-size:12px;font-weight:600;color:#475569">${fechaGen}</p>
+      <p style="font-size:11px;color:#94a3b8;margin-top:4px">Período: <strong>${selectedPeriodLabel}</strong></p>
+    </div>
+  </div>
+
+  <!-- ESTADO ACTUAL -->
+  <h2>Estado Actual del Inventario</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    ${kpiCard('Valor de Inventario', `$${fmt(valorActualTotal)}`, `${products.length} SKUs · ${categories} categorías`)}
+    ${kpiCard('Total Productos', `${products.length}`, `${totalStock.toLocaleString()} unidades en stock`)}
+    ${kpiCard('Stock bajo mínimo', `${lowStockProducts.length}`, lowStockProducts.length > 0 ? 'requieren reabastecimiento' : 'Sin alertas', lowStockProducts.length > 0 ? '#d97706' : '#16a34a')}
+  </div>
+
+  ${lowStockProducts.length > 0 ? `
+  <div style="margin-top:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 18px">
+    <p style="font-size:12px;font-weight:700;color:#d97706;margin-bottom:8px">⚠ Productos con stock crítico</p>
+    <table>
+      <thead>
+        <tr style="border-bottom:1px solid #fde68a">
+          <th style="text-align:left;font-size:11px;color:#92400e;padding-bottom:6px">Producto</th>
+          <th style="text-align:left;font-size:11px;color:#92400e;padding-bottom:6px">SKU</th>
+          <th style="text-align:right;font-size:11px;color:#92400e;padding-bottom:6px">Stock actual</th>
+          <th style="text-align:right;font-size:11px;color:#92400e;padding-bottom:6px">Mínimo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lowStockProducts.map(p => `
+        <tr style="border-bottom:1px solid #fef3c7">
+          <td style="padding:7px 0;font-size:12px;color:#1e293b">${p.nombre}</td>
+          <td style="padding:7px 0;font-size:12px;color:#64748b">${p.sku}</td>
+          <td style="padding:7px 0;font-size:12px;font-weight:700;color:#dc2626;text-align:right">${p.stock}</td>
+          <td style="padding:7px 0;font-size:12px;color:#64748b;text-align:right">${p.stockMinimo}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  <!-- MOVIMIENTOS -->
+  <h2>Movimientos del Período</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    ${kpiCard('Entradas totales', `+${entradasActual.toLocaleString()} uds`, 'unidades recibidas', '#16a34a')}
+    ${kpiCard('Salidas totales',  `-${salidasActual.toLocaleString()} uds`, 'unidades despachadas', '#dc2626')}
+    ${kpiCard('Rotación del período', `${rotacionNum.toFixed(1)}%`, 'salidas / stock total')}
+  </div>
+
+  <!-- FINANZAS -->
+  <h2>Finanzas del Período</h2>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:6px 20px">
+    <table>
+      <tbody>
+        ${finRow('Costo de entradas',   `$${fmt(costoEntradas)}`)}
+        ${finRow('Ingresos por salidas',`$${fmt(ingresosSalidas)}`, '#16a34a')}
+        ${finRow('Margen bruto',        `$${fmt(margenBruto)}`,     margenColor, true)}
+        ${finRow('Margen %',            `${margenPct.toFixed(1)}%`, margenColor, true)}
+        ${finRow('Productos sin movimiento', `${sinMovimiento.length}`, '#64748b')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="margin-top:32px;border-top:1px solid #e2e8f0;padding-top:14px;display:flex;justify-content:space-between;align-items:center">
+    <p style="font-size:11px;color:#94a3b8">Documento generado automáticamente · ${empresaNombre}</p>
+    <p style="font-size:11px;color:#94a3b8">${fechaGen}</p>
+  </div>
+
+</div>
+<button class="print-btn no-print" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+</body>
+</html>`;
+    };
+
+    const handleExportClick = () => {
+        setPdfGenerating(true);
+        // Pequeño delay para mostrar el spinner antes de construir el DOM
+        setTimeout(() => {
+            setPdfGenerating(false);
+            setShowPdfPreview(true);
+        }, 400);
+    };
+
+    const handlePrint = () => {
+        const html   = buildPdfHtml();
+        const win    = window.open('', '_blank', 'width=900,height=700');
+        if (!win) return;
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        // Dar tiempo al navegador para cargar el logo si existe
+        setTimeout(() => win.print(), 800);
     };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+
+            {/* ── Modal Vista Previa PDF ─────────────────────────────── */}
+            {showPdfPreview && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+                        {/* Header modal */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center">
+                                    <FileText size={18} className="text-blue-600"/>
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-gray-900 text-sm">Resumen Ejecutivo listo</p>
+                                    <p className="text-xs text-gray-400">PDF · {company?.nombre || 'Mi Empresa'} · {selectedPeriodLabel}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowPdfPreview(false)}
+                                className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X size={18}/>
+                            </button>
+                        </div>
+                        {/* Vista previa de secciones */}
+                        <div className="px-6 py-4 space-y-3">
+                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">El PDF incluye</p>
+                            {[
+                                { icon: '📦', label: 'Estado actual del inventario', sub: `$${fmt(valorActualTotal)} · ${products.length} productos` },
+                                { icon: '📊', label: 'Movimientos del período',      sub: `+${entradasActual} entradas · -${salidasActual} salidas` },
+                                { icon: '💰', label: 'Finanzas del período',         sub: `Margen ${margenPct.toFixed(1)}% · Ingresos $${fmt(ingresosSalidas)}` },
+                                ...(lowStockProducts.length > 0
+                                    ? [{ icon: '⚠️', label: 'Stock crítico', sub: `${lowStockProducts.length} producto${lowStockProducts.length > 1 ? 's' : ''} bajo mínimo` }]
+                                    : []),
+                            ].map((item, i) => (
+                                <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <span className="text-lg">{item.icon}</span>
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                                        <p className="text-xs text-gray-400">{item.sub}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Acciones */}
+                        <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+                            <button onClick={() => setShowPdfPreview(false)}
+                                className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
+                                Cancelar
+                            </button>
+                            <button onClick={() => { setShowPdfPreview(false); handlePrint(); }}
+                                className="flex-1 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors flex items-center justify-center gap-2">
+                                <FileText size={15}/> Abrir y descargar PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Header ────────────────────────────────────────────── */}
             <div className="flex justify-between items-center flex-wrap gap-3">
@@ -360,9 +532,12 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-400 mt-0.5 capitalize">{fechaActual}</p>
                 </div>
                 <div className="flex gap-2 items-center flex-wrap">
-                    <button onClick={exportPDF}
-                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-medium rounded-lg transition-colors shadow-sm">
-                        <FileText size={16} /> Exportar resumen
+                    <button onClick={handleExportClick} disabled={pdfGenerating}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-medium rounded-lg transition-colors shadow-sm disabled:opacity-60">
+                        {pdfGenerating
+                            ? <><span className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin inline-block"/><span>Generando…</span></>
+                            : <><FileText size={16}/> Exportar resumen</>
+                        }
                     </button>
                     <Link href="/dashboard/purchases/new" className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
                         <ArrowUpCircle size={16} /> Nueva Entrada
