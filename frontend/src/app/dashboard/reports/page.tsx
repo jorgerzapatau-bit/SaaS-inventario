@@ -34,11 +34,24 @@ interface FilaInventario {
 }
 
 // ── Generador de PDF en el browser ─────────────────────────────────────────────
-async function generarPDFInventario(filas: FilaInventario[], total: number, fecha: string) {
-    // Importar jsPDF dinámicamente desde CDN (no hay dep en package.json)
-    const { jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js' as any);
-    await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js' as any);
+// Carga un script externo una sola vez y devuelve promesa
+function cargarScript(src: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload  = () => resolve();
+        s.onerror = () => reject(new Error(`No se pudo cargar: ${src}`));
+        document.head.appendChild(s);
+    });
+}
 
+async function generarPDFInventario(filas: FilaInventario[], total: number, fecha: string) {
+    // Cargar jsPDF y autoTable desde CDN via script tag (compatible con Next.js)
+    await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+
+    const { jsPDF } = (window as any).jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
     const pageW = doc.internal.pageSize.getWidth();
 
