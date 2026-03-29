@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Save, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
-export default function NewPurchasePage() {
+function NewPurchasePageInner() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [products, setProducts] = useState<any[]>([]);
@@ -31,6 +33,16 @@ export default function NewPurchasePage() {
         .then(([prodData, suppData]) => {
             setProducts(prodData);
             setSuppliers(suppData);
+            // Preseleccionar producto si viene de ?productoId=
+            const productoId = searchParams.get('productoId');
+            if (productoId) {
+                const prod = prodData.find((p: any) => p.id === productoId);
+                setDetalles([{
+                    productoId,
+                    cantidad: 1,
+                    precioUnitario: prod ? Number(prod.ultimoPrecioCompra ?? 0) : 0,
+                }]);
+            }
         })
         .catch(() => setError("Error al cargar dependencias"));
     }, []);
@@ -276,5 +288,13 @@ export default function NewPurchasePage() {
                 </div>
             </form>
         </div>
+    );
+}
+
+export default function NewPurchasePage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Cargando...</div>}>
+            <NewPurchasePageInner />
+        </Suspense>
     );
 }

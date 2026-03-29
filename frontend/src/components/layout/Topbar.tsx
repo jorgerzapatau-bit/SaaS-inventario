@@ -2,9 +2,34 @@
 import { Bell, UserCircle } from 'lucide-react';
 import { useCompany } from '@/context/CompanyContext';
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+
+const PAGE_TITLES: Record<string, string> = {
+    '/dashboard':              'Panel de Control',
+    '/dashboard/products':     'Productos',
+    '/dashboard/inventory':    'Kardex / Movimientos',
+    '/dashboard/purchases':    'Compras (Entradas)',
+    '/dashboard/sales':        'Salidas',
+    '/dashboard/sales/new':    'Nueva Salida',
+    '/dashboard/purchases/new':'Nueva Compra',
+    '/dashboard/suppliers':    'Proveedores',
+    '/dashboard/clients':      'Clientes',
+    '/dashboard/reports':      'Reportes',
+    '/dashboard/settings':     'Parámetros',
+};
+
+function getPageTitle(pathname: string): string {
+    if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+    if (pathname.includes('/products/') && pathname.includes('/edit')) return 'Editar Producto';
+    if (pathname.includes('/products/') && !pathname.includes('/new')) return 'Detalle de Producto';
+    if (pathname.includes('/products/new')) return 'Nuevo Producto';
+    return 'Panel de Control';
+}
 
 export default function Topbar() {
     const { company } = useCompany();
+    const pathname = usePathname();
+    const pageTitle = getPageTitle(pathname);
     const [userName, setUserName] = useState('');
 
     useEffect(() => {
@@ -20,7 +45,7 @@ export default function Topbar() {
     return (
         <div className="flex items-center justify-between h-20 px-8 bg-white border-b border-gray-100 shadow-sm z-10 sticky top-0">
             <div>
-                <h2 className="text-xl font-semibold text-gray-800">Panel de Control</h2>
+                <h2 className="text-xl font-semibold text-gray-800">{pageTitle}</h2>
                 <p className="text-sm text-gray-500">{company?.nombre || ''}</p>
             </div>
             <div className="flex items-center gap-6">

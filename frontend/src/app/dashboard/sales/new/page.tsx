@@ -1,25 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { Save, ArrowLeft, Plus, Trash2, UserCircle2 } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 
 // Tipos de salida disponibles y sus labels para el usuario
 const TIPOS_SALIDA = [
-    { value: "VENTA",            label: "Salida por venta"  },
-    { value: "CONSUMO_INTERNO",  label: "Consumo interno"   },
-    { value: "PERDIDA",          label: "Pérdida / Merma"   },
-    { value: "AJUSTE_POSITIVO",  label: "Ajuste (+) — entrada manual" },
-    { value: "AJUSTE_NEGATIVO",  label: "Ajuste (−) — baja manual"   },
+    { value: "VENTA",           label: "Salida"            },
+    { value: "CONSUMO_INTERNO", label: "Consumo interno"   },
+    { value: "PERDIDA",         label: "Pérdida / Merma"   },
+    { value: "AJUSTE_NEGATIVO", label: "Ajuste (−) — baja manual" },
 ];
 
-// Para VENTA el cliente es obligatorio; para los demás es opcional
+// Para SALIDA (VENTA) el cliente es obligatorio; para los demás no aplica
 const TIPOS_REQUIEREN_CLIENTE = ["VENTA"];
 
-export default function NewSalePage() {
+function NewSalePageInner() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading,   setLoading]   = useState(false);
     const [error,     setError]     = useState("");
     const [products,  setProducts]  = useState<any[]>([]);
@@ -39,11 +40,25 @@ export default function NewSalePage() {
     // ¿El tipo seleccionado requiere cliente?
     const clienteRequerido = TIPOS_REQUIEREN_CLIENTE.includes(formData.tipo);
     // Los ajustes no manejan precio de venta
-    const esAjuste = formData.tipo === "AJUSTE_POSITIVO" || formData.tipo === "AJUSTE_NEGATIVO";
+    const esAjuste = formData.tipo === "AJUSTE_NEGATIVO";
 
     useEffect(() => {
-        fetchApi('/products').then(setProducts).catch(() => setError("Error al cargar productos"));
-        fetchApi('/clients').then(setClientes).catch(() => {});
+        Promise.all([fetchApi('/products'), fetchApi('/clients')])
+            .then(([prods, clients]) => {
+                setProducts(prods);
+                setClientes(clients);
+                // Preseleccionar producto si viene de ?productoId=
+                const productoId = searchParams.get('productoId');
+                if (productoId) {
+                    const prod = prods.find((p: any) => p.id === productoId);
+                    setDetalles([{
+                        productoId,
+                        cantidad: 1,
+                        precioUnitario: prod ? Number(prod.ultimoPrecioVenta ?? 0) : 0,
+                    }]);
+                }
+            })
+            .catch(() => setError("Error al cargar productos"));
     }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -138,7 +153,7 @@ export default function NewSalePage() {
                 </button>
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Nueva Salida</h1>
-                    <p className="text-sm text-gray-500 mt-1">Registra una salida o retiro de inventario.</p>
+                    <p className="text-sm text-gray-500 mt-1">Registra una salida de inventario o ajuste de baja.</p>
                 </div>
             </div>
 
@@ -158,7 +173,7 @@ export default function NewSalePage() {
                         {/* Tipo — va primero para que el resto del form reaccione */}
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-gray-700">
-                                Tipo de Salida
+                                Tipo de movimiento
                             </label>
                             <select
                                 name="tipo"
@@ -189,7 +204,8 @@ export default function NewSalePage() {
                             />
                         </div>
 
-                        {/* Cliente — obligatorio si tipo === VENTA */}
+                        {/* Cliente — solo visible (y obligatorio) cuando tipo === VENTA */}
+                        {formData.tipo === "VENTA" && (
                         <div className="space-y-2 md:col-span-2">
                             <label className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
                                 <UserCircle2 size={15} className="text-gray-400"/>
@@ -218,25 +234,17 @@ export default function NewSalePage() {
                             </select>
                             {clienteRequerido && !formData.clienteId && (
                                 <p className="text-xs text-orange-500 flex items-center gap-1">
-                                    Debes seleccionar un cliente para registrar una salida por venta.
+                                    Debes seleccionar un cliente para registrar esta salida.
                                 </p>
                             )}
                         </div>
+                        )}
 
-                        {/* Nota informativa para ajustes */}
-                        {esAjuste && (
-                            <div className={`md:col-span-2 rounded-lg p-3 text-sm flex items-start gap-2
-                                ${formData.tipo === "AJUSTE_POSITIVO"
-                                    ? "bg-green-50 text-green-700 border border-green-100"
-                                    : "bg-purple-50 text-purple-700 border border-purple-100"}`}>
-                                <span className="font-bold text-base leading-none">
-                                    {formData.tipo === "AJUSTE_POSITIVO" ? "+" : "−"}
-                                </span>
-                                <span>
-                                    {formData.tipo === "AJUSTE_POSITIVO"
-                                        ? "Ajuste positivo: incrementa el stock sin registrar una compra formal. Útil para correcciones o inventario inicial."
-                                        : "Ajuste negativo: reduce el stock sin registrar una salida por venta. Útil para correcciones de inventario o bajas."}
-                                </span>
+                        {/* Nota informativa para ajuste negativo */}
+                        {formData.tipo === "AJUSTE_NEGATIVO" && (
+                            <div className="md:col-span-2 rounded-lg p-3 text-sm flex items-start gap-2 bg-purple-50 text-purple-700 border border-purple-100">
+                                <span className="font-bold text-base leading-none">−</span>
+                                <span>Ajuste negativo: reduce el stock sin registrar una salida formal. Útil para correcciones de inventario o bajas por descuento.</span>
                             </div>
                         )}
                     </CardContent>
@@ -366,5 +374,13 @@ export default function NewSalePage() {
                 </div>
             </form>
         </div>
+    );
+}
+
+export default function NewSalePage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-64 text-gray-400 text-sm">Cargando...</div>}>
+            <NewSalePageInner />
+        </Suspense>
     );
 }

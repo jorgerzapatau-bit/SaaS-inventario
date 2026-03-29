@@ -62,74 +62,6 @@ function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }
     );
 }
 
-// ── Quick Movement Modal ──────────────────────────────────────────────────────
-function QuickMovModal({ product, type, onClose, onDone }: { product: any; type: 'entrada' | 'salida'; onClose: () => void; onDone: () => void }) {
-    const [qty, setQty] = useState('1');
-    const [motivo, setMotivo] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [err, setErr] = useState('');
-    const isEntrada = type === 'entrada';
-
-    const handleSubmit = async () => {
-        if (!qty || Number(qty) <= 0) { setErr('Ingresa una cantidad válida'); return; }
-        setSaving(true); setErr('');
-        try {
-            await fetchApi('/inventory/movements', {
-                method: 'POST',
-                body: JSON.stringify({
-                    productoId: product.id,
-                    tipoMovimiento: isEntrada ? 'ENTRADA' : 'SALIDA',
-                    cantidad: Number(qty),
-                    costoUnitario: Number(product.ultimoPrecioCompra ?? 0),
-                    precioVenta: isEntrada ? null : Number(product.ultimoPrecioVenta ?? null),
-                    motivo: motivo || (isEntrada ? 'Entrada rápida' : 'Salida rápida'),
-                    almacenId: null,
-                }),
-            });
-            onDone();
-        } catch (e: any) { setErr(e.message || 'Error al registrar'); setSaving(false); }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-2">
-                        <div className={`p-2 rounded-lg ${isEntrada ? 'bg-green-100' : 'bg-red-100'}`}>
-                            {isEntrada ? <ArrowUpCircle size={18} className="text-green-600" /> : <ArrowDownCircle size={18} className="text-red-500" />}
-                        </div>
-                        <div>
-                            <p className="font-semibold text-gray-800 text-sm">{isEntrada ? 'Entrada rápida' : 'Salida rápida'}</p>
-                            <p className="text-xs text-gray-400 truncate max-w-[180px]">{product.nombre}</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
-                </div>
-                {err && <p className="text-xs text-red-500 mb-3 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
-                <div className="space-y-3 mb-5">
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">Cantidad ({product.unidad})</label>
-                        <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} autoFocus
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                        <p className="text-xs text-gray-400 mt-1">Stock actual: <strong>{product.stock} {product.unidad}</strong></p>
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-gray-600 block mb-1">Motivo (opcional)</label>
-                        <input type="text" value={motivo} onChange={e => setMotivo(e.target.value)} placeholder={isEntrada ? 'Ej: Compra a proveedor' : 'Ej: Venta #V-001'}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                    </div>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
-                    <button onClick={handleSubmit} disabled={saving}
-                        className={`flex-1 py-2 text-sm text-white font-medium rounded-lg transition-colors disabled:opacity-70 ${isEntrada ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'}`}>
-                        {saving ? 'Guardando...' : `Registrar ${isEntrada ? 'entrada' : 'salida'}`}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
 function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -252,7 +184,6 @@ function ProductsPageInner() {
     const [sortKey, setSortKey]   = useState<SortKey>('nombre');
     const [sortDir, setSortDir]   = useState<SortDir>('asc');
     const [selected, setSelected] = useState<Set<string>>(new Set());
-    const [quickMov, setQuickMov] = useState<{ product: any; type: 'entrada' | 'salida' } | null>(null);
     const [showImport, setShowImport] = useState(false);
 
     const searchParams = useSearchParams();
@@ -673,12 +604,12 @@ function ProductsPageInner() {
                                         </div>
                                         {isLow && <div className="mt-1"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
                                         <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
-                                            <button onClick={() => setQuickMov({ product, type: 'entrada' })} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors">
+                                            <Link href={`/dashboard/purchases/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors">
                                                 <ArrowUpCircle size={13} /> Entrada
-                                            </button>
-                                            <button onClick={() => setQuickMov({ product, type: 'salida' })} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                                            </Link>
+                                            <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-md transition-colors">
                                                 <ArrowDownCircle size={13} /> Salida
-                                            </button>
+                                            </Link>
                                             <Link href={`/dashboard/products/${product.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors">
                                                 <Edit size={13} />
                                             </Link>
@@ -760,12 +691,12 @@ function ProductsPageInner() {
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={() => setQuickMov({ product, type: 'entrada' })} className="p-1.5 text-green-500 hover:bg-green-50 rounded-md transition-colors" title="Entrada rápida">
+                                                        <Link href={`/dashboard/purchases/new?productoId=${product.id}`} className="p-1.5 text-green-500 hover:bg-green-50 rounded-md transition-colors inline-flex" title="Registrar entrada">
                                                             <ArrowUpCircle size={15} />
-                                                        </button>
-                                                        <button onClick={() => setQuickMov({ product, type: 'salida' })} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md transition-colors" title="Salida rápida">
+                                                        </Link>
+                                                        <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md transition-colors inline-flex" title="Registrar salida">
                                                             <ArrowDownCircle size={15} />
-                                                        </button>
+                                                        </Link>
                                                         <Link href={`/dashboard/products/${product.id}/edit`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors inline-flex">
                                                             <Edit size={15} />
                                                         </Link>
@@ -804,11 +735,6 @@ function ProductsPageInner() {
 
             {/* ── Modales ──────────────────────────────────────────────── */}
             {showStockModal && <StockBarChart products={sorted} onClose={() => setShowStockModal(false)} />}
-            {quickMov && (
-                <QuickMovModal product={quickMov.product} type={quickMov.type}
-                    onClose={() => setQuickMov(null)}
-                    onDone={() => { setQuickMov(null); loadProducts(); }} />
-            )}
             {showImport && (
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
