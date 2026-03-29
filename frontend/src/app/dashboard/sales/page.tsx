@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import {
     Search, Plus, X, UserCircle2, Calendar, ChevronRight,
     AlertCircle, ChevronLeft, SlidersHorizontal, ChevronDown,
     TrendingDown, ShoppingCart, Coffee, AlertTriangle,
-    MinusCircle, UserX, HelpCircle,
+    MinusCircle, UserX, HelpCircle, Pencil,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
@@ -107,6 +108,7 @@ function sortSalidas(list: Salida[], key: SortKey, dir: SortDir): Salida[] {
 
 // ── Componente principal ──────────────────────────────────────────────────────
 function SalesPageInner() {
+    const router = useRouter();
     const searchParams = useSearchParams();
 
     const [todasSalidas, setTodasSalidas] = useState<Salida[]>([]);
@@ -701,12 +703,24 @@ function SalesPageInner() {
                             )}
                         </div>
 
-                        <div className="px-6 pb-5">
+                        <div className="px-6 pb-5 flex gap-3">
                             <button onClick={() => setDetalle(null)}
-                                className="w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100
+                                className="flex-1 py-2.5 text-sm font-medium text-gray-600 bg-gray-100
                                            hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
                                 Cerrar
                             </button>
+                            {detalle.esFormal && (
+                                <button
+                                    onClick={() => {
+                                        setDetalle(null);
+                                        router.push(`/dashboard/sales/new?editId=${detalle.id}`);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5
+                                               text-sm font-semibold text-white bg-orange-600
+                                               hover:bg-orange-700 rounded-xl transition-colors cursor-pointer">
+                                    <Pencil size={14}/> Editar
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
