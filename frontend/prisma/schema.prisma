@@ -3,10 +3,49 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
+
+// ─────────────────────────────────────────────
+//  ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR
+}
+
+enum Moneda {
+  MXN
+  USD
+}
+
+enum StatusCompra {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
+}
+
+enum TipoSalida {
+  VENTA
+  CONSUMO_INTERNO
+  PERDIDA
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+}
+
+// ─────────────────────────────────────────────
+//  EMPRESA
+// ─────────────────────────────────────────────
 
 model Empresa {
   id            String   @id @default(uuid())
@@ -36,13 +75,14 @@ model Empresa {
   compras               Compra[]
   salidas               Salida[]
   movimientosInventario MovimientoInventario[]
+  equipos               Equipo[]
+  registrosDiarios      RegistroDiario[]
+  resumenesSemana       ResumenSemana[]
 }
 
-enum Role {
-  ADMIN
-  GERENTE
-  OPERADOR
-}
+// ─────────────────────────────────────────────
+//  USUARIOS
+// ─────────────────────────────────────────────
 
 model Usuario {
   id        String   @id @default(uuid())
@@ -55,9 +95,14 @@ model Usuario {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  movimientos MovimientoInventario[]
-  salidas     Salida[]
+  movimientos      MovimientoInventario[]
+  salidas          Salida[]
+  registrosDiarios RegistroDiario[]
 }
+
+// ─────────────────────────────────────────────
+//  CATÁLOGOS BASE
+// ─────────────────────────────────────────────
 
 model Categoria {
   id          String   @id @default(uuid())
@@ -109,7 +154,8 @@ model Cliente {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  movimientos MovimientoInventario[]
+  movimientos    MovimientoInventario[]
+  registrosDiarios RegistroDiario[]
 }
 
 model Almacen {
@@ -123,6 +169,10 @@ model Almacen {
   movimientos MovimientoInventario[]
 }
 
+// ─────────────────────────────────────────────
+//  PRODUCTOS / INSUMOS
+// ─────────────────────────────────────────────
+
 model Producto {
   id           String    @id @default(uuid())
   empresaId    String
@@ -131,7 +181,11 @@ model Producto {
   sku          String
   categoriaId  String
   categoria    Categoria @relation(fields: [categoriaId], references: [id])
-  unidad       String    @default("unidad")
+  unidad       String    @default("pza")
+  // Precio base y moneda de referencia
+  precioCompra Decimal   @default(0)
+  moneda       Moneda    @default(MXN)
+  stockActual  Decimal   @default(0)   // se actualiza automáticamente con cada movimiento
   stockMinimo  Int       @default(0)
   imagen       String?
   activo       Boolean   @default(true)
@@ -145,11 +199,9 @@ model Producto {
   @@unique([empresaId, sku])
 }
 
-enum StatusCompra {
-  PENDIENTE
-  COMPLETADA
-  CANCELADA
-}
+// ─────────────────────────────────────────────
+//  COMPRAS (ENTRADAS)
+// ─────────────────────────────────────────────
 
 model Compra {
   id          String       @id @default(uuid())
@@ -160,7 +212,10 @@ model Compra {
   referencia  String?
   fecha       DateTime     @default(now())
   total       Decimal      @default(0)
+  moneda      Moneda       @default(MXN)
+  tipoCambio  Decimal?     // USD→MXN al momento de la compra (si aplica)
   status      StatusCompra @default(PENDIENTE)
+  notas       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -174,18 +229,14 @@ model DetalleCompra {
   compra         Compra   @relation(fields: [compraId], references: [id])
   productoId     String
   producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Int
+  cantidad       Decimal  // Decimal para insumos por litros/kg
   precioUnitario Decimal
+  moneda         Moneda   @default(MXN)
 }
 
-// ── CAMBIO 1: se agregaron AJUSTE_POSITIVO y AJUSTE_NEGATIVO al enum ──────────
-enum TipoSalida {
-  VENTA
-  CONSUMO_INTERNO
-  PERDIDA
-  AJUSTE_POSITIVO
-  AJUSTE_NEGATIVO
-}
+// ─────────────────────────────────────────────
+//  SALIDAS / CONSUMOS
+// ─────────────────────────────────────────────
 
 model Salida {
   id            String     @id @default(uuid())
@@ -194,8 +245,8 @@ model Salida {
   tipo          TipoSalida
   fecha         DateTime   @default(now())
   referencia    String?
-  // ── CAMBIO 2: columna nueva para guardar el nombre del cliente ────────────
   clienteNombre String?
+  notas         String?
   usuarioId     String
   usuario       Usuario    @relation(fields: [usuarioId], references: [id])
   createdAt     DateTime   @default(now())
@@ -210,16 +261,14 @@ model DetalleSalida {
   salida         Salida   @relation(fields: [salidaId], references: [id])
   productoId     String
   producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Int
+  cantidad       Decimal
   precioUnitario Decimal
+  moneda         Moneda   @default(MXN)
 }
 
-enum TipoMovimiento {
-  ENTRADA
-  SALIDA
-  AJUSTE_POSITIVO
-  AJUSTE_NEGATIVO
-}
+// ─────────────────────────────────────────────
+//  MOVIMIENTOS DE INVENTARIO (KARDEX)
+// ─────────────────────────────────────────────
 
 model MovimientoInventario {
   id             String         @id @default(uuid())
@@ -230,8 +279,10 @@ model MovimientoInventario {
   almacenId      String
   almacen        Almacen        @relation(fields: [almacenId], references: [id])
   tipoMovimiento TipoMovimiento
-  cantidad       Int
+  cantidad       Decimal
   costoUnitario  Decimal
+  moneda         Moneda         @default(MXN)
+  tipoCambio     Decimal?       // tipo de cambio registrado al momento
   precioVenta    Decimal?
   proveedorId    String?
   proveedor      Proveedor?     @relation(fields: [proveedorId], references: [id])
@@ -240,8 +291,12 @@ model MovimientoInventario {
   clienteNombre  String?
   compraId       String?
   compra         Compra?        @relation(fields: [compraId], references: [id])
+  // Referencia cruzada con operación diaria
+  registroDiarioId String?
+  registroDiario   RegistroDiario? @relation(fields: [registroDiarioId], references: [id])
   fecha          DateTime       @default(now())
   referencia     String?
+  notas          String?
   usuarioId      String
   usuario        Usuario        @relation(fields: [usuarioId], references: [id])
   createdAt      DateTime       @default(now())
@@ -251,4 +306,132 @@ model MovimientoInventario {
   @@index([almacenId])
   @@index([clienteId])
   @@index([compraId])
+  @@index([registroDiarioId])
+}
+
+// ─────────────────────────────────────────────
+//  EQUIPOS (MAQUINARIA)
+// ─────────────────────────────────────────────
+
+model Equipo {
+  id               String   @id @default(uuid())
+  empresaId        String
+  empresa          Empresa  @relation(fields: [empresaId], references: [id])
+  nombre           String                      // Ej: "Perforadora Atlas Copco"
+  modelo           String?
+  numeroSerie      String?
+  numeroEconomico  String?
+  hodometroInicial Decimal  @default(0)        // Lectura inicial del horómetro
+  activo           Boolean  @default(true)
+  notas            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  registrosDiarios RegistroDiario[]
+  resumenesSemana  ResumenSemana[]
+}
+
+// ─────────────────────────────────────────────
+//  REGISTRO DIARIO DE OPERACIÓN (hoja Rpte)
+// ─────────────────────────────────────────────
+
+model RegistroDiario {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  equipoId  String
+  equipo    Equipo   @relation(fields: [equipoId], references: [id])
+  fecha     DateTime @db.Date
+
+  // Horómetro
+  horometroInicio Decimal                     // h i
+  horometroFin    Decimal                     // h f
+  horasTrabajadas Decimal                     // TOTAL HORAS (calculado)
+
+  // Producción
+  barrenos        Int      @default(0)        // BARRNS (cantidad de barrenos)
+  metrosLineales  Decimal  @default(0)        // MTS (metros perforados)
+
+  // Diésel
+  litrosDiesel    Decimal  @default(0)        // DIÉSEL litros cargados
+  precioDiesel    Decimal  @default(0)        // P.U. diésel (MXN/lt)
+
+  // Nivel de tanque (combustóleo / tanque interno)
+  tanqueInicio    Decimal?                    // CM i (lectura tanque inicio)
+  litrosTanqueInicio Decimal?                 // LTS tanque inicio
+  tanqueFin       Decimal?                    // CM f (lectura tanque fin)
+  litrosTanqueFin Decimal?                    // LTS tanque fin
+
+  // Personal
+  operadores      Int      @default(1)        // Op (cantidad de operadores)
+  peones          Int      @default(0)        // Pn (cantidad de peones)
+
+  // Cliente/obra
+  clienteId       String?
+  cliente         Cliente? @relation(fields: [clienteId], references: [id])
+  obraNombre      String?                     // nombre del sitio/obra
+
+  // Semana a la que pertenece (para agrupación)
+  semanaNum       Int?                        // número de semana ISO
+  anoNum          Int?                        // año
+
+  notas           String?
+  usuarioId       String
+  usuario         Usuario  @relation(fields: [usuarioId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  movimientosInventario MovimientoInventario[]
+
+  @@unique([equipoId, fecha])
+  @@index([empresaId])
+  @@index([equipoId])
+  @@index([fecha])
+}
+
+// ─────────────────────────────────────────────
+//  RESUMEN SEMANAL (hoja Semana)
+// ─────────────────────────────────────────────
+
+model ResumenSemana {
+  id        String   @id @default(uuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  equipoId  String
+  equipo    Equipo   @relation(fields: [equipoId], references: [id])
+
+  semanaNum        Int                         // Número de semana ISO
+  anoNum           Int                         // Año
+  fechaInicio      DateTime @db.Date
+  fechaFin         DateTime @db.Date
+
+  // Producción acumulada
+  horasTotales     Decimal  @default(0)        // h t
+  barrenos         Int      @default(0)        // barrenos totales semana
+  metrosLineales   Decimal  @default(0)        // metros lineales semana
+
+  // KPIs calculados
+  litrosPorHora    Decimal?                    // LT / HR
+  litrosPorMetro   Decimal?                    // LT / MT
+  metrosPorHora    Decimal?                    // MT / HR
+  metrosPorDia     Decimal?                    // mt/dia
+
+  // Costos semanales (MXN)
+  costoDiesel      Decimal  @default(0)
+  costoOperadores  Decimal  @default(0)
+  costoPeones      Decimal  @default(0)
+  costoGastos      Decimal  @default(0)        // gastos varios (Gastos sheet)
+  rentaEquipo      Decimal  @default(0)        // RTA. EQUIPO
+  costoTotal       Decimal  @default(0)        // TOTAL = suma de todo lo anterior (negativo en P&L)
+
+  // Tipo de cambio de referencia de esa semana
+  tipoCambio       Decimal?
+
+  notas            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([equipoId, semanaNum, anoNum])
+  @@index([empresaId])
+  @@index([equipoId])
 }

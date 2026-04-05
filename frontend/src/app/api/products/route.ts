@@ -2,44 +2,49 @@ import { NextRequest } from 'next/server';
 import prisma from '../lib/prisma';
 import { getAuthUser, unauthorized } from '../lib/auth';
 
+// ─── GET /api/products ────────────────────────────────────────────────────────
+// Devuelve productos con stockActual ya almacenado en la tabla.
+// También incluye moneda y precioCompra para mostrar en listados.
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
         const empresaId = user.empresaId;
-        const products = await prisma.producto.findMany({ where: { empresaId }, include: { categoria: true } });
-
-        const stockAggregations = await prisma.movimientoInventario.groupBy({
-            by: ['productoId', 'tipoMovimiento'],
+        const products = await prisma.producto.findMany({
             where: { empresaId },
-            _sum: { cantidad: true }
+            include: { categoria: true },
+            orderBy: { nombre: 'asc' },
         });
+
+        // stockActual ya está almacenado en el campo — no necesitamos calcular con SUM.
+        // Devolvemos el campo directo, más los últimos precios del kardex para referencia.
         const lastEntradas = await prisma.movimientoInventario.findMany({
             where: { empresaId, tipoMovimiento: { in: ['ENTRADA', 'AJUSTE_POSITIVO'] } },
             orderBy: { fecha: 'desc' },
-            select: { productoId: true, costoUnitario: true, fecha: true }
-        });
-        const lastSalidas = await prisma.movimientoInventario.findMany({
-            where: { empresaId, tipoMovimiento: { in: ['SALIDA', 'AJUSTE_NEGATIVO'] }, precioVenta: { not: null } },
-            orderBy: { fecha: 'desc' },
-            select: { productoId: true, precioVenta: true, fecha: true }
+            select: { productoId: true, costoUnitario: true, moneda: true, tipoCambio: true, fecha: true },
         });
 
-        const lastCostoMap: Record<string, number> = {};
+        const lastCostoMap: Record<string, { costo: number; moneda: string; tipoCambio: number | null }> = {};
         for (const m of lastEntradas) {
-            if (!(m.productoId in lastCostoMap)) lastCostoMap[m.productoId] = Number(m.costoUnitario);
-        }
-        const lastVentaMap: Record<string, number> = {};
-        for (const m of lastSalidas) {
-            if (!(m.productoId in lastVentaMap) && m.precioVenta) lastVentaMap[m.productoId] = Number(m.precioVenta);
+            if (!(m.productoId in lastCostoMap)) {
+                lastCostoMap[m.productoId] = {
+                    costo:      Number(m.costoUnitario),
+                    moneda:     m.moneda,
+                    tipoCambio: m.tipoCambio ? Number(m.tipoCambio) : null,
+                };
+            }
         }
 
-        const productsWithStock = products.map(product => {
-            const aggs = stockAggregations.filter(a => a.productoId === product.id);
-            const sumEntradas = aggs.filter(a => ['ENTRADA', 'AJUSTE_POSITIVO'].includes(a.tipoMovimiento)).reduce((acc, c) => acc + (c._sum.cantidad || 0), 0);
-            const sumSalidas  = aggs.filter(a => ['SALIDA', 'AJUSTE_NEGATIVO'].includes(a.tipoMovimiento)).reduce((acc, c) => acc + (c._sum.cantidad || 0), 0);
-            return { ...product, stock: sumEntradas - sumSalidas, ultimoPrecioCompra: lastCostoMap[product.id] ?? null, ultimoPrecioVenta: lastVentaMap[product.id] ?? null };
-        });
+        const productsWithStock = products.map(p => ({
+            ...p,
+            precioCompra:      Number(p.precioCompra),
+            stockActual:       Number(p.stockActual),
+            stockMinimo:       Number(p.stockMinimo),
+            // moneda ya viene del modelo (MXN | USD)
+            ultimaEntrada:     lastCostoMap[p.id] ?? null,
+            // alerta de stock bajo
+            stockBajo:         Number(p.stockActual) <= Number(p.stockMinimo),
+        }));
 
         return Response.json(productsWithStock);
     } catch (error) {
@@ -48,17 +53,47 @@ export async function GET(req: NextRequest) {
     }
 }
 
+// ─── POST /api/products ───────────────────────────────────────────────────────
+// Crea un producto nuevo. Acepta moneda (MXN | USD) y precioCompra.
 export async function POST(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        const { nombre, sku, categoriaId, unidad, stockMinimo, imagen, activo } = await req.json();
+        const {
+            nombre, sku, categoriaId, unidad,
+            precioCompra, moneda,
+            stockMinimo, imagen, activo,
+        } = await req.json();
+
+        if (!nombre || !sku || !categoriaId) {
+            return Response.json({ error: 'nombre, sku y categoriaId son requeridos' }, { status: 400 });
+        }
+
+        // Validar moneda
+        const monedaVal = moneda === 'USD' ? 'USD' : 'MXN';
+
         const product = await prisma.producto.create({
-            data: { empresaId: user.empresaId, nombre, sku, categoriaId, unidad: unidad || 'pieza', stockMinimo: stockMinimo ?? 5, imagen: imagen || null, activo: activo ?? true }
+            data: {
+                empresaId:   user.empresaId,
+                nombre,
+                sku,
+                categoriaId,
+                unidad:      unidad      || 'pza',
+                precioCompra: precioCompra != null ? Number(precioCompra) : 0,
+                moneda:      monedaVal,
+                stockActual: 0,           // siempre inicia en 0
+                stockMinimo: stockMinimo  != null ? Number(stockMinimo) : 0,
+                imagen:      imagen       || null,
+                activo:      activo       ?? true,
+            },
+            include: { categoria: true },
         });
-        return Response.json(product, { status: 201 });
+
+        return Response.json({ ...product, precioCompra: Number(product.precioCompra), stockActual: Number(product.stockActual) }, { status: 201 });
     } catch (error: unknown) {
-        if ((error as { code?: string }).code === 'P2002') return Response.json({ error: 'El SKU ya existe para esta empresa' }, { status: 400 });
+        if ((error as { code?: string }).code === 'P2002')
+            return Response.json({ error: 'El SKU ya existe para esta empresa' }, { status: 400 });
+        console.error(error);
         return Response.json({ error: 'Error al crear el producto' }, { status: 500 });
     }
 }
