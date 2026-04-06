@@ -50,7 +50,7 @@ function KpiTooltip({ text }: { text: string }) {
 }
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
-interface DetalleSalida {
+interface DetalleConsumo {
     id: string;
     productoId: string;
     producto: { nombre: string; sku: string; unidad: string };
@@ -58,7 +58,7 @@ interface DetalleSalida {
     precioUnitario: number | string;
 }
 
-interface Salida {
+interface Consumo {
     id: string;
     tipo: string;
     referencia: string | null;
@@ -66,13 +66,13 @@ interface Salida {
     clienteNombre: string | null;
     esFormal: boolean;
     usuario: { nombre?: string; email?: string } | null;
-    detalles: DetalleSalida[];
+    detalles: DetalleConsumo[];
 }
 
 // ── Config visual por tipo ────────────────────────────────────────────────────
 // AJUSTE_POSITIVO se excluye de esta página completamente.
 const tipoConfig: Record<string, { label: string; cls: string; Icon: React.ElementType }> = {
-    VENTA:           { label: 'Salida',          cls: 'bg-blue-100 text-blue-700',     Icon: ShoppingCart  },
+    VENTA:           { label: 'Consumo interno',          cls: 'bg-blue-100 text-blue-700',     Icon: ShoppingCart  },
     CONSUMO_INTERNO: { label: 'Consumo interno', cls: 'bg-amber-100 text-amber-700',   Icon: Coffee        },
     PERDIDA:         { label: 'Pérdida / Merma', cls: 'bg-red-100 text-red-600',       Icon: AlertTriangle },
     AJUSTE_NEGATIVO: { label: 'Ajuste (−)',       cls: 'bg-purple-100 text-purple-700', Icon: MinusCircle   },
@@ -82,18 +82,18 @@ const getTipoConfig = (tipo: string) =>
     tipoConfig[tipo] ?? { label: tipo, cls: 'bg-gray-100 text-gray-600', Icon: TrendingDown };
 
 // Tipos que SÍ se muestran en esta página (sin AJUSTE_POSITIVO)
-const TIPOS_VISIBLES = ['VENTA', 'CONSUMO_INTERNO', 'PERDIDA', 'AJUSTE_NEGATIVO'];
+const TIPOS_VISIBLES = ['CONSUMO_INTERNO', 'CONSUMO_INTERNO', 'PERDIDA', 'AJUSTE_NEGATIVO'];
 
 const PAGE_SIZE = 20;
 
 type SortKey = 'fecha' | 'total' | 'referencia' | 'tipo';
 type SortDir  = 'asc' | 'desc';
 
-function calcTotal(s: Salida) {
+function calcTotal(s: Consumo) {
     return s.detalles?.reduce((sum, d) => sum + Number(d.precioUnitario) * d.cantidad, 0) ?? 0;
 }
 
-function sortSalidas(list: Salida[], key: SortKey, dir: SortDir): Salida[] {
+function sortConsumos(list: Consumo[], key: SortKey, dir: SortDir): Consumo[] {
     return [...list].sort((a, b) => {
         let va: any, vb: any;
         if      (key === 'fecha') { va = new Date(a.fecha).getTime(); vb = new Date(b.fecha).getTime(); }
@@ -111,10 +111,10 @@ function SalesPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    const [todasSalidas, setTodasSalidas] = useState<Salida[]>([]);
+    const [todasConsumos, setTodasConsumos] = useState<Consumo[]>([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
-    const [detalle,      setDetalle]      = useState<Salida | null>(null);
+    const [detalle,      setDetalle]      = useState<Consumo | null>(null);
     const [page,         setPage]         = useState(1);
     const [showFiltros,  setShowFiltros]  = useState(false);
 
@@ -140,16 +140,16 @@ function SalesPageInner() {
 
     useEffect(() => {
         fetchApi('/sales')
-            .then((data: Salida[]) => {
+            .then((data: Consumo[]) => {
                 // Filtrar AJUSTE_POSITIVO — no pertenece a esta página
-                setTodasSalidas(data.filter(s => TIPOS_VISIBLES.includes(s.tipo)));
+                setTodasConsumos(data.filter(s => TIPOS_VISIBLES.includes(s.tipo)));
             })
-            .catch((err: any) => setError(err.message || 'Error al cargar salidas'))
+            .catch((err: any) => setError(err.message || 'Error al cargar consumos'))
             .finally(() => setLoading(false));
     }, []);
 
-    const salidasFiltradas = useMemo(() => {
-        let result = todasSalidas.filter(s => {
+    const consumosFiltradas = useMemo(() => {
+        let result = todasConsumos.filter(s => {
             if (busqueda.trim()) {
                 const q = busqueda.toLowerCase();
                 const match =
@@ -169,21 +169,21 @@ function SalesPageInner() {
             if (filtroMontoMax && total > Number(filtroMontoMax)) return false;
             return true;
         });
-        return sortSalidas(result, sortKey, sortDir);
-    }, [todasSalidas, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
+        return sortConsumos(result, sortKey, sortDir);
+    }, [todasConsumos, busqueda, filtroTipo, filtroDesde, filtroHasta, filtroMontoMin, filtroMontoMax, sortKey, sortDir]);
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
-    const kpiTotal     = salidasFiltradas.reduce((a, s) => a + calcTotal(s), 0);
-    const kpiCount     = salidasFiltradas.length;
+    const kpiTotal     = consumosFiltradas.reduce((a, s) => a + calcTotal(s), 0);
+    const kpiCount     = consumosFiltradas.length;
     const mesActual    = new Date().getMonth();
-    const kpiMes       = salidasFiltradas.filter(s => new Date(s.fecha).getMonth() === mesActual).length;
+    const kpiMes       = consumosFiltradas.filter(s => new Date(s.fecha).getMonth() === mesActual).length;
     const kpiPromedio  = kpiCount > 0 ? kpiTotal / kpiCount : 0;
-    const kpiVentas    = salidasFiltradas.filter(s => s.tipo === 'VENTA').length;
-    const kpiPerdidas  = salidasFiltradas.filter(s => s.tipo === 'PERDIDA').length;
-    const kpiAjusteNeg = salidasFiltradas.filter(s => s.tipo === 'AJUSTE_NEGATIVO').length;
+    const kpiVentas    = consumosFiltradas.filter(s => s.tipo === 'CONSUMO_INTERNO').length;
+    const kpiPerdidas  = consumosFiltradas.filter(s => s.tipo === 'PERDIDA').length;
+    const kpiAjusteNeg = consumosFiltradas.filter(s => s.tipo === 'AJUSTE_NEGATIVO').length;
 
-    const totalPages = Math.max(1, Math.ceil(salidasFiltradas.length / PAGE_SIZE));
-    const salidasPag = salidasFiltradas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    const totalPages = Math.max(1, Math.ceil(consumosFiltradas.length / PAGE_SIZE));
+    const consumosPag = consumosFiltradas.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const hayFiltros =
         filtroTipo !== 'todos' || !!filtroDesde || !!filtroHasta || !!filtroMontoMin || !!filtroMontoMax;
@@ -207,14 +207,14 @@ function SalesPageInner() {
 
     // Conteo por tipo para los tabs (solo tipos visibles)
     const tiposCounts = useMemo(() => {
-        const counts: Record<string, number> = { todos: todasSalidas.length };
-        todasSalidas.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
+        const counts: Record<string, number> = { todos: todasConsumos.length };
+        todasConsumos.forEach(s => { counts[s.tipo] = (counts[s.tipo] || 0) + 1; });
         return counts;
-    }, [todasSalidas]);
+    }, [todasConsumos]);
 
     const tabsVisibles = [
         { key: 'todos',           label: 'Todas'           },
-        { key: 'VENTA',           label: 'Salidas'         },
+        { key: 'CONSUMO_INTERNO',           label: 'Consumos'         },
         { key: 'CONSUMO_INTERNO', label: 'Consumo interno' },
         { key: 'PERDIDA',         label: 'Pérdidas'        },
         { key: 'AJUSTE_NEGATIVO', label: 'Ajuste (−)'      },
@@ -226,26 +226,26 @@ function SalesPageInner() {
             {/* ── Header ─────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Registrar Salidas</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">Consumo de Insumos</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Registra salidas, consumos internos, mermas o ajustes negativos de inventario.
+                        Registra consumos, consumos internos, mermas o ajustes negativos de inventario.
                     </p>
                 </div>
                 <Link href="/dashboard/sales/new"
                     className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700
                                text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                    <Plus size={16}/> Nueva Salida
+                    <Plus size={16}/> Registrar Consumo
                 </Link>
             </div>
 
             {/* ── KPIs ───────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
-                {/* Salidas totales */}
+                {/* Consumos totales */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
-                        Salidas totales
-                        <KpiTooltip text="Total de registros: salidas, consumos, mermas y ajustes negativos." />
+                        Consumos totales
+                        <KpiTooltip text="Total de registros: consumos, consumos, mermas y ajustes negativos." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">{kpiCount}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiMes} este mes</p>
@@ -255,31 +255,31 @@ function SalesPageInner() {
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
                         Total despachado
-                        <KpiTooltip text="Suma del valor de todas las salidas según el precio unitario registrado." />
+                        <KpiTooltip text="Suma del valor de todas las consumos según el precio unitario registrado." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">{hayFiltros ? 'en selección' : 'todas las salidas'}</p>
+                    <p className="text-xs text-gray-400 mt-1">{hayFiltros ? 'en selección' : 'todas las consumos'}</p>
                 </div>
 
                 {/* Ticket promedio */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
                         Ticket promedio
-                        <KpiTooltip text="Total despachado dividido entre el número de salidas registradas." />
+                        <KpiTooltip text="Total despachado dividido entre el número de consumos registradas." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiPromedio.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">por salida</p>
+                    <p className="text-xs text-gray-400 mt-1">por consumo</p>
                 </div>
 
-                {/* Salidas + Ajustes negativos */}
+                {/* Consumos + Ajustes negativos */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
-                        Salidas / Ajustes (−)
-                        <KpiTooltip text="Salidas: movimientos por venta. Ajustes (−): correcciones manuales que reducen el stock sin ser una venta." />
+                        Consumos / Ajustes (−)
+                        <KpiTooltip text="Consumos: movimientos por venta. Ajustes (−): correcciones manuales que reducen el stock sin ser una venta." />
                     </p>
                     <div className="flex items-baseline gap-3 mt-0.5">
                         <span className="text-2xl font-bold text-blue-600">{kpiVentas}</span>
@@ -359,7 +359,7 @@ function SalesPageInner() {
                     </button>
 
                     <p className="text-sm text-gray-400 whitespace-nowrap ml-auto">
-                        {salidasFiltradas.length} {salidasFiltradas.length === 1 ? 'resultado' : 'resultados'}
+                        {consumosFiltradas.length} {consumosFiltradas.length === 1 ? 'resultado' : 'resultados'}
                         {(busqueda || hayFiltros) && (
                             <button onClick={resetFiltros}
                                 className="ml-2 text-orange-500 hover:text-orange-700 underline cursor-pointer">
@@ -456,17 +456,17 @@ function SalesPageInner() {
                             {loading ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-10 text-center text-gray-400">
-                                        Cargando salidas...
+                                        Cargando consumos...
                                     </td>
                                 </tr>
-                            ) : salidasPag.length === 0 ? (
+                            ) : consumosPag.length === 0 ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-12 text-center">
                                         <TrendingDown size={32} className="mx-auto text-gray-300 mb-2"/>
                                         <p className="text-gray-500 font-medium">
                                             {busqueda || hayFiltros
                                                 ? 'Sin resultados para estos filtros'
-                                                : 'No hay salidas registradas'}
+                                                : 'No hay consumos registradas'}
                                         </p>
                                         {(busqueda || hayFiltros) && (
                                             <button onClick={resetFiltros}
@@ -477,22 +477,22 @@ function SalesPageInner() {
                                     </td>
                                 </tr>
                             ) : (
-                                salidasPag.map(salida => {
-                                    const tc         = getTipoConfig(salida.tipo);
-                                    const total      = calcTotal(salida);
-                                    const totalItems = salida.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0;
-                                    const sinCliente = salida.tipo === 'VENTA' && !salida.clienteNombre;
+                                consumosPag.map(consumo => {
+                                    const tc         = getTipoConfig(consumo.tipo);
+                                    const total      = calcTotal(consumo);
+                                    const totalItems = consumo.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0;
+                                    const sinCliente = consumo.tipo === 'CONSUMO_INTERNO' && !consumo.clienteNombre;
 
                                     return (
-                                        <tr key={salida.id}
-                                            onClick={() => setDetalle(salida)}
+                                        <tr key={consumo.id}
+                                            onClick={() => setDetalle(consumo)}
                                             className="hover:bg-orange-50/30 transition-colors cursor-pointer group">
 
                                             {/* Referencia */}
                                             <td className="px-4 py-3">
                                                 <span className="text-sm font-bold text-gray-800
                                                                  group-hover:text-orange-600 transition-colors">
-                                                    {salida.referencia || '—'}
+                                                    {consumo.referencia || '—'}
                                                 </span>
                                             </td>
 
@@ -507,16 +507,16 @@ function SalesPageInner() {
 
                                             {/* Fecha */}
                                             <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
-                                                {new Date(salida.fecha).toLocaleDateString('es-MX', {
+                                                {new Date(consumo.fecha).toLocaleDateString('es-MX', {
                                                     day: '2-digit', month: 'short', year: 'numeric'
                                                 })}
                                             </td>
 
                                             {/* Cliente */}
                                             <td className="px-4 py-3 text-sm">
-                                                {salida.clienteNombre ? (
+                                                {consumo.clienteNombre ? (
                                                     <span className="font-medium text-gray-700">
-                                                        {salida.clienteNombre}
+                                                        {consumo.clienteNombre}
                                                     </span>
                                                 ) : sinCliente ? (
                                                     <span className="inline-flex items-center gap-1 text-orange-500
@@ -531,8 +531,8 @@ function SalesPageInner() {
 
                                             {/* Productos */}
                                             <td className="px-4 py-3 text-sm text-gray-600">
-                                                {salida.detalles?.length ?? 0}{' '}
-                                                {salida.detalles?.length === 1 ? 'producto' : 'productos'}{' '}
+                                                {consumo.detalles?.length ?? 0}{' '}
+                                                {consumo.detalles?.length === 1 ? 'producto' : 'productos'}{' '}
                                                 · {totalItems} uds
                                             </td>
 
@@ -560,7 +560,7 @@ function SalesPageInner() {
                 {totalPages > 1 && (
                     <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
                         <p className="text-xs text-gray-400">
-                            Página {page} de {totalPages} · {salidasFiltradas.length} resultados
+                            Página {page} de {totalPages} · {consumosFiltradas.length} resultados
                         </p>
                         <div className="flex items-center gap-1">
                             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
@@ -633,7 +633,7 @@ function SalesPageInner() {
                                     </p>
                                     {detalle.clienteNombre ? (
                                         <p className="text-sm font-semibold text-gray-800">{detalle.clienteNombre}</p>
-                                    ) : detalle.tipo === 'VENTA' ? (
+                                    ) : detalle.tipo === 'CONSUMO_INTERNO' ? (
                                         <p className="text-sm text-orange-500 font-medium flex items-center gap-1">
                                             <UserX size={13}/> Sin cliente registrado
                                         </p>
