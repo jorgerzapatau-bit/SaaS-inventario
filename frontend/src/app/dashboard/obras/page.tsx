@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     HardHat, Plus, Edit, Trash2, Eye,
     TrendingUp, CheckCircle, Clock, PauseCircle,
@@ -43,7 +43,7 @@ const STATUS_STYLE: Record<string, string> = {
     PAUSADA:   'bg-yellow-100 text-yellow-700',
     TERMINADA: 'bg-gray-100 text-gray-500',
 };
-const STATUS_ICON: Record<string, JSX.Element> = {
+const STATUS_ICON: Record<string, React.ReactElement> = {
     ACTIVA:    <CheckCircle size={11} />,
     PAUSADA:   <PauseCircle size={11} />,
     TERMINADA: <Clock size={11} />,

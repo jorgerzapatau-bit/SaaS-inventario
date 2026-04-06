@@ -35,7 +35,7 @@ type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
 
 // ── Formulario Nuevo Registro ─────────────────────────────────────────────────
 function NuevoRegistroModal({
-    equipoIdInicial, equipos, almacenId, onClose, onSaved,
+    equipoIdInicial, obraIdInicial, equipos, obras, almacenId, onClose, onSaved,
 }: {
     equipoIdInicial?: string;
     obraIdInicial?: string;
