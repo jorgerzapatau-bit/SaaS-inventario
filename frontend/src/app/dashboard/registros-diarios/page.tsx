@@ -38,7 +38,9 @@ function NuevoRegistroModal({
     equipoIdInicial, equipos, almacenId, onClose, onSaved,
 }: {
     equipoIdInicial?: string;
+    obraIdInicial?: string;
     equipos: Equipo[];
+    obras: { id: string; nombre: string }[];
     almacenId: string;
     onClose: () => void;
     onSaved: () => void;
@@ -46,6 +48,7 @@ function NuevoRegistroModal({
     const hoy = new Date().toISOString().slice(0, 10);
     const [form, setForm] = useState({
         equipoId:            equipoIdInicial ?? (equipos[0]?.id ?? ''),
+        obraId:              obraIdInicial   ?? '',
         fecha:               hoy,
         horometroInicio:     '',
         horometroFin:        '',
@@ -84,6 +87,7 @@ function NuevoRegistroModal({
                 method: 'POST',
                 body: JSON.stringify({
                     ...form,
+                    obraId:             form.obraId || null,
                     horometroInicio:    Number(form.horometroInicio),
                     horometroFin:       Number(form.horometroFin),
                     barrenos:           Number(form.barrenos    || 0),
@@ -215,7 +219,18 @@ function NuevoRegistroModal({
                     </div>
 
                     {/* Obra */}
-                    {inp('Nombre de obra / sitio', 'obraNombre', 'text', 'Ej: Mina El Toro - Frente 3')}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Obra (del catálogo)</label>
+                        <select
+                            value={form.obraId}
+                            onChange={e => setForm(f => ({ ...f, obraId: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        >
+                            <option value="">— Sin vincular a obra —</option>
+                            {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        </select>
+                    </div>
+                    {inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro - Frente 3')}
                     {inp('Notas', 'notas')}
                 </div>
 
@@ -324,6 +339,7 @@ function RegistrosDiariosInner() {
 
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [equipos,   setEquipos]   = useState<Equipo[]>([]);
+    const [obras,     setObras]     = useState<{ id: string; nombre: string }[]>([]);
     const [almacenId, setAlmacenId] = useState('');
     const [loading,   setLoading]   = useState(true);
     const [error,     setError]     = useState('');
@@ -333,13 +349,15 @@ function RegistrosDiariosInner() {
     const load = async () => {
         setLoading(true);
         try {
-            const [regs, eqs, almacenes] = await Promise.all([
+            const [regs, eqs, almacenes, obs] = await Promise.all([
                 fetchApi(`/registros-diarios${filtroEquipo !== 'todos' ? `?equipoId=${filtroEquipo}` : ''}`),
                 fetchApi('/equipos'),
                 fetchApi('/warehouse'),
+                fetchApi('/obras?status=ACTIVA'),
             ]);
             setRegistros(regs);
             setEquipos(eqs);
+            setObras(obs);
             if (almacenes?.length > 0) setAlmacenId(almacenes[0].id);
         } catch (e: any) {
             setError(e.message || 'Error al cargar');
@@ -458,6 +476,7 @@ function RegistrosDiariosInner() {
                 <NuevoRegistroModal
                     equipoIdInicial={filtroEquipo !== 'todos' ? filtroEquipo : undefined}
                     equipos={equipos}
+                    obras={obras}
                     almacenId={almacenId}
                     onClose={() => setShowModal(false)}
                     onSaved={() => { setShowModal(false); load(); }}
