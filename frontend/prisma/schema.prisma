@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────
@@ -43,6 +44,19 @@ enum TipoMovimiento {
   AJUSTE_NEGATIVO
 }
 
+// ── NUEVOS ENUMS ──────────────────────────────
+enum StatusObra {
+  ACTIVA
+  PAUSADA
+  TERMINADA
+}
+
+enum StatusCorte {
+  BORRADOR
+  FACTURADO
+  COBRADO
+}
+
 // ─────────────────────────────────────────────
 //  EMPRESA
 // ─────────────────────────────────────────────
@@ -78,6 +92,7 @@ model Empresa {
   equipos               Equipo[]
   registrosDiarios      RegistroDiario[]
   resumenesSemana       ResumenSemana[]
+  obras                 Obra[]
 }
 
 // ─────────────────────────────────────────────
@@ -154,8 +169,9 @@ model Cliente {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  movimientos    MovimientoInventario[]
+  movimientos      MovimientoInventario[]
   registrosDiarios RegistroDiario[]
+  obras            Obra[]
 }
 
 model Almacen {
@@ -182,10 +198,9 @@ model Producto {
   categoriaId  String
   categoria    Categoria @relation(fields: [categoriaId], references: [id])
   unidad       String    @default("pza")
-  // Precio base y moneda de referencia
   precioCompra Decimal   @default(0)
   moneda       Moneda    @default(MXN)
-  stockActual  Decimal   @default(0)   // se actualiza automáticamente con cada movimiento
+  stockActual  Decimal   @default(0)
   stockMinimo  Int       @default(0)
   imagen       String?
   activo       Boolean   @default(true)
@@ -213,9 +228,12 @@ model Compra {
   fecha       DateTime     @default(now())
   total       Decimal      @default(0)
   moneda      Moneda       @default(MXN)
-  tipoCambio  Decimal?     // USD→MXN al momento de la compra (si aplica)
+  tipoCambio  Decimal?
   status      StatusCompra @default(PENDIENTE)
   notas       String?
+  // Obra a la que se destinan los insumos (opcional)
+  obraId      String?
+  obra        Obra?        @relation(fields: [obraId], references: [id])
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -229,13 +247,13 @@ model DetalleCompra {
   compra         Compra   @relation(fields: [compraId], references: [id])
   productoId     String
   producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Decimal  // Decimal para insumos por litros/kg
+  cantidad       Decimal
   precioUnitario Decimal
   moneda         Moneda   @default(MXN)
 }
 
 // ─────────────────────────────────────────────
-//  SALIDAS / CONSUMOS
+//  SALIDAS / CONSUMOS INTERNOS
 // ─────────────────────────────────────────────
 
 model Salida {
@@ -247,6 +265,11 @@ model Salida {
   referencia    String?
   clienteNombre String?
   notas         String?
+  // Vinculación a obra y equipo
+  obraId        String?
+  obra          Obra?      @relation(fields: [obraId], references: [id])
+  equipoId      String?
+  equipo        Equipo?    @relation(fields: [equipoId], references: [id])
   usuarioId     String
   usuario       Usuario    @relation(fields: [usuarioId], references: [id])
   createdAt     DateTime   @default(now())
@@ -282,7 +305,7 @@ model MovimientoInventario {
   cantidad       Decimal
   costoUnitario  Decimal
   moneda         Moneda         @default(MXN)
-  tipoCambio     Decimal?       // tipo de cambio registrado al momento
+  tipoCambio     Decimal?
   precioVenta    Decimal?
   proveedorId    String?
   proveedor      Proveedor?     @relation(fields: [proveedorId], references: [id])
@@ -291,9 +314,11 @@ model MovimientoInventario {
   clienteNombre  String?
   compraId       String?
   compra         Compra?        @relation(fields: [compraId], references: [id])
-  // Referencia cruzada con operación diaria
   registroDiarioId String?
   registroDiario   RegistroDiario? @relation(fields: [registroDiarioId], references: [id])
+  // Trazabilidad por obra
+  obraId         String?
+  obra           Obra?          @relation(fields: [obraId], references: [id])
   fecha          DateTime       @default(now())
   referencia     String?
   notas          String?
@@ -307,6 +332,7 @@ model MovimientoInventario {
   @@index([clienteId])
   @@index([compraId])
   @@index([registroDiarioId])
+  @@index([obraId])
 }
 
 // ─────────────────────────────────────────────
@@ -317,11 +343,11 @@ model Equipo {
   id               String   @id @default(uuid())
   empresaId        String
   empresa          Empresa  @relation(fields: [empresaId], references: [id])
-  nombre           String                      // Ej: "Perforadora Atlas Copco"
+  nombre           String
   modelo           String?
   numeroSerie      String?
   numeroEconomico  String?
-  hodometroInicial Decimal  @default(0)        // Lectura inicial del horómetro
+  hodometroInicial Decimal  @default(0)
   activo           Boolean  @default(true)
   notas            String?
   createdAt        DateTime @default(now())
@@ -329,6 +355,116 @@ model Equipo {
 
   registrosDiarios RegistroDiario[]
   resumenesSemana  ResumenSemana[]
+  obraEquipos      ObraEquipo[]
+  salidas          Salida[]
+}
+
+// ─────────────────────────────────────────────
+//  OBRAS / CONTRATOS
+// ─────────────────────────────────────────────
+
+model Obra {
+  id                String     @id @default(uuid())
+  empresaId         String
+  empresa           Empresa    @relation(fields: [empresaId], references: [id])
+
+  // Datos del contrato
+  nombre            String                        // nombre de la obra
+  clienteId         String?
+  cliente           Cliente?   @relation(fields: [clienteId], references: [id])
+  clienteNombre     String?                       // nombre libre si no está en catálogo
+  ubicacion         String?
+
+  // Dimensiones para cálculo de volumen (hoja Plantilla)
+  bordo             Decimal?                      // ancho del bordo (m)
+  espesor           Decimal?                      // espesor de la capa (m)
+
+  // Contrato
+  metrosContratados Decimal?                      // metros lineales totales contratados
+  precioUnitario    Decimal?                      // precio por m³ o mt lineal
+  moneda            Moneda     @default(MXN)
+  tipoCambio        Decimal?
+
+  // Fechas
+  fechaInicio       DateTime?  @db.Date
+  fechaFin          DateTime?  @db.Date           // estimada o real al cerrar
+
+  // Estado
+  status            StatusObra @default(ACTIVA)
+  notas             String?
+
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  // Relaciones
+  obraEquipos           ObraEquipo[]
+  registrosDiarios      RegistroDiario[]
+  cortesFacturacion     CorteFacturacion[]
+  movimientosInventario MovimientoInventario[]
+  salidas               Salida[]
+  compras               Compra[]
+
+  @@index([empresaId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+//  HISTORIAL EQUIPO ↔ OBRA
+// ─────────────────────────────────────────────
+
+model ObraEquipo {
+  id          String    @id @default(uuid())
+  obraId      String
+  obra        Obra      @relation(fields: [obraId], references: [id])
+  equipoId    String
+  equipo      Equipo    @relation(fields: [equipoId], references: [id])
+  fechaInicio DateTime  @db.Date
+  fechaFin    DateTime? @db.Date                  // null = sigue activo en esta obra
+  notas       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([obraId])
+  @@index([equipoId])
+}
+
+// ─────────────────────────────────────────────
+//  CORTES DE FACTURACIÓN (hoja Plantilla)
+// ─────────────────────────────────────────────
+
+model CorteFacturacion {
+  id          String      @id @default(uuid())
+  obraId      String
+  obra        Obra        @relation(fields: [obraId], references: [id])
+
+  numero      Int                                 // corte 1, 2, 3...
+  fechaInicio DateTime    @db.Date
+  fechaFin    DateTime    @db.Date
+
+  // Producción del período
+  barrenos       Int      @default(0)
+  metrosLineales Decimal  @default(0)
+
+  // Cálculo de volumen (replica hoja Plantilla)
+  bordo          Decimal?                         // puede diferir del de la obra si cambia
+  espesor        Decimal?
+  volumenBruto   Decimal?                         // bordo × espesor × metrosLineales
+  porcentajePerdida Decimal? @default(0)          // % de pérdida
+  volumenNeto    Decimal?                         // volumenBruto × (1 - %perdida/100)
+
+  // Facturación
+  precioUnitario Decimal?
+  moneda         Moneda   @default(MXN)
+  tipoCambio     Decimal?
+  montoFacturado Decimal?                         // volumenNeto × precioUnitario
+
+  status         StatusCorte @default(BORRADOR)
+  notas          String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([obraId, numero])
+  @@index([obraId])
 }
 
 // ─────────────────────────────────────────────
@@ -343,43 +479,47 @@ model RegistroDiario {
   equipo    Equipo   @relation(fields: [equipoId], references: [id])
   fecha     DateTime @db.Date
 
+  // Obra a la que pertenece este día de operación
+  obraId    String?
+  obra      Obra?    @relation(fields: [obraId], references: [id])
+
   // Horómetro
-  horometroInicio Decimal                     // h i
-  horometroFin    Decimal                     // h f
-  horasTrabajadas Decimal                     // TOTAL HORAS (calculado)
+  horometroInicio    Decimal
+  horometroFin       Decimal
+  horasTrabajadas    Decimal
 
   // Producción
-  barrenos        Int      @default(0)        // BARRNS (cantidad de barrenos)
-  metrosLineales  Decimal  @default(0)        // MTS (metros perforados)
+  barrenos           Int     @default(0)
+  metrosLineales     Decimal @default(0)
 
   // Diésel
-  litrosDiesel    Decimal  @default(0)        // DIÉSEL litros cargados
-  precioDiesel    Decimal  @default(0)        // P.U. diésel (MXN/lt)
+  litrosDiesel       Decimal @default(0)
+  precioDiesel       Decimal @default(0)
 
-  // Nivel de tanque (combustóleo / tanque interno)
-  tanqueInicio    Decimal?                    // CM i (lectura tanque inicio)
-  litrosTanqueInicio Decimal?                 // LTS tanque inicio
-  tanqueFin       Decimal?                    // CM f (lectura tanque fin)
-  litrosTanqueFin Decimal?                    // LTS tanque fin
+  // Nivel de tanque interno
+  tanqueInicio       Decimal?
+  litrosTanqueInicio Decimal?
+  tanqueFin          Decimal?
+  litrosTanqueFin    Decimal?
 
   // Personal
-  operadores      Int      @default(1)        // Op (cantidad de operadores)
-  peones          Int      @default(0)        // Pn (cantidad de peones)
+  operadores         Int     @default(1)
+  peones             Int     @default(0)
 
-  // Cliente/obra
-  clienteId       String?
-  cliente         Cliente? @relation(fields: [clienteId], references: [id])
-  obraNombre      String?                     // nombre del sitio/obra
+  // Cliente / obra (texto libre — se mantiene por compatibilidad)
+  clienteId          String?
+  cliente            Cliente? @relation(fields: [clienteId], references: [id])
+  obraNombre         String?
 
-  // Semana a la que pertenece (para agrupación)
-  semanaNum       Int?                        // número de semana ISO
-  anoNum          Int?                        // año
+  // Agrupación semanal
+  semanaNum          Int?
+  anoNum             Int?
 
-  notas           String?
-  usuarioId       String
-  usuario         Usuario  @relation(fields: [usuarioId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  notas              String?
+  usuarioId          String
+  usuario            Usuario  @relation(fields: [usuarioId], references: [id])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   movimientosInventario MovimientoInventario[]
 
@@ -387,6 +527,7 @@ model RegistroDiario {
   @@index([empresaId])
   @@index([equipoId])
   @@index([fecha])
+  @@index([obraId])
 }
 
 // ─────────────────────────────────────────────
@@ -400,33 +541,31 @@ model ResumenSemana {
   equipoId  String
   equipo    Equipo   @relation(fields: [equipoId], references: [id])
 
-  semanaNum        Int                         // Número de semana ISO
-  anoNum           Int                         // Año
+  semanaNum        Int
+  anoNum           Int
   fechaInicio      DateTime @db.Date
   fechaFin         DateTime @db.Date
 
   // Producción acumulada
-  horasTotales     Decimal  @default(0)        // h t
-  barrenos         Int      @default(0)        // barrenos totales semana
-  metrosLineales   Decimal  @default(0)        // metros lineales semana
+  horasTotales     Decimal  @default(0)
+  barrenos         Int      @default(0)
+  metrosLineales   Decimal  @default(0)
 
-  // KPIs calculados
-  litrosPorHora    Decimal?                    // LT / HR
-  litrosPorMetro   Decimal?                    // LT / MT
-  metrosPorHora    Decimal?                    // MT / HR
-  metrosPorDia     Decimal?                    // mt/dia
+  // KPIs
+  litrosPorHora    Decimal?
+  litrosPorMetro   Decimal?
+  metrosPorHora    Decimal?
+  metrosPorDia     Decimal?
 
-  // Costos semanales (MXN)
+  // Costos (MXN)
   costoDiesel      Decimal  @default(0)
   costoOperadores  Decimal  @default(0)
   costoPeones      Decimal  @default(0)
-  costoGastos      Decimal  @default(0)        // gastos varios (Gastos sheet)
-  rentaEquipo      Decimal  @default(0)        // RTA. EQUIPO
-  costoTotal       Decimal  @default(0)        // TOTAL = suma de todo lo anterior (negativo en P&L)
+  costoGastos      Decimal  @default(0)
+  rentaEquipo      Decimal  @default(0)
+  costoTotal       Decimal  @default(0)
 
-  // Tipo de cambio de referencia de esa semana
   tipoCambio       Decimal?
-
   notas            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

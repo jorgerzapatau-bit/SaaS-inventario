@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
             // Para el movimiento de diésel en kardex
             almacenId,
             registrarDieselEnKardex,
+            obraId,
         } = await req.json();
 
         // ── Validaciones ──
@@ -128,6 +129,7 @@ export async function POST(req: NextRequest) {
                     obraNombre:        obraNombre || null,
                     semanaNum,
                     anoNum,
+                    obraId:            obraId || null,
                     notas:             notas || null,
                     usuarioId:         user.id,
                 },
