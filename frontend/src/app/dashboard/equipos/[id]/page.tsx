@@ -133,6 +133,7 @@ export default function EquipoDetallePage() {
                 fetchApi(`/equipos/${id}`),
                 fetchApi(`/registros-diarios?equipoId=${id}`),
             ]);
+            if (eq.error) throw new Error(eq.error);
             setEquipo(eq);
             setRegistros(regs);
         } catch (e: any) {
