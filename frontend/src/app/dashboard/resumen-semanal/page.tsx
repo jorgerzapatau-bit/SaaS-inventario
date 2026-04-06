@@ -330,7 +330,7 @@ function ResumenSemanalInner() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Resumen Semanal</h1>
-                    <p className="text-sm text-gray-500 mt-1">Equivalente a la hoja "Semana" del Excel — KPIs y costos agrupados por semana.</p>
+                    <p className="text-sm text-gray-500 mt-1">KPIs y costos agrupados por semana.</p>
                 </div>
                 <select
                     value={filtroEquipo}

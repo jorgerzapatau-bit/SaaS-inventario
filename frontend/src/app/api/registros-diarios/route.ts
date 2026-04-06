@@ -138,7 +138,13 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // 2. Si hay consumo de diésel y se pidió registrarlo en kardex,
+            // 2. Actualizar el horómetro actual del equipo al valor final del registro
+            await tx.equipo.update({
+                where: { id: equipoId, empresaId: user.empresaId },
+                data:  { hodometroInicial: Number(horometroFin) },
+            });
+
+            // 3. Si hay consumo de diésel y se pidió registrarlo en kardex,
             //    crear un movimiento de SALIDA automáticamente
             if (registrarDieselEnKardex && litrosDieselNum > 0 && almacenId) {
                 // Buscar el producto Diésel de esta empresa

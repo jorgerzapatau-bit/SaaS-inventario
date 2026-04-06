@@ -26,10 +26,12 @@ function NewPurchasePageInner() {
         proveedorId: "",
         tipo:        "COMPRA",
         estado:      "PENDIENTE",
+        moneda:      "MXN",
+        tipoCambio:  "",
     });
 
     const [detalles, setDetalles] = useState<any[]>([
-        { productoId: "", cantidad: 1, precioUnitario: 0 }
+        { productoId: "", cantidad: 1, precioUnitario: 0, moneda: "MXN" }
     ]);
 
     const esAjuste          = formData.tipo === "AJUSTE_POSITIVO";
@@ -75,6 +77,7 @@ function NewPurchasePageInner() {
         if (field === "productoId") {
             const prod = products.find(p => p.id === value);
             newDetalles[index].precioUnitario = prod ? Number(prod.precioCompra ?? 0) : 0;
+            newDetalles[index].moneda = prod?.moneda ?? "MXN";
         }
         newDetalles[index][field] = value;
         setDetalles(newDetalles);
@@ -100,10 +103,13 @@ function NewPurchasePageInner() {
                 body: JSON.stringify({
                     tipo:        formData.tipo,
                     proveedorId: formData.proveedorId || undefined,
+                    moneda:      formData.moneda,
+                    tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
                     detalles:    detalles.map(d => ({
                         productoId:     d.productoId,
                         cantidad:       Number(d.cantidad),
                         precioUnitario: Number(d.precioUnitario),
+                        moneda:         d.moneda ?? formData.moneda,
                     })),
                     total,
                     // Los ajustes siempre se completan inmediatamente

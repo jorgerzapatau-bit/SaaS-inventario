@@ -228,7 +228,9 @@ export default function EquiposPage() {
                                                     <Wrench size={14} className="text-blue-600" />
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-semibold text-gray-800">{eq.nombre}</p>
+                                                    <Link href={`/dashboard/equipos/${eq.id}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                                                        {eq.nombre}
+                                                    </Link>
                                                     {eq.numeroSerie && <p className="text-xs text-gray-400 font-mono">S/N: {eq.numeroSerie}</p>}
                                                 </div>
                                             </div>
