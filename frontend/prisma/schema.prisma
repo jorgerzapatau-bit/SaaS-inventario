@@ -448,8 +448,9 @@ model CorteFacturacion {
   bordo          Decimal?                         // puede diferir del de la obra si cambia
   espesor        Decimal?
   volumenBruto   Decimal?                         // bordo × espesor × metrosLineales
-  porcentajePerdida Decimal? @default(0)          // % de pérdida
-  volumenNeto    Decimal?                         // volumenBruto × (1 - %perdida/100)
+  perdidaM3         Decimal?  @default(0)            // pérdida absoluta en m³ (campo "% Perd." del Excel)
+  porcentajePerdida Decimal?  @default(0)            // calculado: perdidaM3 / volumenBruto × 100
+  volumenNeto    Decimal?                         // volumenBruto − perdidaM3
 
   // Facturación
   precioUnitario Decimal?

@@ -26,65 +26,87 @@ export async function GET(req: NextRequest, { params }: Params) {
     }
 }
 
-// ─── PUT /api/obras/[id]/cortes/[corteId] ────────────────────────────────────
-// Actualiza datos del corte y recalcula volúmenes automáticamente
+// ─── PUT /api/obras/[id]/cortes/[corteId] ─────────────────────────────────────
+// Actualiza el corte. Recibe perdidaM3 (m³ absolutos, igual que el Excel).
+// Recalcula: volumenNeto = volumenBruto − perdidaM3
+//            porcentajePerdida = (perdidaM3 / volumenBruto) × 100  (solo referencia)
+//            montoFacturado = volumenNeto × precioUnitario
 export async function PUT(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
         const { id: obraId, corteId } = await params;
 
-        // Verificar pertenencia
         const corteExistente = await prisma.corteFacturacion.findFirst({
             where: { id: corteId, obraId },
-            include: { obra: { select: { empresaId: true, bordo: true, espesor: true, precioUnitario: true } } },
+            include: {
+                obra: {
+                    select: {
+                        empresaId: true,
+                        bordo: true,
+                        espesor: true,
+                        precioUnitario: true,
+                    },
+                },
+            },
         });
         if (!corteExistente || corteExistente.obra.empresaId !== user.empresaId)
             return Response.json({ error: 'Corte no encontrado' }, { status: 404 });
 
         const {
             fechaInicio, fechaFin, barrenos, metrosLineales,
-            bordo, espesor, porcentajePerdida,
+            bordo, espesor, perdidaM3,
             precioUnitario, moneda, tipoCambio,
             status, notas,
         } = await req.json();
 
-        // Recalcular volúmenes si cambiaron los inputs
-        const bordoNum   = bordo    != null ? Number(bordo)
-                         : (corteExistente.bordo    ? Number(corteExistente.bordo)    : null);
-        const espesorNum = espesor  != null ? Number(espesor)
-                         : (corteExistente.espesor  ? Number(corteExistente.espesor)  : null);
+        // Valores finales — usa los nuevos si se enviaron, o los existentes
+        const bordoNum   = bordo   != null ? Number(bordo)
+                         : (corteExistente.bordo   ? Number(corteExistente.bordo)   : null);
+        const espesorNum = espesor != null ? Number(espesor)
+                         : (corteExistente.espesor ? Number(corteExistente.espesor) : null);
         const metrosNum  = metrosLineales != null ? Number(metrosLineales)
                          : Number(corteExistente.metrosLineales);
-        const pctPerdida = porcentajePerdida != null ? Number(porcentajePerdida)
-                         : Number(corteExistente.porcentajePerdida ?? 0);
+        const perdidaNum = perdidaM3 != null ? Number(perdidaM3)
+                         : Number(corteExistente.perdidaM3 ?? 0);
         const puNum      = precioUnitario != null ? Number(precioUnitario)
                          : (corteExistente.precioUnitario ? Number(corteExistente.precioUnitario) : null);
 
+        // Recalcular volúmenes
         const volumenBruto = bordoNum && espesorNum
-            ? +(bordoNum * espesorNum * metrosNum).toFixed(4) : null;
+            ? +(bordoNum * espesorNum * metrosNum).toFixed(4)
+            : null;
+
         const volumenNeto = volumenBruto != null
-            ? +(volumenBruto * (1 - pctPerdida / 100)).toFixed(4) : null;
+            ? +(volumenBruto - perdidaNum).toFixed(4)
+            : null;
+
+        const porcentajePerdida = volumenBruto != null && volumenBruto > 0
+            ? +((perdidaNum / volumenBruto) * 100).toFixed(6)
+            : 0;
+
         const montoFacturado = volumenNeto != null && puNum != null
-            ? +(volumenNeto * puNum).toFixed(2) : null;
+            ? +(volumenNeto * puNum).toFixed(2)
+            : null;
 
         const corte = await prisma.corteFacturacion.update({
             where: { id: corteId },
             data: {
-                ...(fechaInicio       !== undefined && { fechaInicio:       new Date(fechaInicio) }),
-                ...(fechaFin          !== undefined && { fechaFin:          new Date(fechaFin) }),
-                ...(barrenos          !== undefined && { barrenos:          Number(barrenos) }),
-                ...(status            !== undefined && { status }),
-                ...(notas             !== undefined && { notas: notas || null }),
-                ...(moneda            !== undefined && { moneda: moneda === 'USD' ? 'USD' : 'MXN' }),
-                ...(tipoCambio        !== undefined && { tipoCambio: tipoCambio != null ? Number(tipoCambio) : null }),
+                ...(fechaInicio !== undefined && { fechaInicio: new Date(fechaInicio) }),
+                ...(fechaFin    !== undefined && { fechaFin:    new Date(fechaFin) }),
+                ...(barrenos    !== undefined && { barrenos:    Number(barrenos) }),
+                ...(status      !== undefined && { status }),
+                ...(notas       !== undefined && { notas: notas || null }),
+                ...(moneda      !== undefined && { moneda: moneda === 'USD' ? 'USD' : 'MXN' }),
+                ...(tipoCambio  !== undefined && { tipoCambio: tipoCambio != null ? Number(tipoCambio) : null }),
                 metrosLineales:    metrosNum,
                 bordo:             bordoNum,
                 espesor:           espesorNum,
-                porcentajePerdida: pctPerdida,
-                precioUnitario:    puNum,
+                perdidaM3:         perdidaNum,
+                porcentajePerdida,
                 volumenBruto,
                 volumenNeto,
+                precioUnitario:    puNum,
                 montoFacturado,
             },
         });
@@ -96,8 +118,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
     }
 }
 
-// ─── PATCH /api/obras/[id]/cortes/[corteId] ──────────────────────────────────
-// Cambia solo el status: BORRADOR → FACTURADO → COBRADO
+// ─── PATCH /api/obras/[id]/cortes/[corteId] ───────────────────────────────────
+// Solo cambia status: BORRADOR → FACTURADO → COBRADO
 export async function PATCH(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -120,7 +142,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
 }
 
-// ─── DELETE /api/obras/[id]/cortes/[corteId] ─────────────────────────────────
+// ─── DELETE /api/obras/[id]/cortes/[corteId] ──────────────────────────────────
 export async function DELETE(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -136,7 +158,10 @@ export async function DELETE(req: NextRequest, { params }: Params) {
             return Response.json({ error: 'Corte no encontrado' }, { status: 404 });
 
         if (corte.status === 'COBRADO')
-            return Response.json({ error: 'No se puede eliminar un corte ya cobrado' }, { status: 400 });
+            return Response.json(
+                { error: 'No se puede eliminar un corte ya cobrado' },
+                { status: 400 }
+            );
 
         await prisma.corteFacturacion.delete({ where: { id: corteId } });
         return Response.json({ message: 'Corte eliminado correctamente' });
@@ -154,6 +179,7 @@ function serializeCorte(c: any) {
         bordo:             c.bordo             != null ? Number(c.bordo)             : null,
         espesor:           c.espesor           != null ? Number(c.espesor)           : null,
         volumenBruto:      c.volumenBruto      != null ? Number(c.volumenBruto)      : null,
+        perdidaM3:         c.perdidaM3         != null ? Number(c.perdidaM3)         : null,
         porcentajePerdida: c.porcentajePerdida != null ? Number(c.porcentajePerdida) : null,
         volumenNeto:       c.volumenNeto       != null ? Number(c.volumenNeto)       : null,
         precioUnitario:    c.precioUnitario    != null ? Number(c.precioUnitario)    : null,
