@@ -2,12 +2,12 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Save, HardHat } from 'lucide-react';
+import { ArrowLeft, Save, HardHat, Drill } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodometroInicial: number };
-type ObraSimple = { id: string; nombre: string; status: string };
+type ObraSimple = { id: string; nombre: string; status: string; bordo?: number | null; espaciamiento?: number | null };
 
 function NuevoRegistroDiarioInner() {
     const router        = useRouter();
@@ -42,6 +42,14 @@ function NuevoRegistroDiarioInner() {
         obraNombre:             '',
         notas:                  '',
         registrarDieselEnKardex: true,
+        // ── Campos de perforación (Track Drill) ──
+        bordo:               '',
+        espaciamiento:       '',
+        volumenRoca:         '',
+        porcentajePerdida:   '',
+        profundidadPromedio: '',
+        porcentajeAvance:    '',
+        rentaEquipoDiaria:   '',
     });
 
     useEffect(() => {
@@ -54,7 +62,6 @@ function NuevoRegistroDiarioInner() {
             setObras(obs);
             if (alms?.length > 0) setAlmacenId(alms[0].id);
 
-            // Pre-llenar horómetro inicial con el valor actual del equipo
             const targetId = equipoIdParam || eqs[0]?.id;
             const eq = eqs.find((e: Equipo) => e.id === targetId);
             if (eq) {
@@ -65,15 +72,20 @@ function NuevoRegistroDiarioInner() {
                 }));
             }
 
-            // Pre-llenar nombre de obra si viene de URL
             if (obraIdParam) {
                 const ob = obs.find((o: ObraSimple) => o.id === obraIdParam);
-                if (ob) setForm(f => ({ ...f, obraId: ob.id }));
+                if (ob) {
+                    setForm(f => ({
+                        ...f,
+                        obraId:       ob.id,
+                        bordo:        ob.bordo        != null ? String(ob.bordo)        : f.bordo,
+                        espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
+                    }));
+                }
             }
         }).catch(() => setError('Error al cargar datos'));
     }, []);
 
-    // Cuando cambia el equipo, actualizar horómetro
     const handleEquipoChange = (equipoId: string) => {
         const eq = equipos.find(e => e.id === equipoId);
         setForm(f => ({
@@ -83,9 +95,24 @@ function NuevoRegistroDiarioInner() {
         }));
     };
 
+    const handleObraChange = (obraId: string) => {
+        const ob = obras.find(o => o.id === obraId);
+        setForm(f => ({
+            ...f,
+            obraId,
+            bordo:         ob?.bordo        != null ? String(ob.bordo)         : f.bordo,
+            espaciamiento: ob?.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
+        }));
+    };
+
     const horas = form.horometroFin && form.horometroInicio
         ? Math.max(0, Number(form.horometroFin) - Number(form.horometroInicio))
         : null;
+
+    const volumenCalculado =
+        form.bordo && form.espaciamiento && form.profundidadPromedio
+            ? (Number(form.bordo) * Number(form.espaciamiento) * Number(form.profundidadPromedio)).toFixed(3)
+            : null;
 
     const set = (key: keyof typeof form, val: string | boolean) =>
         setForm(f => ({ ...f, [key]: val }));
@@ -117,6 +144,15 @@ function NuevoRegistroDiarioInner() {
                     operadores:         Number(form.operadores),
                     peones:             Number(form.peones),
                     almacenId,
+                    // ── Perforación ──
+                    bordo:               form.bordo               ? Number(form.bordo)               : null,
+                    espaciamiento:       form.espaciamiento       ? Number(form.espaciamiento)       : null,
+                    volumenRoca:         form.volumenRoca         ? Number(form.volumenRoca)
+                                        : volumenCalculado        ? Number(volumenCalculado)          : null,
+                    porcentajePerdida:   form.porcentajePerdida   ? Number(form.porcentajePerdida)   : null,
+                    profundidadPromedio: form.profundidadPromedio ? Number(form.profundidadPromedio) : null,
+                    porcentajeAvance:    form.porcentajeAvance    ? Number(form.porcentajeAvance)    : null,
+                    rentaEquipoDiaria:   form.rentaEquipoDiaria   ? Number(form.rentaEquipoDiaria)   : null,
                 }),
             });
             router.push('/dashboard/registros-diarios');
@@ -136,7 +172,6 @@ function NuevoRegistroDiarioInner() {
         </div>
     );
 
-    // Equipo seleccionado para mostrar horómetro actual
     const equipoSeleccionado = equipos.find(e => e.id === form.equipoId);
 
     return (
@@ -183,7 +218,7 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* Obra — sección destacada */}
+            {/* Obra */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -191,7 +226,7 @@ function NuevoRegistroDiarioInner() {
                     </p>
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Obra del catálogo</label>
-                        <select value={form.obraId} onChange={e => set('obraId', e.target.value)}
+                        <select value={form.obraId} onChange={e => handleObraChange(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                             <option value="">— Sin vincular a obra —</option>
                             {obras.map(o => (
@@ -201,7 +236,6 @@ function NuevoRegistroDiarioInner() {
                             ))}
                         </select>
                     </div>
-                    {/* Nombre libre solo si NO hay obra del catálogo seleccionada */}
                     {!form.obraId && inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro — Frente 3')}
                     {inp('Notas', 'notas')}
                 </div>
@@ -212,7 +246,6 @@ function NuevoRegistroDiarioInner() {
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Horómetro</p>
                     <div className="grid grid-cols-3 gap-4">
-                        {/* H. Inicial: automático (solo lectura) */}
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">H. Inicial (h i) *</label>
                             <input
@@ -223,7 +256,6 @@ function NuevoRegistroDiarioInner() {
                             />
                             <p className="text-xs text-gray-400 mt-1">Automático — horómetro actual del equipo</p>
                         </div>
-                        {/* H. Final: validación visual */}
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">H. Final (h f) *</label>
                             <input
@@ -259,6 +291,122 @@ function NuevoRegistroDiarioInner() {
                         {inp('Barrenos (BARRNS)', 'barrenos',       'number', '13')}
                         {inp('Metros lineales (MTS)', 'metrosLineales', 'number', '134.7')}
                     </div>
+                </div>
+            </Card>
+
+            {/* ── PERFORACIÓN (Track Drill) ── */}
+            <Card>
+                <div className="p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Drill size={13}/> Perforación
+                        </p>
+                        <span className="text-xs text-gray-300">Track Drill — opcional</span>
+                    </div>
+
+                    {/* Bordo / Espaciamiento / Profundidad */}
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Bordo / Burden (m)</label>
+                            <input type="number" step="0.01" value={form.bordo}
+                                onChange={e => set('bordo', e.target.value)}
+                                placeholder="Ej: 3.5"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Espaciamiento (m)</label>
+                            <input type="number" step="0.01" value={form.espaciamiento}
+                                onChange={e => set('espaciamiento', e.target.value)}
+                                placeholder="Ej: 4.0"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Profundidad prom. (m)</label>
+                            <input type="number" step="0.01" value={form.profundidadPromedio}
+                                onChange={e => set('profundidadPromedio', e.target.value)}
+                                placeholder="Ej: 9.6"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                    </div>
+
+                    {/* Volumen roca */}
+                    <div className="grid grid-cols-3 gap-4 items-start">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Volumen roca (m³)
+                                {volumenCalculado && !form.volumenRoca && (
+                                    <span className="ml-1 text-indigo-500 font-normal">— calculado</span>
+                                )}
+                            </label>
+                            <input type="number" step="0.001" value={form.volumenRoca}
+                                onChange={e => set('volumenRoca', e.target.value)}
+                                placeholder={volumenCalculado ?? 'Bordo × Esp. × Prof.'}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                        {volumenCalculado && (
+                            <div className="col-span-2 mt-5">
+                                <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2 text-sm">
+                                    <span className="text-indigo-400 text-xs">Auto:</span>
+                                    <span className="font-semibold text-indigo-700">
+                                        {form.bordo} × {form.espaciamiento} × {form.profundidadPromedio} = <strong>{volumenCalculado} m³</strong>
+                                    </span>
+                                    {!form.volumenRoca && (
+                                        <button type="button"
+                                            onClick={() => set('volumenRoca', volumenCalculado)}
+                                            className="ml-auto text-xs text-indigo-600 hover:underline">
+                                            Usar
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* % Pérdida / % Avance / Renta */}
+                    <div className="grid grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">% Pérdida</label>
+                            <input type="number" step="0.1" min="0" max="100" value={form.porcentajePerdida}
+                                onChange={e => set('porcentajePerdida', e.target.value)}
+                                placeholder="Ej: 10"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">% Avance</label>
+                            <input type="number" step="0.1" min="0" max="100" value={form.porcentajeAvance}
+                                onChange={e => set('porcentajeAvance', e.target.value)}
+                                placeholder="Ej: 75"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Renta equipo/día ($)</label>
+                            <input type="number" step="0.01" value={form.rentaEquipoDiaria}
+                                onChange={e => set('rentaEquipoDiaria', e.target.value)}
+                                placeholder="Ej: 12500"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                        </div>
+                    </div>
+
+                    {/* Resumen inline si hay datos */}
+                    {(form.bordo || form.espaciamiento || form.profundidadPromedio || form.porcentajePerdida || form.porcentajeAvance) && (
+                        <div className="bg-indigo-50/70 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs border border-indigo-100">
+                            {form.bordo && (
+                                <div><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{form.bordo} m</p></div>
+                            )}
+                            {form.espaciamiento && (
+                                <div><p className="text-indigo-400 mb-0.5">Esp.</p><p className="font-bold text-indigo-700">{form.espaciamiento} m</p></div>
+                            )}
+                            {form.profundidadPromedio && (
+                                <div><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{form.profundidadPromedio} m</p></div>
+                            )}
+                            {(form.volumenRoca || volumenCalculado) && (
+                                <div><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{form.volumenRoca || volumenCalculado} m³</p></div>
+                            )}
+                            {form.porcentajePerdida && (
+                                <div><p className="text-indigo-400 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{form.porcentajePerdida}%</p></div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </Card>
 

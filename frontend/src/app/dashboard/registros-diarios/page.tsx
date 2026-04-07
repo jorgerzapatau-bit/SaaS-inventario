@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import {
     ClipboardList, Plus, Trash2, Gauge,
     Droplets, ChevronDown, ChevronUp,
-    Search, X, Filter,
+    Search, X, Filter, Drill,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -31,6 +31,14 @@ type Registro = {
     semanaNum: number | null;
     anoNum: number | null;
     corte: { id: string; numero: number; status: string } | null;
+    // Campos de perforación
+    bordo: number | null;
+    espaciamiento: number | null;
+    volumenRoca: number | null;
+    porcentajePerdida: number | null;
+    profundidadPromedio: number | null;
+    porcentajeAvance: number | null;
+    rentaEquipoDiaria: number | null;
 };
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
@@ -91,7 +99,8 @@ function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => v
             </tr>
             {expanded && (
                 <tr className="bg-blue-50/20">
-                    <td colSpan={9} className="px-6 py-4">
+                    <td colSpan={9} className="px-6 py-4 space-y-3">
+                        {/* Fila 1: datos operativos */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                             <div>
                                 <p className="text-xs text-gray-400 mb-1">Horómetro</p>
@@ -117,6 +126,59 @@ function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => v
                                 <p className="text-xs font-bold text-gray-700">= ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
                             </div>
                         </div>
+
+                        {/* Fila 2: datos de perforación (solo si existen) */}
+                        {(r.bordo != null || r.espaciamiento != null || r.profundidadPromedio != null || r.volumenRoca != null || r.porcentajePerdida != null || r.porcentajeAvance != null || r.rentaEquipoDiaria != null) && (
+                            <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
+                                <p className="text-xs font-semibold text-indigo-400 mb-2 flex items-center gap-1">
+                                    <Drill size={11}/> Perforación (Track Drill)
+                                </p>
+                                <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 text-xs">
+                                    {r.bordo != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">Bordo</p>
+                                            <p className="font-bold text-indigo-700">{r.bordo} m</p>
+                                        </div>
+                                    )}
+                                    {r.espaciamiento != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">Espaciam.</p>
+                                            <p className="font-bold text-indigo-700">{r.espaciamiento} m</p>
+                                        </div>
+                                    )}
+                                    {r.profundidadPromedio != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">Prof. prom.</p>
+                                            <p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p>
+                                        </div>
+                                    )}
+                                    {r.volumenRoca != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">Vol. roca</p>
+                                            <p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p>
+                                        </div>
+                                    )}
+                                    {r.porcentajePerdida != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">% Pérdida</p>
+                                            <p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p>
+                                        </div>
+                                    )}
+                                    {r.porcentajeAvance != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">% Avance</p>
+                                            <p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p>
+                                        </div>
+                                    )}
+                                    {r.rentaEquipoDiaria != null && (
+                                        <div>
+                                            <p className="text-indigo-300 mb-0.5">Renta/día</p>
+                                            <p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </td>
                 </tr>
             )}
