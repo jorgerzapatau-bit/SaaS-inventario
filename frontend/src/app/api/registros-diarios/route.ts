@@ -62,7 +62,6 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/registros-diarios ──────────────────────────────────────────────
-// Sin cambios en la lógica de creación — se mantiene igual.
 export async function POST(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -88,6 +87,14 @@ export async function POST(req: NextRequest) {
             almacenId,
             registrarDieselEnKardex,
             obraId,
+            // ── Campos de perforación (Track Drill) ──
+            bordo,
+            espaciamiento,
+            volumenRoca,
+            porcentajePerdida,
+            profundidadPromedio,
+            porcentajeAvance,
+            rentaEquipoDiaria,
         } = await req.json();
 
         if (!equipoId || !fecha || horometroInicio == null || horometroFin == null)
@@ -124,7 +131,7 @@ export async function POST(req: NextRequest) {
                     horometroInicio:    Number(horometroInicio),
                     horometroFin:       Number(horometroFin),
                     horasTrabajadas:    horasNum,
-                    barrenos:           Number(barrenos   ?? 0),
+                    barrenos:           Number(barrenos      ?? 0),
                     metrosLineales:     Number(metrosLineales ?? 0),
                     litrosDiesel:       litrosDieselNum,
                     precioDiesel:       precioDieselNum,
@@ -134,13 +141,21 @@ export async function POST(req: NextRequest) {
                     litrosTanqueFin:    litrosTanqueFin    != null ? Number(litrosTanqueFin)    : null,
                     operadores:         Number(operadores ?? 1),
                     peones:             Number(peones     ?? 0),
-                    clienteId:          clienteId || null,
+                    clienteId:          clienteId  || null,
                     obraNombre:         obraNombre || null,
                     semanaNum,
                     anoNum,
                     obraId:             obraId || null,
-                    notas:              notas || null,
+                    notas:              notas  || null,
                     usuarioId:          user.id,
+                    // ── Campos de perforación ──
+                    bordo:              bordo              != null ? Number(bordo)              : null,
+                    espaciamiento:      espaciamiento      != null ? Number(espaciamiento)      : null,
+                    volumenRoca:        volumenRoca        != null ? Number(volumenRoca)        : null,
+                    porcentajePerdida:  porcentajePerdida  != null ? Number(porcentajePerdida)  : null,
+                    profundidadPromedio: profundidadPromedio != null ? Number(profundidadPromedio) : null,
+                    porcentajeAvance:   porcentajeAvance   != null ? Number(porcentajeAvance)   : null,
+                    rentaEquipoDiaria:  rentaEquipoDiaria  != null ? Number(rentaEquipoDiaria)  : null,
                 },
                 include: {
                     equipo:        { select: { nombre: true, numeroEconomico: true } },
@@ -217,26 +232,35 @@ function serializeRegistro(r: any) {
 
     return {
         ...r,
-        horometroInicio:    Number(r.horometroInicio),
-        horometroFin:       Number(r.horometroFin),
-        horasTrabajadas:    horas,
+        horometroInicio:     Number(r.horometroInicio),
+        horometroFin:        Number(r.horometroFin),
+        horasTrabajadas:     horas,
         barrenos,
-        metrosLineales:     metros,
-        litrosDiesel:       litros,
-        precioDiesel:       Number(r.precioDiesel),
-        costoDiesel:        litros * Number(r.precioDiesel),
-        tanqueInicio:       r.tanqueInicio       != null ? Number(r.tanqueInicio)       : null,
-        litrosTanqueInicio: r.litrosTanqueInicio != null ? Number(r.litrosTanqueInicio) : null,
-        tanqueFin:          r.tanqueFin          != null ? Number(r.tanqueFin)          : null,
-        litrosTanqueFin:    r.litrosTanqueFin    != null ? Number(r.litrosTanqueFin)    : null,
+        metrosLineales:      metros,
+        litrosDiesel:        litros,
+        precioDiesel:        Number(r.precioDiesel),
+        costoDiesel:         litros * Number(r.precioDiesel),
+        tanqueInicio:        r.tanqueInicio        != null ? Number(r.tanqueInicio)        : null,
+        litrosTanqueInicio:  r.litrosTanqueInicio  != null ? Number(r.litrosTanqueInicio)  : null,
+        tanqueFin:           r.tanqueFin           != null ? Number(r.tanqueFin)           : null,
+        litrosTanqueFin:     r.litrosTanqueFin     != null ? Number(r.litrosTanqueFin)     : null,
+        // ── Campos de perforación ──
+        bordo:               r.bordo               != null ? Number(r.bordo)               : null,
+        espaciamiento:       r.espaciamiento        != null ? Number(r.espaciamiento)       : null,
+        volumenRoca:         r.volumenRoca          != null ? Number(r.volumenRoca)         : null,
+        porcentajePerdida:   r.porcentajePerdida    != null ? Number(r.porcentajePerdida)   : null,
+        profundidadPromedio: r.profundidadPromedio  != null ? Number(r.profundidadPromedio) : null,
+        porcentajeAvance:    r.porcentajeAvance     != null ? Number(r.porcentajeAvance)    : null,
+        rentaEquipoDiaria:   r.rentaEquipoDiaria    != null ? Number(r.rentaEquipoDiaria)   : null,
         // Info del corte (null si pendiente)
         corte: r.corteRegistro
             ? { id: r.corteRegistro.corte.id, numero: r.corteRegistro.corte.numero, status: r.corteRegistro.corte.status }
             : null,
         kpi: {
-            litrosPorHora:  horas  > 0 ? +(litros / horas).toFixed(2)  : null,
-            litrosPorMetro: metros > 0 ? +(litros / metros).toFixed(2) : null,
-            metrosPorHora:  horas  > 0 ? +(metros / horas).toFixed(2)  : null,
+            litrosPorHora:  horas    > 0 ? +(litros  / horas).toFixed(2)    : null,
+            litrosPorMetro: metros   > 0 ? +(litros  / metros).toFixed(2)   : null,
+            metrosPorHora:  horas    > 0 ? +(metros  / horas).toFixed(2)    : null,
+            metrosPorDia:   barrenos > 0 ? +(metros  / barrenos).toFixed(2) : null,
         },
     };
 }

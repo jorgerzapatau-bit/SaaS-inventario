@@ -13,7 +13,24 @@ export async function GET(req: NextRequest, { params }: Params) {
         const equipo = await prisma.equipo.findFirst({
             where: { id, empresaId: user.empresaId },
             include: {
-                _count: { select: { registrosDiarios: true } },
+                _count: {
+                    select: {
+                        registrosDiarios:       true,
+                        componentesInstalados:  true,
+                        registrosMantenimiento: true,
+                    },
+                },
+                // Componentes actualmente instalados en el equipo
+                componentesInstalados: {
+                    select: {
+                        id:     true,
+                        nombre: true,
+                        serie:  true,
+                        tipo:   true,
+                        notas:  true,
+                    },
+                    orderBy: { nombre: 'asc' },
+                },
             },
         });
 
@@ -37,21 +54,34 @@ export async function PUT(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const {
-            nombre, modelo, numeroSerie,
-            numeroEconomico, hodometroInicial,
-            activo, notas,
+            nombre, modelo, numeroSerie, numeroEconomico,
+            hodometroInicial, activo, notas, marca, anoFabricacion,
+            fechaCompra, facturaCompra,
+            // Campos técnicos nuevos
+            apodo, acopladoCon, proveedorOrigen, seriePistolaActual,
+            statusEquipo,
         } = await req.json();
 
         const equipo = await prisma.equipo.update({
             where: { id, empresaId: user.empresaId },
             data: {
-                ...(nombre            !== undefined && { nombre }),
-                ...(modelo            !== undefined && { modelo }),
-                ...(numeroSerie       !== undefined && { numeroSerie }),
-                ...(numeroEconomico   !== undefined && { numeroEconomico }),
-                ...(hodometroInicial  !== undefined && { hodometroInicial: Number(hodometroInicial) }),
-                ...(activo            !== undefined && { activo }),
-                ...(notas             !== undefined && { notas }),
+                ...(nombre             !== undefined && { nombre }),
+                ...(modelo             !== undefined && { modelo }),
+                ...(numeroSerie        !== undefined && { numeroSerie }),
+                ...(numeroEconomico    !== undefined && { numeroEconomico }),
+                ...(hodometroInicial   !== undefined && { hodometroInicial: Number(hodometroInicial) }),
+                ...(activo             !== undefined && { activo }),
+                ...(notas              !== undefined && { notas }),
+                ...(marca              !== undefined && { marca }),
+                ...(anoFabricacion     !== undefined && { anoFabricacion: anoFabricacion != null ? Number(anoFabricacion) : null }),
+                ...(fechaCompra        !== undefined && { fechaCompra: fechaCompra ? new Date(fechaCompra) : null }),
+                ...(facturaCompra      !== undefined && { facturaCompra }),
+                // Campos técnicos
+                ...(apodo              !== undefined && { apodo }),
+                ...(acopladoCon        !== undefined && { acopladoCon }),
+                ...(proveedorOrigen    !== undefined && { proveedorOrigen }),
+                ...(seriePistolaActual !== undefined && { seriePistolaActual }),
+                ...(statusEquipo       !== undefined && { statusEquipo }),
             },
         });
 
@@ -70,12 +100,20 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
 
-        const registros = await prisma.registroDiario.count({
-            where: { equipoId: id, empresaId: user.empresaId },
-        });
+        // Verificar dependencias antes de eliminar
+        const [registros, componentes] = await Promise.all([
+            prisma.registroDiario.count({ where: { equipoId: id, empresaId: user.empresaId } }),
+            prisma.componente.count({ where: { equipoActualId: id } }),
+        ]);
+
         if (registros > 0)
             return Response.json(
                 { error: 'No se puede eliminar: el equipo tiene registros diarios asociados.' },
+                { status: 400 }
+            );
+        if (componentes > 0)
+            return Response.json(
+                { error: 'No se puede eliminar: el equipo tiene componentes instalados. Retíralos primero.' },
                 { status: 400 }
             );
 

@@ -52,6 +52,9 @@ export async function PUT(req: NextRequest, { params }: Params) {
             tanqueFin, litrosTanqueFin,
             operadores, peones,
             clienteId, obraNombre, notas,
+            // ── Campos de perforación (Track Drill) ──
+            bordo, espaciamiento, volumenRoca, porcentajePerdida,
+            profundidadPromedio, porcentajeAvance, rentaEquipoDiaria,
         } = await req.json();
 
         // Recalcular horas si cambiaron los horómetros
@@ -68,22 +71,30 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const registro = await prisma.registroDiario.update({
             where: { id, empresaId: user.empresaId },
             data: {
-                ...(horometroInicio    !== undefined && { horometroInicio:    Number(horometroInicio) }),
-                ...(horometroFin       !== undefined && { horometroFin:       Number(horometroFin) }),
-                ...(horasTrabajadas    !== undefined && { horasTrabajadas }),
-                ...(barrenos           !== undefined && { barrenos:           Number(barrenos) }),
-                ...(metrosLineales     !== undefined && { metrosLineales:     Number(metrosLineales) }),
-                ...(litrosDiesel       !== undefined && { litrosDiesel:       Number(litrosDiesel) }),
-                ...(precioDiesel       !== undefined && { precioDiesel:       Number(precioDiesel) }),
-                ...(tanqueInicio       !== undefined && { tanqueInicio:       tanqueInicio != null ? Number(tanqueInicio) : null }),
-                ...(litrosTanqueInicio !== undefined && { litrosTanqueInicio: litrosTanqueInicio != null ? Number(litrosTanqueInicio) : null }),
-                ...(tanqueFin          !== undefined && { tanqueFin:          tanqueFin != null ? Number(tanqueFin) : null }),
-                ...(litrosTanqueFin    !== undefined && { litrosTanqueFin:    litrosTanqueFin != null ? Number(litrosTanqueFin) : null }),
-                ...(operadores         !== undefined && { operadores:         Number(operadores) }),
-                ...(peones             !== undefined && { peones:             Number(peones) }),
-                ...(clienteId          !== undefined && { clienteId:          clienteId || null }),
-                ...(obraNombre         !== undefined && { obraNombre:         obraNombre || null }),
-                ...(notas              !== undefined && { notas:              notas || null }),
+                ...(horometroInicio     !== undefined && { horometroInicio:    Number(horometroInicio) }),
+                ...(horometroFin        !== undefined && { horometroFin:       Number(horometroFin) }),
+                ...(horasTrabajadas     !== undefined && { horasTrabajadas }),
+                ...(barrenos            !== undefined && { barrenos:           Number(barrenos) }),
+                ...(metrosLineales      !== undefined && { metrosLineales:     Number(metrosLineales) }),
+                ...(litrosDiesel        !== undefined && { litrosDiesel:       Number(litrosDiesel) }),
+                ...(precioDiesel        !== undefined && { precioDiesel:       Number(precioDiesel) }),
+                ...(tanqueInicio        !== undefined && { tanqueInicio:       tanqueInicio       != null ? Number(tanqueInicio)       : null }),
+                ...(litrosTanqueInicio  !== undefined && { litrosTanqueInicio: litrosTanqueInicio != null ? Number(litrosTanqueInicio) : null }),
+                ...(tanqueFin           !== undefined && { tanqueFin:          tanqueFin          != null ? Number(tanqueFin)          : null }),
+                ...(litrosTanqueFin     !== undefined && { litrosTanqueFin:    litrosTanqueFin    != null ? Number(litrosTanqueFin)    : null }),
+                ...(operadores          !== undefined && { operadores:         Number(operadores) }),
+                ...(peones              !== undefined && { peones:             Number(peones) }),
+                ...(clienteId           !== undefined && { clienteId:          clienteId  || null }),
+                ...(obraNombre          !== undefined && { obraNombre:         obraNombre || null }),
+                ...(notas               !== undefined && { notas:              notas      || null }),
+                // ── Campos de perforación ──
+                ...(bordo               !== undefined && { bordo:              bordo              != null ? Number(bordo)              : null }),
+                ...(espaciamiento       !== undefined && { espaciamiento:      espaciamiento      != null ? Number(espaciamiento)      : null }),
+                ...(volumenRoca         !== undefined && { volumenRoca:        volumenRoca        != null ? Number(volumenRoca)        : null }),
+                ...(porcentajePerdida   !== undefined && { porcentajePerdida:  porcentajePerdida  != null ? Number(porcentajePerdida)  : null }),
+                ...(profundidadPromedio !== undefined && { profundidadPromedio: profundidadPromedio != null ? Number(profundidadPromedio) : null }),
+                ...(porcentajeAvance    !== undefined && { porcentajeAvance:   porcentajeAvance   != null ? Number(porcentajeAvance)   : null }),
+                ...(rentaEquipoDiaria   !== undefined && { rentaEquipoDiaria:  rentaEquipoDiaria  != null ? Number(rentaEquipoDiaria)  : null }),
             },
             include: {
                 equipo:  { select: { nombre: true, numeroEconomico: true } },
@@ -131,28 +142,38 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 function serializeRegistro(r: any) {
-    const horas  = Number(r.horasTrabajadas);
-    const metros = Number(r.metrosLineales);
-    const litros = Number(r.litrosDiesel);
+    const horas    = Number(r.horasTrabajadas);
+    const metros   = Number(r.metrosLineales);
+    const litros   = Number(r.litrosDiesel);
+    const barrenos = Number(r.barrenos);
 
     return {
         ...r,
-        horometroInicio:    Number(r.horometroInicio),
-        horometroFin:       Number(r.horometroFin),
-        horasTrabajadas:    horas,
-        barrenos:           Number(r.barrenos),
-        metrosLineales:     metros,
-        litrosDiesel:       litros,
-        precioDiesel:       Number(r.precioDiesel),
-        costoDiesel:        litros * Number(r.precioDiesel),
-        tanqueInicio:       r.tanqueInicio       != null ? Number(r.tanqueInicio)       : null,
-        litrosTanqueInicio: r.litrosTanqueInicio != null ? Number(r.litrosTanqueInicio) : null,
-        tanqueFin:          r.tanqueFin          != null ? Number(r.tanqueFin)          : null,
-        litrosTanqueFin:    r.litrosTanqueFin    != null ? Number(r.litrosTanqueFin)    : null,
+        horometroInicio:     Number(r.horometroInicio),
+        horometroFin:        Number(r.horometroFin),
+        horasTrabajadas:     horas,
+        barrenos,
+        metrosLineales:      metros,
+        litrosDiesel:        litros,
+        precioDiesel:        Number(r.precioDiesel),
+        costoDiesel:         litros * Number(r.precioDiesel),
+        tanqueInicio:        r.tanqueInicio        != null ? Number(r.tanqueInicio)        : null,
+        litrosTanqueInicio:  r.litrosTanqueInicio  != null ? Number(r.litrosTanqueInicio)  : null,
+        tanqueFin:           r.tanqueFin           != null ? Number(r.tanqueFin)           : null,
+        litrosTanqueFin:     r.litrosTanqueFin     != null ? Number(r.litrosTanqueFin)     : null,
+        // ── Campos de perforación ──
+        bordo:               r.bordo               != null ? Number(r.bordo)               : null,
+        espaciamiento:       r.espaciamiento        != null ? Number(r.espaciamiento)       : null,
+        volumenRoca:         r.volumenRoca          != null ? Number(r.volumenRoca)         : null,
+        porcentajePerdida:   r.porcentajePerdida    != null ? Number(r.porcentajePerdida)   : null,
+        profundidadPromedio: r.profundidadPromedio  != null ? Number(r.profundidadPromedio) : null,
+        porcentajeAvance:    r.porcentajeAvance     != null ? Number(r.porcentajeAvance)    : null,
+        rentaEquipoDiaria:   r.rentaEquipoDiaria    != null ? Number(r.rentaEquipoDiaria)   : null,
         kpi: {
-            litrosPorHora:  horas  > 0 ? +(litros / horas).toFixed(2)  : null,
-            litrosPorMetro: metros > 0 ? +(litros / metros).toFixed(2) : null,
-            metrosPorHora:  horas  > 0 ? +(metros / horas).toFixed(2)  : null,
+            litrosPorHora:  horas    > 0 ? +(litros  / horas).toFixed(2)    : null,
+            litrosPorMetro: metros   > 0 ? +(litros  / metros).toFixed(2)   : null,
+            metrosPorHora:  horas    > 0 ? +(metros  / horas).toFixed(2)    : null,
+            metrosPorDia:   barrenos > 0 ? +(metros  / barrenos).toFixed(2) : null,
         },
     };
 }

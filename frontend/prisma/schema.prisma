@@ -8,9 +8,585 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─────────────────────────────────────────────
-//  ENUMS
-// ─────────────────────────────────────────────
+model Empresa {
+  id                     String                  @id @default(uuid())
+  nombre                 String
+  url                    String                  @unique
+  logo                   String?
+  telefono               String?
+  whatsapp               String?
+  email                  String?
+  direccion              String?
+  rfc                    String?
+  config                 Json?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  razonSocial            String?
+  codigoPostal           String?
+  regimenFiscal          String?
+  usoCFDI                String?
+  loginBg                String?
+  almacenes              Almacen[]
+  categorias             Categoria[]
+  clientes               Cliente[]
+  compras                Compra[]
+  equipos                Equipo[]
+  gastosOperativos       GastoOperativo[]
+  movimientosInventario  MovimientoInventario[]
+  obras                  Obra[]
+  productos              Producto[]
+  proveedores            Proveedor[]
+  registrosDiarios       RegistroDiario[]
+  registrosMantenimiento RegistroMantenimiento[]
+  resumenesSemana        ResumenSemana[]
+  salidas                Salida[]
+  usuarios               Usuario[]
+  // --- NUEVO ---
+  componentes            Componente[]
+}
+
+model Usuario {
+  id               String                 @id @default(uuid())
+  empresaId        String
+  nombre           String
+  email            String                 @unique
+  password         String
+  role             Role                   @default(OPERADOR)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  movimientos      MovimientoInventario[]
+  registrosDiarios RegistroDiario[]
+  salidas          Salida[]
+  empresa          Empresa                @relation(fields: [empresaId], references: [id])
+}
+
+model Categoria {
+  id          String     @id @default(uuid())
+  empresaId   String
+  nombre      String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  descripcion String?
+  empresa     Empresa    @relation(fields: [empresaId], references: [id])
+  productos   Producto[]
+}
+
+model Proveedor {
+  id                     String                  @id @default(uuid())
+  empresaId              String
+  nombre                 String
+  contacto               String?
+  telefono               String?
+  email                  String?
+  direccion              String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  rfc                    String?
+  razonSocial            String?
+  codigoPostal           String?
+  regimenFiscal          String?
+  usoCFDI                String?
+  compras                Compra[]
+  movimientos            MovimientoInventario[]
+  empresa                Empresa                 @relation(fields: [empresaId], references: [id])
+  registrosMantenimiento RegistroMantenimiento[]
+}
+
+model Cliente {
+  id               String                 @id @default(uuid())
+  empresaId        String
+  nombre           String
+  contacto         String?
+  email            String?
+  telefono         String?
+  direccion        String?
+  rfc              String?
+  razonSocial      String?
+  codigoPostal     String?
+  regimenFiscal    String?
+  usoCFDI          String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  empresa          Empresa                @relation(fields: [empresaId], references: [id])
+  movimientos      MovimientoInventario[]
+  obras            Obra[]
+  registrosDiarios RegistroDiario[]
+}
+
+model Almacen {
+  id          String                 @id @default(uuid())
+  empresaId   String
+  nombre      String
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  empresa     Empresa                @relation(fields: [empresaId], references: [id])
+  movimientos MovimientoInventario[]
+}
+
+model Producto {
+  id              String                 @id @default(uuid())
+  empresaId       String
+  nombre          String
+  sku             String
+  categoriaId     String
+  unidad          String                 @default("pza")
+  stockMinimo     Int                    @default(0)
+  activo          Boolean                @default(true)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  imagen          String?
+  moneda          Moneda                 @default(MXN)
+  precioCompra    Decimal                @default(0)
+  stockActual     Decimal                @default(0)
+  partNumber      String?
+  leadTimeDias    Int?
+  nivelReorden    Decimal?               @default(0) @db.Decimal
+  cantidadReorden Decimal?               @default(0) @db.Decimal
+  suspendido      Boolean?               @default(false)
+  equipoId        String?
+  detallesCompra  DetalleCompra[]
+  detallesSalida  DetalleSalida[]
+  movimientos     MovimientoInventario[]
+  categoria       Categoria              @relation(fields: [categoriaId], references: [id])
+  empresa         Empresa                @relation(fields: [empresaId], references: [id])
+  equipo          Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
+
+  @@unique([empresaId, sku])
+  @@index([equipoId])
+  @@index([partNumber])
+}
+
+model Compra {
+  id          String                 @id @default(uuid())
+  empresaId   String
+  proveedorId String
+  fecha       DateTime               @default(now())
+  total       Decimal                @default(0)
+  status      StatusCompra           @default(PENDIENTE)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  referencia  String?
+  moneda      Moneda                 @default(MXN)
+  notas       String?
+  tipoCambio  Decimal?
+  obraId      String?
+  empresa     Empresa                @relation(fields: [empresaId], references: [id])
+  obra        Obra?                  @relation(fields: [obraId], references: [id])
+  proveedor   Proveedor              @relation(fields: [proveedorId], references: [id])
+  detalles    DetalleCompra[]
+  movimientos MovimientoInventario[]
+}
+
+model DetalleCompra {
+  id             String   @id @default(uuid())
+  compraId       String
+  productoId     String
+  cantidad       Decimal
+  precioUnitario Decimal
+  moneda         Moneda   @default(MXN)
+  compra         Compra   @relation(fields: [compraId], references: [id])
+  producto       Producto @relation(fields: [productoId], references: [id])
+}
+
+model Salida {
+  id            String          @id @default(uuid())
+  empresaId     String
+  tipo          TipoSalida
+  fecha         DateTime        @default(now())
+  referencia    String?
+  usuarioId     String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  clienteNombre String?
+  notas         String?
+  equipoId      String?
+  obraId        String?
+  detalles      DetalleSalida[]
+  empresa       Empresa         @relation(fields: [empresaId], references: [id])
+  equipo        Equipo?         @relation(fields: [equipoId], references: [id])
+  obra          Obra?           @relation(fields: [obraId], references: [id])
+  usuario       Usuario         @relation(fields: [usuarioId], references: [id])
+}
+
+model DetalleSalida {
+  id             String   @id @default(uuid())
+  salidaId       String
+  productoId     String
+  cantidad       Decimal
+  precioUnitario Decimal
+  moneda         Moneda   @default(MXN)
+  producto       Producto @relation(fields: [productoId], references: [id])
+  salida         Salida   @relation(fields: [salidaId], references: [id])
+}
+
+model MovimientoInventario {
+  id               String          @id @default(uuid())
+  empresaId        String
+  productoId       String
+  almacenId        String
+  tipoMovimiento   TipoMovimiento
+  cantidad         Decimal
+  costoUnitario    Decimal
+  fecha            DateTime        @default(now())
+  referencia       String?
+  usuarioId        String
+  createdAt        DateTime        @default(now())
+  precioVenta      Decimal?
+  proveedorId      String?
+  clienteNombre    String?
+  clienteId        String?
+  compraId         String?
+  moneda           Moneda          @default(MXN)
+  notas            String?
+  registroDiarioId String?
+  tipoCambio       Decimal?
+  obraId           String?
+  almacen          Almacen         @relation(fields: [almacenId], references: [id])
+  cliente          Cliente?        @relation(fields: [clienteId], references: [id])
+  compra           Compra?         @relation(fields: [compraId], references: [id])
+  empresa          Empresa         @relation(fields: [empresaId], references: [id])
+  obra             Obra?           @relation(fields: [obraId], references: [id])
+  producto         Producto        @relation(fields: [productoId], references: [id])
+  proveedor        Proveedor?      @relation(fields: [proveedorId], references: [id])
+  registroDiario   RegistroDiario? @relation(fields: [registroDiarioId], references: [id])
+  usuario          Usuario         @relation(fields: [usuarioId], references: [id])
+
+  @@index([empresaId])
+  @@index([productoId])
+  @@index([almacenId])
+  @@index([clienteId])
+  @@index([compraId])
+  @@index([registroDiarioId])
+  @@index([obraId])
+}
+
+model Equipo {
+  id                     String                  @id @default(uuid())
+  empresaId              String
+  nombre                 String
+  modelo                 String?
+  numeroSerie            String?
+  numeroEconomico        String?
+  hodometroInicial       Decimal                 @default(0)
+  activo                 Boolean                 @default(true)
+  notas                  String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  marca                  String?
+  anoFabricacion         Int?
+  fechaCompra            DateTime?               @db.Date
+  facturaCompra          String?
+
+  // --- CAMPOS TÉCNICOS ---
+  apodo                  String?                 // Ej: "Gringo #1", "Viejito"
+  acopladoCon            String?                 // Ej: "XP750-2013"
+  proveedorOrigen        String?
+  seriePistolaActual     String?                 // Serie de la VL140 instalada actualmente
+  // -----------------------
+
+  statusEquipo           StatusEquipo?           @default(ACTIVO)
+  empresa                Empresa                 @relation(fields: [empresaId], references: [id])
+
+  // RELACIONES
+  gastosOperativos         GastoOperativo[]
+  obraEquipos              ObraEquipo[]
+  productos                Producto[]              @relation("ProductosEquipo")
+  registrosDiarios         RegistroDiario[]
+  registrosMantenimiento   RegistroMantenimiento[]
+  resumenesSemana          ResumenSemana[]
+  salidas                  Salida[]
+  // --- NUEVAS RELACIONES para trazabilidad de componentes ---
+  componentesInstalados    Componente[]            @relation("ComponenteEnEquipo")
+  movimientosComponente    MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
+}
+
+model Obra {
+  id                     String                  @id @default(uuid())
+  empresaId              String
+  nombre                 String
+  clienteId              String?
+  clienteNombre          String?
+  ubicacion              String?
+  bordo                  Decimal?
+  espesor                Decimal?
+  metrosContratados      Decimal?
+  precioUnitario         Decimal?
+  moneda                 Moneda                  @default(MXN)
+  tipoCambio             Decimal?
+  fechaInicio            DateTime?               @db.Date
+  fechaFin               DateTime?               @db.Date
+  status                 StatusObra              @default(ACTIVA)
+  notas                  String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  profundidadCollar      Decimal?                @db.Decimal
+  compras                Compra[]
+  cortesFacturacion      CorteFacturacion[]
+  gastosOperativos       GastoOperativo[]
+  movimientosInventario  MovimientoInventario[]
+  cliente                Cliente?                @relation(fields: [clienteId], references: [id])
+  empresa                Empresa                 @relation(fields: [empresaId], references: [id])
+  obraEquipos            ObraEquipo[]
+  registrosDiarios       RegistroDiario[]
+  registrosMantenimiento RegistroMantenimiento[]
+  salidas                Salida[]
+
+  @@index([empresaId])
+  @@index([status])
+}
+
+model ObraEquipo {
+  id          String    @id @default(uuid())
+  obraId      String
+  equipoId    String
+  fechaInicio DateTime  @db.Date
+  fechaFin    DateTime? @db.Date
+  notas       String?
+  createdAt   DateTime  @default(now())
+  equipo      Equipo    @relation(fields: [equipoId], references: [id])
+  obra        Obra      @relation(fields: [obraId], references: [id])
+
+  @@index([obraId])
+  @@index([equipoId])
+}
+
+model CorteFacturacion {
+  id                String           @id @default(uuid())
+  obraId            String
+  numero            Int
+  fechaInicio       DateTime         @db.Date
+  fechaFin          DateTime         @db.Date
+  barrenos          Int              @default(0)
+  metrosLineales    Decimal          @default(0)
+  bordo             Decimal?
+  espesor           Decimal?
+  volumenBruto      Decimal?
+  porcentajePerdida Decimal?         @default(0)
+  volumenNeto       Decimal?
+  precioUnitario    Decimal?
+  moneda            Moneda           @default(MXN)
+  tipoCambio        Decimal?
+  montoFacturado    Decimal?
+  status            StatusCorte      @default(BORRADOR)
+  notas             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  perdidaM3         Decimal?         @default(0) @db.Decimal
+  profundidadCollar Decimal?         @db.Decimal
+  obra              Obra             @relation(fields: [obraId], references: [id])
+  corteRegistros    CorteRegistro[]
+  RegistroDiario    RegistroDiario[]
+
+  @@unique([obraId, numero])
+  @@index([obraId])
+}
+
+model CorteRegistro {
+  id         String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  corteId    String
+  registroId String           @unique(map: "CorteRegistro_registroId_unique")
+  createdAt  DateTime         @default(now()) @db.Timestamptz(6)
+  corte      CorteFacturacion @relation(fields: [corteId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  registro   RegistroDiario   @relation(fields: [registroId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([corteId])
+  @@index([registroId])
+}
+
+model RegistroDiario {
+  id                    String                 @id @default(uuid())
+  empresaId             String
+  equipoId              String
+  fecha                 DateTime               @db.Date
+  horometroInicio       Decimal
+  horometroFin          Decimal
+  horasTrabajadas       Decimal
+  barrenos              Int                    @default(0)
+  metrosLineales        Decimal                @default(0)
+
+  // --- CAMPOS DE PERFORACIÓN (Hoja Plantilla) ---
+  bordo                 Decimal?               @db.Decimal  // Burden
+  espaciamiento         Decimal?               @db.Decimal
+  volumenRoca           Decimal?               @db.Decimal  // Bordo x Espaciamiento x Profundidad
+  porcentajePerdida     Decimal?               @db.Decimal
+  // -----------------------------------------------
+
+  litrosDiesel          Decimal                @default(0)
+  precioDiesel          Decimal                @default(0)
+  tanqueInicio          Decimal?
+  litrosTanqueInicio    Decimal?
+  tanqueFin             Decimal?
+  litrosTanqueFin       Decimal?
+  operadores            Int                    @default(1)
+  peones                Int                    @default(0)
+  clienteId             String?
+  obraNombre            String?
+  semanaNum             Int?
+  anoNum                Int?
+  notas                 String?
+  usuarioId             String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  obraId                String?
+  corteId               String?
+  profundidadPromedio   Decimal?               @db.Decimal
+  porcentajeAvance      Decimal?               @db.Decimal
+  rentaEquipoDiaria     Decimal?               @db.Decimal
+
+  corteRegistro         CorteRegistro?
+  movimientosInventario MovimientoInventario[]
+  cliente               Cliente?               @relation(fields: [clienteId], references: [id])
+  CorteFacturacion      CorteFacturacion?      @relation(fields: [corteId], references: [id], onUpdate: NoAction)
+  empresa               Empresa                @relation(fields: [empresaId], references: [id])
+  equipo                Equipo                 @relation(fields: [equipoId], references: [id])
+  obra                  Obra?                  @relation(fields: [obraId], references: [id])
+  usuario               Usuario                @relation(fields: [usuarioId], references: [id])
+
+  @@unique([equipoId, fecha])
+  @@index([empresaId])
+  @@index([equipoId])
+  @@index([fecha])
+  @@index([obraId])
+  @@index([corteId])
+}
+
+model ResumenSemana {
+  id              String   @id @default(uuid())
+  empresaId       String
+  equipoId        String
+  semanaNum       Int
+  anoNum          Int
+  fechaInicio     DateTime @db.Date
+  fechaFin        DateTime @db.Date
+  horasTotales    Decimal  @default(0)
+  barrenos        Int      @default(0)
+  metrosLineales  Decimal  @default(0)
+  litrosPorHora   Decimal?
+  litrosPorMetro  Decimal?
+  metrosPorHora   Decimal?
+  metrosPorDia    Decimal?
+  costoDiesel     Decimal  @default(0)
+  costoOperadores Decimal  @default(0)
+  costoPeones     Decimal  @default(0)
+  costoGastos     Decimal  @default(0)
+  rentaEquipo     Decimal  @default(0)
+  costoTotal      Decimal  @default(0)
+  tipoCambio      Decimal?
+  notas           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  equipo          Equipo   @relation(fields: [equipoId], references: [id])
+
+  @@unique([equipoId, semanaNum, anoNum])
+  @@index([empresaId])
+  @@index([equipoId])
+}
+
+model RegistroMantenimiento {
+  id            String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId     String
+  equipoId      String
+  fecha         DateTime           @db.Date
+  horometro     Decimal?           @db.Decimal
+  tipo          TipoMantenimiento? @default(CORRECTIVO)
+  // descripcion es obligatorio — en validación backend usar .min(10)
+  // Ej: "Se retiró Pistola VL140 S/N 4521 para reparación de empaque"
+  descripcion   String
+  observaciones String?
+  costo         Decimal?           @default(0) @db.Decimal
+  moneda        Moneda?            @default(MXN)
+  tipoCambio    Decimal?           @db.Decimal
+  proveedorId   String?
+  obraId        String?
+  createdAt     DateTime           @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime           @default(now()) @updatedAt @db.Timestamp(6)
+  empresa       Empresa            @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  equipo        Equipo             @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  obra          Obra?              @relation(fields: [obraId], references: [id], onUpdate: NoAction)
+  proveedor     Proveedor?         @relation(fields: [proveedorId], references: [id], onUpdate: NoAction)
+
+  @@index([empresaId])
+  @@index([equipoId])
+  @@index([fecha])
+}
+
+model GastoOperativo {
+  id             String          @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId      String
+  equipoId       String
+  semanaNum      Int
+  anoNum         Int
+  fechaInicio    DateTime?       @db.Date
+  categoria      CategoriaGasto? @default(OTRO)
+  producto       String
+  unidad         String          @default("pza")
+  cantidad       Decimal         @default(0) @db.Decimal
+  precioUnitario Decimal         @default(0) @db.Decimal
+  total          Decimal?        @default(dbgenerated("(cantidad * \"precioUnitario\")")) @db.Decimal
+  moneda         Moneda?         @default(MXN)
+  tipoCambio     Decimal?        @db.Decimal
+  obraId         String?
+  notas          String?
+  createdAt      DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime        @default(now()) @updatedAt @db.Timestamp(6)
+  empresa        Empresa         @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  equipo         Equipo          @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  obra           Obra?           @relation(fields: [obraId], references: [id], onUpdate: NoAction)
+
+  @@unique([equipoId, semanaNum, anoNum, producto], map: "GastoOperativo_equipo_semana_producto_idx")
+  @@index([empresaId])
+  @@index([equipoId])
+  @@index([obraId])
+}
+
+// =============================================================================
+// NUEVO: Trazabilidad de componentes móviles (Pistola VL140, etc.)
+// =============================================================================
+
+model Componente {
+  id             String                 @id @default(uuid())
+  empresaId      String
+  nombre         String                 // Ej: "Pistola VL140"
+  serie          String?                // Número de serie del componente
+  tipo           String?                // Ej: "Pistola", "Cabezal", "Compresor"
+  notas          String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  // Equipo donde está instalado ACTUALMENTE. null = en taller o almacén
+  equipoActualId String?
+  equipoActual   Equipo?                @relation("ComponenteEnEquipo", fields: [equipoActualId], references: [id])
+  empresa        Empresa                @relation(fields: [empresaId], references: [id])
+
+  historial      MovimientoComponente[]
+
+  @@index([empresaId])
+  @@index([equipoActualId])
+}
+
+model MovimientoComponente {
+  id           String     @id @default(uuid())
+  componenteId String
+  equipoId     String?    // Equipo destino. null = regresó a taller/almacén
+  fecha        DateTime   @db.Date
+  // Valores: "INSTALACION" | "RETIRO" | "ENVIO_REPARACION" | "RETORNO_REPARACION"
+  tipo         String
+  // Obligatorio: describir qué pasó. Ej: "Instalada en Track-02, se retiró de Track-01"
+  notas        String
+  createdAt    DateTime   @default(now())
+
+  componente   Componente @relation(fields: [componenteId], references: [id])
+  equipo       Equipo?    @relation("MovimientosComponenteEquipo", fields: [equipoId], references: [id])
+
+  @@index([componenteId])
+  @@index([equipoId])
+  @@index([fecha])
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
 
 enum Role {
   ADMIN
@@ -44,7 +620,6 @@ enum TipoMovimiento {
   AJUSTE_NEGATIVO
 }
 
-// ── NUEVOS ENUMS ──────────────────────────────
 enum StatusObra {
   ACTIVA
   PAUSADA
@@ -57,546 +632,27 @@ enum StatusCorte {
   COBRADO
 }
 
-// ─────────────────────────────────────────────
-//  EMPRESA
-// ─────────────────────────────────────────────
-
-model Empresa {
-  id            String   @id @default(uuid())
-  nombre        String
-  url           String   @unique
-  logo          String?
-  telefono      String?
-  whatsapp      String?
-  email         String?
-  direccion     String?
-  rfc           String?
-  razonSocial   String?
-  codigoPostal  String?
-  regimenFiscal String?
-  usoCFDI       String?
-  loginBg       String?
-  config        Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  usuarios              Usuario[]
-  categorias            Categoria[]
-  proveedores           Proveedor[]
-  clientes              Cliente[]
-  productos             Producto[]
-  almacenes             Almacen[]
-  compras               Compra[]
-  salidas               Salida[]
-  movimientosInventario MovimientoInventario[]
-  equipos               Equipo[]
-  registrosDiarios      RegistroDiario[]
-  resumenesSemana       ResumenSemana[]
-  obras                 Obra[]
+enum StatusEquipo {
+  ACTIVO
+  EN_TALLER
+  VENDIDO
+  ABANDONO
+  BAJA
 }
 
-// ─────────────────────────────────────────────
-//  USUARIOS
-// ─────────────────────────────────────────────
-
-model Usuario {
-  id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  nombre    String
-  email     String   @unique
-  password  String
-  role      Role     @default(OPERADOR)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  movimientos      MovimientoInventario[]
-  salidas          Salida[]
-  registrosDiarios RegistroDiario[]
+enum TipoMantenimiento {
+  PREVENTIVO
+  CORRECTIVO
+  INSPECCION
+  REPARACION
 }
 
-// ─────────────────────────────────────────────
-//  CATÁLOGOS BASE
-// ─────────────────────────────────────────────
-
-model Categoria {
-  id          String   @id @default(uuid())
-  empresaId   String
-  empresa     Empresa  @relation(fields: [empresaId], references: [id])
-  nombre      String
-  descripcion String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  productos Producto[]
-}
-
-model Proveedor {
-  id            String   @id @default(uuid())
-  empresaId     String
-  empresa       Empresa  @relation(fields: [empresaId], references: [id])
-  nombre        String
-  contacto      String?
-  telefono      String?
-  email         String?
-  direccion     String?
-  rfc           String?
-  razonSocial   String?
-  codigoPostal  String?
-  regimenFiscal String?
-  usoCFDI       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  compras     Compra[]
-  movimientos MovimientoInventario[]
-}
-
-model Cliente {
-  id            String   @id @default(uuid())
-  empresaId     String
-  empresa       Empresa  @relation(fields: [empresaId], references: [id])
-  nombre        String
-  contacto      String?
-  email         String?
-  telefono      String?
-  direccion     String?
-  rfc           String?
-  razonSocial   String?
-  codigoPostal  String?
-  regimenFiscal String?
-  usoCFDI       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  movimientos      MovimientoInventario[]
-  registrosDiarios RegistroDiario[]
-  obras            Obra[]
-}
-
-model Almacen {
-  id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  nombre    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  movimientos MovimientoInventario[]
-}
-
-// ─────────────────────────────────────────────
-//  PRODUCTOS / INSUMOS
-// ─────────────────────────────────────────────
-
-model Producto {
-  id           String    @id @default(uuid())
-  empresaId    String
-  empresa      Empresa   @relation(fields: [empresaId], references: [id])
-  nombre       String
-  sku          String
-  categoriaId  String
-  categoria    Categoria @relation(fields: [categoriaId], references: [id])
-  unidad       String    @default("pza")
-  precioCompra Decimal   @default(0)
-  moneda       Moneda    @default(MXN)
-  stockActual  Decimal   @default(0)
-  stockMinimo  Int       @default(0)
-  imagen       String?
-  activo       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  detallesCompra DetalleCompra[]
-  detallesSalida DetalleSalida[]
-  movimientos    MovimientoInventario[]
-
-  @@unique([empresaId, sku])
-}
-
-// ─────────────────────────────────────────────
-//  COMPRAS (ENTRADAS)
-// ─────────────────────────────────────────────
-
-model Compra {
-  id          String       @id @default(uuid())
-  empresaId   String
-  empresa     Empresa      @relation(fields: [empresaId], references: [id])
-  proveedorId String
-  proveedor   Proveedor    @relation(fields: [proveedorId], references: [id])
-  referencia  String?
-  fecha       DateTime     @default(now())
-  total       Decimal      @default(0)
-  moneda      Moneda       @default(MXN)
-  tipoCambio  Decimal?
-  status      StatusCompra @default(PENDIENTE)
-  notas       String?
-  // Obra a la que se destinan los insumos (opcional)
-  obraId      String?
-  obra        Obra?        @relation(fields: [obraId], references: [id])
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-
-  detalles    DetalleCompra[]
-  movimientos MovimientoInventario[]
-}
-
-model DetalleCompra {
-  id             String   @id @default(uuid())
-  compraId       String
-  compra         Compra   @relation(fields: [compraId], references: [id])
-  productoId     String
-  producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Decimal
-  precioUnitario Decimal
-  moneda         Moneda   @default(MXN)
-}
-
-// ─────────────────────────────────────────────
-//  SALIDAS / CONSUMOS INTERNOS
-// ─────────────────────────────────────────────
-
-model Salida {
-  id            String     @id @default(uuid())
-  empresaId     String
-  empresa       Empresa    @relation(fields: [empresaId], references: [id])
-  tipo          TipoSalida
-  fecha         DateTime   @default(now())
-  referencia    String?
-  clienteNombre String?
-  notas         String?
-  // Vinculación a obra y equipo
-  obraId        String?
-  obra          Obra?      @relation(fields: [obraId], references: [id])
-  equipoId      String?
-  equipo        Equipo?    @relation(fields: [equipoId], references: [id])
-  usuarioId     String
-  usuario       Usuario    @relation(fields: [usuarioId], references: [id])
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  detalles DetalleSalida[]
-}
-
-model DetalleSalida {
-  id             String   @id @default(uuid())
-  salidaId       String
-  salida         Salida   @relation(fields: [salidaId], references: [id])
-  productoId     String
-  producto       Producto @relation(fields: [productoId], references: [id])
-  cantidad       Decimal
-  precioUnitario Decimal
-  moneda         Moneda   @default(MXN)
-}
-
-// ─────────────────────────────────────────────
-//  MOVIMIENTOS DE INVENTARIO (KARDEX)
-// ─────────────────────────────────────────────
-
-model MovimientoInventario {
-  id             String         @id @default(uuid())
-  empresaId      String
-  empresa        Empresa        @relation(fields: [empresaId], references: [id])
-  productoId     String
-  producto       Producto       @relation(fields: [productoId], references: [id])
-  almacenId      String
-  almacen        Almacen        @relation(fields: [almacenId], references: [id])
-  tipoMovimiento TipoMovimiento
-  cantidad       Decimal
-  costoUnitario  Decimal
-  moneda         Moneda         @default(MXN)
-  tipoCambio     Decimal?
-  precioVenta    Decimal?
-  proveedorId    String?
-  proveedor      Proveedor?     @relation(fields: [proveedorId], references: [id])
-  clienteId      String?
-  cliente        Cliente?       @relation(fields: [clienteId], references: [id])
-  clienteNombre  String?
-  compraId       String?
-  compra         Compra?        @relation(fields: [compraId], references: [id])
-  registroDiarioId String?
-  registroDiario   RegistroDiario? @relation(fields: [registroDiarioId], references: [id])
-  // Trazabilidad por obra
-  obraId         String?
-  obra           Obra?          @relation(fields: [obraId], references: [id])
-  fecha          DateTime       @default(now())
-  referencia     String?
-  notas          String?
-  usuarioId      String
-  usuario        Usuario        @relation(fields: [usuarioId], references: [id])
-  createdAt      DateTime       @default(now())
-
-  @@index([empresaId])
-  @@index([productoId])
-  @@index([almacenId])
-  @@index([clienteId])
-  @@index([compraId])
-  @@index([registroDiarioId])
-  @@index([obraId])
-}
-
-// ─────────────────────────────────────────────
-//  EQUIPOS (MAQUINARIA)
-// ─────────────────────────────────────────────
-
-model Equipo {
-  id               String   @id @default(uuid())
-  empresaId        String
-  empresa          Empresa  @relation(fields: [empresaId], references: [id])
-  nombre           String
-  modelo           String?
-  numeroSerie      String?
-  numeroEconomico  String?
-  hodometroInicial Decimal  @default(0)
-  activo           Boolean  @default(true)
-  notas            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  registrosDiarios RegistroDiario[]
-  resumenesSemana  ResumenSemana[]
-  obraEquipos      ObraEquipo[]
-  salidas          Salida[]
-}
-
-// ─────────────────────────────────────────────
-//  OBRAS / CONTRATOS
-// ─────────────────────────────────────────────
-
-model Obra {
-  id                String     @id @default(uuid())
-  empresaId         String
-  empresa           Empresa    @relation(fields: [empresaId], references: [id])
-
-  // Datos del contrato
-  nombre            String                        // nombre de la obra
-  clienteId         String?
-  cliente           Cliente?   @relation(fields: [clienteId], references: [id])
-  clienteNombre     String?                       // nombre libre si no está en catálogo
-  ubicacion         String?
-
-  // Dimensiones para cálculo de volumen (hoja Plantilla)
-  bordo             Decimal?                      // ancho del bordo (m)
-  espesor           Decimal?                      // espesor de la capa (m)
-  profundidadCollar Decimal?                      // profundidad de collar por defecto (m) — usado en pérdida automática
-
-  // Contrato
-  metrosContratados Decimal?                      // metros lineales totales contratados
-  precioUnitario    Decimal?                      // precio por m³ o mt lineal
-  moneda            Moneda     @default(MXN)
-  tipoCambio        Decimal?
-
-  // Fechas
-  fechaInicio       DateTime?  @db.Date
-  fechaFin          DateTime?  @db.Date           // estimada o real al cerrar
-
-  // Estado
-  status            StatusObra @default(ACTIVA)
-  notas             String?
-
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-
-  // Relaciones
-  obraEquipos           ObraEquipo[]
-  registrosDiarios      RegistroDiario[]
-  cortesFacturacion     CorteFacturacion[]
-  movimientosInventario MovimientoInventario[]
-  salidas               Salida[]
-  compras               Compra[]
-
-  @@index([empresaId])
-  @@index([status])
-}
-
-// ─────────────────────────────────────────────
-//  HISTORIAL EQUIPO ↔ OBRA
-// ─────────────────────────────────────────────
-
-model ObraEquipo {
-  id          String    @id @default(uuid())
-  obraId      String
-  obra        Obra      @relation(fields: [obraId], references: [id])
-  equipoId    String
-  equipo      Equipo    @relation(fields: [equipoId], references: [id])
-  fechaInicio DateTime  @db.Date
-  fechaFin    DateTime? @db.Date                  // null = sigue activo en esta obra
-  notas       String?
-  createdAt   DateTime  @default(now())
-
-  @@index([obraId])
-  @@index([equipoId])
-}
-
-// ─────────────────────────────────────────────
-//  CORTES DE FACTURACIÓN (hoja Plantilla)
-// ─────────────────────────────────────────────
-
-model CorteFacturacion {
-  id          String      @id @default(uuid())
-  obraId      String
-  obra        Obra        @relation(fields: [obraId], references: [id])
-
-  numero      Int                                 // corte 1, 2, 3...
-  fechaInicio DateTime    @db.Date
-  fechaFin    DateTime    @db.Date
-
-  // Producción del período
-  barrenos       Int      @default(0)
-  metrosLineales Decimal  @default(0)
-
-  // Cálculo de volumen (replica hoja Plantilla)
-  bordo             Decimal?                      // puede diferir del de la obra si cambia
-  espesor           Decimal?
-  profundidadCollar Decimal?                      // override por corte; si null usa el de la obra
-  volumenBruto      Decimal?                      // bordo × espesor × metrosLineales
-  // perdidaM3 = barrenos × profundidadCollar × bordo × espesor (si profundidadCollar presente)
-  // o ingresada manualmente si profundidadCollar es null
-  perdidaM3         Decimal?  @default(0)         // pérdida absoluta en m³ (campo "% Perd." del Excel)
-  porcentajePerdida Decimal?  @default(0)            // calculado: perdidaM3 / volumenBruto × 100
-  volumenNeto    Decimal?                         // volumenBruto − perdidaM3
-
-  // Facturación
-  precioUnitario Decimal?
-  moneda         Moneda   @default(MXN)
-  tipoCambio     Decimal?
-  montoFacturado Decimal?                         // volumenNeto × precioUnitario
-
-  status         StatusCorte @default(BORRADOR)
-  notas          String?
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // Registros diarios vinculados a este corte
-  corteRegistros CorteRegistro[]
-
-  @@unique([obraId, numero])
-  @@index([obraId])
-}
-
-// ─────────────────────────────────────────────
-//  VÍNCULO CORTE ↔ REGISTRO DIARIO
-// ─────────────────────────────────────────────
-
-model CorteRegistro {
-  id         String           @id @default(uuid())
-  corteId    String
-  corte      CorteFacturacion @relation(fields: [corteId], references: [id], onDelete: Cascade)
-  registroId String           @unique                // un registro → un solo corte
-  registro   RegistroDiario   @relation(fields: [registroId], references: [id], onDelete: Cascade)
-  createdAt  DateTime         @default(now())
-
-  @@index([corteId])
-  @@index([registroId])
-}
-
-// ─────────────────────────────────────────────
-//  REGISTRO DIARIO DE OPERACIÓN (hoja Rpte)
-// ─────────────────────────────────────────────
-
-model RegistroDiario {
-  id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  equipoId  String
-  equipo    Equipo   @relation(fields: [equipoId], references: [id])
-  fecha     DateTime @db.Date
-
-  // Obra a la que pertenece este día de operación
-  obraId    String?
-  obra      Obra?    @relation(fields: [obraId], references: [id])
-
-  // Horómetro
-  horometroInicio    Decimal
-  horometroFin       Decimal
-  horasTrabajadas    Decimal
-
-  // Producción
-  barrenos           Int     @default(0)
-  metrosLineales     Decimal @default(0)
-
-  // Diésel
-  litrosDiesel       Decimal @default(0)
-  precioDiesel       Decimal @default(0)
-
-  // Nivel de tanque interno
-  tanqueInicio       Decimal?
-  litrosTanqueInicio Decimal?
-  tanqueFin          Decimal?
-  litrosTanqueFin    Decimal?
-
-  // Personal
-  operadores         Int     @default(1)
-  peones             Int     @default(0)
-
-  // Cliente / obra (texto libre — se mantiene por compatibilidad)
-  clienteId          String?
-  cliente            Cliente? @relation(fields: [clienteId], references: [id])
-  obraNombre         String?
-
-  // Agrupación semanal
-  semanaNum          Int?
-  anoNum             Int?
-
-  notas              String?
-  usuarioId          String
-  usuario            Usuario  @relation(fields: [usuarioId], references: [id])
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  movimientosInventario MovimientoInventario[]
-  // Vínculo al corte de facturación (null = pendiente de facturar)
-  corteRegistro         CorteRegistro?
-
-  @@unique([equipoId, fecha])
-  @@index([empresaId])
-  @@index([equipoId])
-  @@index([fecha])
-  @@index([obraId])
-}
-
-// ─────────────────────────────────────────────
-//  RESUMEN SEMANAL (hoja Semana)
-// ─────────────────────────────────────────────
-
-model ResumenSemana {
-  id        String   @id @default(uuid())
-  empresaId String
-  empresa   Empresa  @relation(fields: [empresaId], references: [id])
-  equipoId  String
-  equipo    Equipo   @relation(fields: [equipoId], references: [id])
-
-  semanaNum        Int
-  anoNum           Int
-  fechaInicio      DateTime @db.Date
-  fechaFin         DateTime @db.Date
-
-  // Producción acumulada
-  horasTotales     Decimal  @default(0)
-  barrenos         Int      @default(0)
-  metrosLineales   Decimal  @default(0)
-
-  // KPIs
-  litrosPorHora    Decimal?
-  litrosPorMetro   Decimal?
-  metrosPorHora    Decimal?
-  metrosPorDia     Decimal?
-
-  // Costos (MXN)
-  costoDiesel      Decimal  @default(0)
-  costoOperadores  Decimal  @default(0)
-  costoPeones      Decimal  @default(0)
-  costoGastos      Decimal  @default(0)
-  rentaEquipo      Decimal  @default(0)
-  costoTotal       Decimal  @default(0)
-
-  tipoCambio       Decimal?
-  notas            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  @@unique([equipoId, semanaNum, anoNum])
-  @@index([empresaId])
-  @@index([equipoId])
+enum CategoriaGasto {
+  LUBRICANTE
+  FILTRO
+  HERRAMIENTA
+  COMBUSTIBLE
+  PERSONAL
+  VEHICULO
+  OTRO
 }
