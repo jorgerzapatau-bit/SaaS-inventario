@@ -257,7 +257,10 @@ function NuevoRegistroModal({
 
 function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => void }) {
     const [expanded, setExpanded] = useState(false);
-    const fecha = new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-MX', {
+    // Parsear fecha segura sin problemas de zona horaria
+    const [yr, mo, dy] = r.fecha.slice(0, 10).split('-').map(Number);
+    const fechaObj = new Date(yr, mo - 1, dy);
+    const fecha = fechaObj.toLocaleDateString('es-MX', {
         weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
     });
     const nombreObra = r.obra?.nombre || r.obraNombre || r.cliente?.nombre || '—';
