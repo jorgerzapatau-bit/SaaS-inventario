@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
     ClipboardList, Plus, Trash2, Gauge,
     Droplets, ChevronDown, ChevronUp,
@@ -33,227 +33,8 @@ type Registro = {
     corte: { id: string; numero: number; status: string } | null;
 };
 
-type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodometroInicial?: number };
+type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
 type ObraSimple = { id: string; nombre: string };
-
-function NuevoRegistroModal({
-    equipoIdInicial, obraIdInicial, equipos, obras, almacenId, onClose, onSaved,
-}: {
-    equipoIdInicial?: string;
-    obraIdInicial?: string;
-    equipos: Equipo[];
-    obras: ObraSimple[];
-    almacenId: string;
-    onClose: () => void;
-    onSaved: () => void;
-}) {
-    const hoy = new Date().toISOString().slice(0, 10);
-    const [form, setForm] = useState({
-        equipoId:            equipoIdInicial ?? (equipos[0]?.id ?? ''),
-        obraId:              obraIdInicial   ?? '',
-        fecha:               hoy,
-        horometroInicio:     '',
-        horometroFin:        '',
-        barrenos:            '',
-        metrosLineales:      '',
-        litrosDiesel:        '',
-        precioDiesel:        '21.95',
-        tanqueInicio:        '',
-        litrosTanqueInicio:  '',
-        tanqueFin:           '',
-        litrosTanqueFin:     '',
-        operadores:          '1',
-        peones:              '0',
-        obraNombre:          '',
-        notas:               '',
-        registrarDieselEnKardex: true,
-    });
-    const [saving, setSaving] = useState(false);
-    const [error,  setError]  = useState('');
-
-    // Pre-llenar horómetro del equipo seleccionado
-    useEffect(() => {
-        const eq = equipos.find(e => e.id === form.equipoId);
-        if (eq?.hodometroInicial) {
-            setForm(f => ({ ...f, horometroInicio: String(eq.hodometroInicial) }));
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [form.equipoId]);
-
-    const horas = form.horometroFin && form.horometroInicio
-        ? Math.max(0, Number(form.horometroFin) - Number(form.horometroInicio))
-        : null;
-
-    const handleSave = async () => {
-        if (!form.equipoId)        { setError('Selecciona un equipo'); return; }
-        if (!form.horometroInicio) { setError('Horómetro inicial requerido'); return; }
-        if (!form.horometroFin)    { setError('Horómetro final requerido'); return; }
-        if (Number(form.horometroFin) < Number(form.horometroInicio)) {
-            setError('El horómetro final no puede ser menor al inicial'); return;
-        }
-        setSaving(true); setError('');
-        try {
-            await fetchApi('/registros-diarios', {
-                method: 'POST',
-                body: JSON.stringify({
-                    ...form,
-                    obraId:             form.obraId || null,
-                    horometroInicio:    Number(form.horometroInicio),
-                    horometroFin:       Number(form.horometroFin),
-                    barrenos:           Number(form.barrenos    || 0),
-                    metrosLineales:     Number(form.metrosLineales || 0),
-                    litrosDiesel:       Number(form.litrosDiesel  || 0),
-                    precioDiesel:       Number(form.precioDiesel  || 0),
-                    tanqueInicio:       form.tanqueInicio       ? Number(form.tanqueInicio)       : null,
-                    litrosTanqueInicio: form.litrosTanqueInicio ? Number(form.litrosTanqueInicio) : null,
-                    tanqueFin:          form.tanqueFin          ? Number(form.tanqueFin)          : null,
-                    litrosTanqueFin:    form.litrosTanqueFin    ? Number(form.litrosTanqueFin)    : null,
-                    operadores:         Number(form.operadores),
-                    peones:             Number(form.peones),
-                    almacenId,
-                }),
-            });
-            onSaved();
-        } catch (e: any) {
-            setError(e.message || 'Error al guardar');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const inp = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
-        <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-            <input type={type} value={String(form[key])}
-                onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                placeholder={placeholder}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"/>
-        </div>
-    );
-
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl">
-                    <h2 className="text-lg font-bold text-gray-800">Nuevo Registro Diario</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Equivalente a una fila de la hoja Rpte del Excel</p>
-                </div>
-
-                <div className="px-6 py-5 space-y-5">
-                    {/* Equipo y fecha */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Equipo *</label>
-                            <select value={form.equipoId}
-                                onChange={e => setForm(f => ({ ...f, equipoId: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                {equipos.map(eq => (
-                                    <option key={eq.id} value={eq.id}>
-                                        {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        {inp('Fecha *', 'fecha', 'date')}
-                    </div>
-
-                    {/* Obra — destacada */}
-                    <div className="bg-blue-50 rounded-xl p-4 space-y-3 border border-blue-100">
-                        <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider">Obra</p>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Obra del catálogo</label>
-                            <select value={form.obraId}
-                                onChange={e => setForm(f => ({ ...f, obraId: e.target.value }))}
-                                className="w-full px-3 py-2 border border-blue-200 bg-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="">— Sin vincular a obra —</option>
-                                {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                            </select>
-                        </div>
-                        {inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro - Frente 3')}
-                    </div>
-
-                    {/* Horómetro */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Horómetro</p>
-                        <div className="grid grid-cols-3 gap-3">
-                            {inp('H. Inicial (h i)', 'horometroInicio', 'number', '7662')}
-                            {inp('H. Final (h f)',   'horometroFin',    'number', '7675')}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Horas trabajadas</label>
-                                <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm font-bold text-blue-700">
-                                    {horas !== null ? `${horas} hrs` : '—'}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Producción */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Producción</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Barrenos (BARRNS)', 'barrenos',      'number', '13')}
-                            {inp('Metros lineales (MTS)', 'metrosLineales', 'number', '134.7')}
-                        </div>
-                    </div>
-
-                    {/* Diésel */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Diésel</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Litros cargados', 'litrosDiesel', 'number', '235')}
-                            {inp('Precio unitario ($/lt)', 'precioDiesel', 'number', '21.95')}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                            <input type="checkbox" id="kardexDiesel"
-                                checked={form.registrarDieselEnKardex}
-                                onChange={e => setForm(f => ({ ...f, registrarDieselEnKardex: e.target.checked }))}
-                                className="w-4 h-4 accent-blue-600 cursor-pointer"/>
-                            <label htmlFor="kardexDiesel" className="text-xs text-gray-600 cursor-pointer">
-                                Descontar litros del inventario de Diésel automáticamente
-                            </label>
-                        </div>
-                    </div>
-
-                    {/* Tanque */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                            Tanque interno <span className="text-gray-300 font-normal">(opcional)</span>
-                        </p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('CM inicio (CM i)', 'tanqueInicio',       'number')}
-                            {inp('Litros inicio',    'litrosTanqueInicio', 'number')}
-                            {inp('CM fin (CM f)',     'tanqueFin',          'number')}
-                            {inp('Litros fin',        'litrosTanqueFin',    'number')}
-                        </div>
-                    </div>
-
-                    {/* Personal */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Personal (Op / Pn)</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Operadores', 'operadores', 'number')}
-                            {inp('Peones',     'peones',     'number')}
-                        </div>
-                    </div>
-
-                    {inp('Notas', 'notas')}
-                </div>
-
-                {error && <p className="text-xs text-red-500 px-6 pb-2">{error}</p>}
-
-                <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSave} disabled={saving}
-                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {saving ? 'Guardando...' : 'Guardar registro'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => void }) {
     const [expanded, setExpanded] = useState(false);
@@ -345,16 +126,15 @@ function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => v
 
 function RegistrosDiariosInner() {
     const searchParams  = useSearchParams();
+    const router        = useRouter();
     const equipoIdParam = searchParams.get('equipoId') || undefined;
     const obraIdParam   = searchParams.get('obraId')   || undefined;
 
     const [registros,  setRegistros]  = useState<Registro[]>([]);
     const [equipos,    setEquipos]    = useState<Equipo[]>([]);
     const [obras,      setObras]      = useState<ObraSimple[]>([]);
-    const [almacenId,  setAlmacenId]  = useState('');
     const [loading,    setLoading]    = useState(true);
     const [error,      setError]      = useState('');
-    const [showModal,  setShowModal]  = useState(false);
 
     // Filtros
     const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam ?? 'todos');
@@ -367,16 +147,14 @@ function RegistrosDiariosInner() {
     const load = async () => {
         setLoading(true);
         try {
-            const [regs, eqs, alms, obs] = await Promise.all([
+            const [regs, eqs, obs] = await Promise.all([
                 fetchApi('/registros-diarios'),
                 fetchApi('/equipos'),
-                fetchApi('/warehouse'),
                 fetchApi('/obras'),
             ]);
             setRegistros(regs);
             setEquipos(eqs);
             setObras(obs);
-            if (alms?.length > 0) setAlmacenId(alms[0].id);
         } catch (e: any) {
             setError(e.message || 'Error al cargar');
         } finally {
@@ -444,7 +222,14 @@ function RegistrosDiariosInner() {
                     <h1 className="text-3xl font-bold text-gray-900">Registro Diario</h1>
                     <p className="text-sm text-gray-500 mt-1">Control diario de operación — equivalente a la hoja Rpte del Excel.</p>
                 </div>
-                <button onClick={() => setShowModal(true)}
+                <button
+                    onClick={() => {
+                        const params = new URLSearchParams();
+                        if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
+                        if (filtroObra   !== 'todas') params.set('obraId',   filtroObra);
+                        const qs = params.toString();
+                        router.push(`/dashboard/registros-diarios/new${qs ? `?${qs}` : ''}`);
+                    }}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
                     <Plus size={16}/> Nuevo Registro
                 </button>
@@ -582,17 +367,6 @@ function RegistrosDiariosInner() {
                 )}
             </Card>
 
-            {showModal && (
-                <NuevoRegistroModal
-                    equipoIdInicial={filtroEquipo !== 'todos' ? filtroEquipo : undefined}
-                    obraIdInicial={filtroObra !== 'todas' ? filtroObra : undefined}
-                    equipos={equipos}
-                    obras={obras}
-                    almacenId={almacenId}
-                    onClose={() => setShowModal(false)}
-                    onSaved={() => { setShowModal(false); load(); }}
-                />
-            )}
         </div>
     );
 }

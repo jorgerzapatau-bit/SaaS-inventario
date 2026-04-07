@@ -201,7 +201,8 @@ function NuevoRegistroDiarioInner() {
                             ))}
                         </select>
                     </div>
-                    {inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro — Frente 3')}
+                    {/* Nombre libre solo si NO hay obra del catálogo seleccionada */}
+                    {!form.obraId && inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro — Frente 3')}
                     {inp('Notas', 'notas')}
                 </div>
             </Card>
@@ -211,8 +212,35 @@ function NuevoRegistroDiarioInner() {
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Horómetro</p>
                     <div className="grid grid-cols-3 gap-4">
-                        {inp('H. Inicial (h i) *', 'horometroInicio', 'number')}
-                        {inp('H. Final (h f) *',   'horometroFin',    'number')}
+                        {/* H. Inicial: automático (solo lectura) */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">H. Inicial (h i) *</label>
+                            <input
+                                type="number"
+                                value={form.horometroInicio}
+                                readOnly
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                            />
+                            <p className="text-xs text-gray-400 mt-1">Automático — horómetro actual del equipo</p>
+                        </div>
+                        {/* H. Final: validación visual */}
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">H. Final (h f) *</label>
+                            <input
+                                type="number"
+                                value={form.horometroFin}
+                                onChange={e => set('horometroFin', e.target.value)}
+                                min={form.horometroInicio || 0}
+                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
+                                    form.horometroFin && Number(form.horometroFin) < Number(form.horometroInicio)
+                                        ? 'border-red-400 bg-red-50 focus:ring-red-500/20 text-red-700'
+                                        : 'border-gray-200 focus:ring-blue-500/20'
+                                }`}
+                            />
+                            {form.horometroFin && Number(form.horometroFin) < Number(form.horometroInicio) && (
+                                <p className="text-xs text-red-600 mt-1">No puede ser menor al inicial ({form.horometroInicio})</p>
+                            )}
+                        </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Horas trabajadas</label>
                             <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm font-bold text-blue-700">
