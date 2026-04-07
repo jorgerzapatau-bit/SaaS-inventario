@@ -121,7 +121,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const {
-            nombre, clienteId, clienteNombre, ubicacion,
+            nombre, clienteId, ubicacion,
             bordo, espesor, metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
@@ -134,7 +134,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
             data: {
                 ...(nombre            !== undefined && { nombre }),
                 ...(clienteId         !== undefined && { clienteId:         clienteId || null }),
-                ...(clienteNombre     !== undefined && { clienteNombre:     clienteNombre || null }),
                 ...(ubicacion         !== undefined && { ubicacion:         ubicacion || null }),
                 ...(bordo             !== undefined && { bordo:             bordo != null ? Number(bordo) : null }),
                 ...(espesor           !== undefined && { espesor:           espesor != null ? Number(espesor) : null }),

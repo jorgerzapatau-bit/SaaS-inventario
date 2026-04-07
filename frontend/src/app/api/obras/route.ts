@@ -87,16 +87,18 @@ export async function POST(req: NextRequest) {
     if (!user) return unauthorized();
     try {
         const {
-            nombre, clienteId, clienteNombre, ubicacion,
+            nombre, clienteId, ubicacion,
             bordo, espesor, metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
-            // Equipo inicial opcional
-            equipoId, equipoFechaInicio,
+            // Lista de equipos: [{ equipoId, fechaInicio? }]
+            equipos,
         } = await req.json();
 
         if (!nombre?.trim())
             return Response.json({ error: 'El nombre de la obra es requerido' }, { status: 400 });
+        if (!clienteId)
+            return Response.json({ error: 'El cliente es requerido' }, { status: 400 });
 
         const monedaVal = moneda === 'USD' ? 'USD' : 'MXN';
 
@@ -106,7 +108,6 @@ export async function POST(req: NextRequest) {
                     empresaId:         user.empresaId,
                     nombre:            nombre.trim(),
                     clienteId:         clienteId         || null,
-                    clienteNombre:     clienteNombre     || null,
                     ubicacion:         ubicacion         || null,
                     bordo:             bordo             != null ? Number(bordo)             : null,
                     espesor:           espesor           != null ? Number(espesor)           : null,
@@ -121,17 +122,22 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // Si se especificó equipo inicial, crear el registro ObraEquipo
-            if (equipoId) {
-                await tx.obraEquipo.create({
-                    data: {
-                        obraId:     nueva.id,
-                        equipoId,
-                        fechaInicio: equipoFechaInicio
-                            ? new Date(equipoFechaInicio)
-                            : (fechaInicio ? new Date(fechaInicio) : new Date()),
-                    },
-                });
+            // Crear registros ObraEquipo para cada equipo enviado
+            if (Array.isArray(equipos) && equipos.length > 0) {
+                for (const eq of equipos) {
+                    if (!eq.equipoId) continue;
+                    // Cerrar asignaciones abiertas del mismo equipo en otras obras
+                    const fechaInicioDate = eq.fechaInicio
+                        ? new Date(eq.fechaInicio)
+                        : (fechaInicio ? new Date(fechaInicio) : new Date());
+                    await tx.obraEquipo.updateMany({
+                        where: { equipoId: eq.equipoId, fechaFin: null, obraId: { not: nueva.id } },
+                        data:  { fechaFin: fechaInicioDate },
+                    });
+                    await tx.obraEquipo.create({
+                        data: { obraId: nueva.id, equipoId: eq.equipoId, fechaInicio: fechaInicioDate },
+                    });
+                }
             }
 
             return nueva;
