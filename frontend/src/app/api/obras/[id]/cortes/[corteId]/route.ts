@@ -1,3 +1,4 @@
+// src/app/api/obras/[id]/cortes/[corteId]/route.ts
 import { NextRequest } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { getAuthUser, unauthorized } from '../../../../lib/auth';
@@ -27,10 +28,18 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 // ─── PUT /api/obras/[id]/cortes/[corteId] ─────────────────────────────────────
-// Actualiza el corte. Recibe perdidaM3 (m³ absolutos, igual que el Excel).
-// Recalcula: volumenNeto = volumenBruto − perdidaM3
-//            porcentajePerdida = (perdidaM3 / volumenBruto) × 100  (solo referencia)
-//            montoFacturado = volumenNeto × precioUnitario
+// Actualiza el corte.
+//
+// Lógica de perdidaM3:
+//   Si profundidadCollar tiene valor (del body, del corte existente o de la obra):
+//     perdidaM3 = barrenos × profundidadCollar × bordo × espesor  (recalculado)
+//   Si no hay profundidadCollar → usa el perdidaM3 enviado en el body (manual).
+//
+// Recalcula:
+//   volumenBruto      = bordo × espesor × metrosLineales
+//   volumenNeto       = volumenBruto − perdidaM3
+//   porcentajePerdida = (perdidaM3 / volumenBruto) × 100  (solo referencia)
+//   montoFacturado    = volumenNeto × precioUnitario
 export async function PUT(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -42,10 +51,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
             include: {
                 obra: {
                     select: {
-                        empresaId: true,
-                        bordo: true,
-                        espesor: true,
-                        precioUnitario: true,
+                        empresaId:         true,
+                        bordo:             true,
+                        espesor:           true,
+                        profundidadCollar: true,
+                        precioUnitario:    true,
                     },
                 },
             },
@@ -55,24 +65,46 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
         const {
             fechaInicio, fechaFin, barrenos, metrosLineales,
-            bordo, espesor, perdidaM3,
+            bordo, espesor, profundidadCollar,
+            perdidaM3,
             precioUnitario, moneda, tipoCambio,
             status, notas,
         } = await req.json();
 
-        // Valores finales — usa los nuevos si se enviaron, o los existentes
+        // ── Resolver valores ─────────────────────────────────────────────────
+        // Prioridad: body → corte existente → obra
         const bordoNum   = bordo   != null ? Number(bordo)
-                         : (corteExistente.bordo   ? Number(corteExistente.bordo)   : null);
+                         : (corteExistente.bordo    ? Number(corteExistente.bordo)
+                         : (corteExistente.obra.bordo ? Number(corteExistente.obra.bordo) : null));
+
         const espesorNum = espesor != null ? Number(espesor)
-                         : (corteExistente.espesor ? Number(corteExistente.espesor) : null);
+                         : (corteExistente.espesor  ? Number(corteExistente.espesor)
+                         : (corteExistente.obra.espesor ? Number(corteExistente.obra.espesor) : null));
+
+        // profundidadCollar: si el body lo envía como null explícito, se borra (modo manual)
+        const collarNum  = profundidadCollar !== undefined
+            ? (profundidadCollar != null ? Number(profundidadCollar) : null)
+            : (corteExistente.profundidadCollar
+                ? Number(corteExistente.profundidadCollar)
+                : (corteExistente.obra.profundidadCollar
+                    ? Number(corteExistente.obra.profundidadCollar) : null));
+
         const metrosNum  = metrosLineales != null ? Number(metrosLineales)
                          : Number(corteExistente.metrosLineales);
-        const perdidaNum = perdidaM3 != null ? Number(perdidaM3)
-                         : Number(corteExistente.perdidaM3 ?? 0);
+
+        const barrenosNum = barrenos != null ? Number(barrenos)
+                          : Number(corteExistente.barrenos);
+
         const puNum      = precioUnitario != null ? Number(precioUnitario)
                          : (corteExistente.precioUnitario ? Number(corteExistente.precioUnitario) : null);
 
-        // Recalcular volúmenes
+        // ── Pérdida ──────────────────────────────────────────────────────────
+        const perdidaNum = (collarNum && bordoNum && espesorNum)
+            ? +(barrenosNum * collarNum * bordoNum * espesorNum).toFixed(4)
+            : (perdidaM3 != null ? Number(perdidaM3)
+                : Number(corteExistente.perdidaM3 ?? 0));
+
+        // ── Volúmenes ────────────────────────────────────────────────────────
         const volumenBruto = bordoNum && espesorNum
             ? +(bordoNum * espesorNum * metrosNum).toFixed(4)
             : null;
@@ -94,14 +126,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
             data: {
                 ...(fechaInicio !== undefined && { fechaInicio: new Date(fechaInicio) }),
                 ...(fechaFin    !== undefined && { fechaFin:    new Date(fechaFin) }),
-                ...(barrenos    !== undefined && { barrenos:    Number(barrenos) }),
                 ...(status      !== undefined && { status }),
                 ...(notas       !== undefined && { notas: notas || null }),
                 ...(moneda      !== undefined && { moneda: moneda === 'USD' ? 'USD' : 'MXN' }),
                 ...(tipoCambio  !== undefined && { tipoCambio: tipoCambio != null ? Number(tipoCambio) : null }),
+                barrenos:          barrenosNum,
                 metrosLineales:    metrosNum,
                 bordo:             bordoNum,
                 espesor:           espesorNum,
+                profundidadCollar: collarNum,
                 perdidaM3:         perdidaNum,
                 porcentajePerdida,
                 volumenBruto,
@@ -176,14 +209,15 @@ function serializeCorte(c: any) {
     return {
         ...c,
         metrosLineales:    Number(c.metrosLineales),
-        bordo:             c.bordo             != null ? Number(c.bordo)             : null,
-        espesor:           c.espesor           != null ? Number(c.espesor)           : null,
-        volumenBruto:      c.volumenBruto      != null ? Number(c.volumenBruto)      : null,
-        perdidaM3:         c.perdidaM3         != null ? Number(c.perdidaM3)         : null,
-        porcentajePerdida: c.porcentajePerdida != null ? Number(c.porcentajePerdida) : null,
-        volumenNeto:       c.volumenNeto       != null ? Number(c.volumenNeto)       : null,
-        precioUnitario:    c.precioUnitario    != null ? Number(c.precioUnitario)    : null,
-        tipoCambio:        c.tipoCambio        != null ? Number(c.tipoCambio)        : null,
-        montoFacturado:    c.montoFacturado    != null ? Number(c.montoFacturado)    : null,
+        bordo:             c.bordo              != null ? Number(c.bordo)              : null,
+        espesor:           c.espesor            != null ? Number(c.espesor)            : null,
+        profundidadCollar: c.profundidadCollar  != null ? Number(c.profundidadCollar)  : null,
+        volumenBruto:      c.volumenBruto       != null ? Number(c.volumenBruto)       : null,
+        perdidaM3:         c.perdidaM3          != null ? Number(c.perdidaM3)          : null,
+        porcentajePerdida: c.porcentajePerdida  != null ? Number(c.porcentajePerdida)  : null,
+        volumenNeto:       c.volumenNeto        != null ? Number(c.volumenNeto)        : null,
+        precioUnitario:    c.precioUnitario     != null ? Number(c.precioUnitario)     : null,
+        tipoCambio:        c.tipoCambio         != null ? Number(c.tipoCambio)         : null,
+        montoFacturado:    c.montoFacturado     != null ? Number(c.montoFacturado)     : null,
     };
 }

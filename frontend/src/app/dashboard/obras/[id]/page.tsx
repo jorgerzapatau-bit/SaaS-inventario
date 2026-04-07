@@ -21,6 +21,7 @@ type Corte = {
     metrosLineales: number;
     bordo: number | null;
     espesor: number | null;
+    profundidadCollar: number | null;   // ← NUEVO
     volumenBruto: number | null;
     perdidaM3: number | null;
     porcentajePerdida: number | null;
@@ -71,6 +72,7 @@ type ObraDetalle = {
     precioUnitario: number | null;
     bordo: number | null;
     espesor: number | null;
+    profundidadCollar: number | null; 
     moneda: string;
     fechaInicio: string | null;
     fechaFin: string | null;
@@ -116,18 +118,23 @@ function CorteModal({
     onSaved: () => void;
 }) {
     const isEdit = !!corte;
+
     const [form, setForm] = useState({
-        fechaInicio:       corte?.fechaInicio?.slice(0, 10) ?? '',
-        fechaFin:          corte?.fechaFin?.slice(0, 10)    ?? '',
-        barrenos:          corte?.barrenos?.toString()       ?? '0',
-        metrosLineales:    corte?.metrosLineales?.toString() ?? '',
-        bordo:             corte?.bordo?.toString()          ?? (obra.bordo?.toString() ?? ''),
-        espesor:           corte?.espesor?.toString()        ?? (obra.espesor?.toString() ?? ''),
-        perdidaM3: corte?.perdidaM3?.toString() ?? '0',
-        precioUnitario:    corte?.precioUnitario?.toString() ?? (obra.precioUnitario?.toString() ?? ''),
-        moneda:            corte?.moneda                     ?? obra.moneda ?? 'MXN',
-        status:            corte?.status                     ?? 'BORRADOR',
-        notas:             corte?.notas                      ?? '',
+        fechaInicio:       corte?.fechaInicio?.slice(0, 10)     ?? '',
+        fechaFin:          corte?.fechaFin?.slice(0, 10)        ?? '',
+        barrenos:          corte?.barrenos?.toString()          ?? '0',
+        metrosLineales:    corte?.metrosLineales?.toString()    ?? '',
+        bordo:             corte?.bordo?.toString()             ?? (obra.bordo?.toString()              ?? ''),
+        espesor:           corte?.espesor?.toString()           ?? (obra.espesor?.toString()            ?? ''),
+        // Profundidad de collar: prioridad corte → obra → vacío
+        profundidadCollar: corte?.profundidadCollar?.toString()
+                           ?? (obra.profundidadCollar?.toString() ?? ''),
+        // perdidaM3 solo se usa si profundidadCollar está vacío (modo manual)
+        perdidaM3:         corte?.perdidaM3?.toString()         ?? '0',
+        precioUnitario:    corte?.precioUnitario?.toString()    ?? (obra.precioUnitario?.toString() ?? ''),
+        moneda:            corte?.moneda                        ?? obra.moneda ?? 'MXN',
+        status:            corte?.status                        ?? 'BORRADOR',
+        notas:             corte?.notas                         ?? '',
     });
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
@@ -136,15 +143,28 @@ function CorteModal({
         (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
             setForm(f => ({ ...f, [key]: e.target.value }));
 
-    // Cálculos en tiempo real (replica hoja Plantilla)
-    const bordoN   = Number(form.bordo)            || 0;
-    const espesorN = Number(form.espesor)          || 0;
-    const metrosN  = Number(form.metrosLineales)   || 0;
-    const perdidaNum = Number(form.perdidaM3) || 0;
-    const puN      = Number(form.precioUnitario)   || 0;
+    // ── Cálculos en tiempo real ──────────────────────────────────────────────
+    const bordoN    = Number(form.bordo)              || 0;
+    const espesorN  = Number(form.espesor)            || 0;
+    const metrosN   = Number(form.metrosLineales)     || 0;
+    const barrenosN = Number(form.barrenos)           || 0;
+    const collarN   = Number(form.profundidadCollar)  || 0;
+    const puN       = Number(form.precioUnitario)     || 0;
+
+    // Si hay profundidadCollar, la pérdida se calcula automáticamente
+    const modoAutomatico = collarN > 0 && bordoN > 0 && espesorN > 0;
+    const perdidaAuto    = modoAutomatico
+        ? +(barrenosN * collarN * bordoN * espesorN).toFixed(4)
+        : null;
+    const perdidaNum     = modoAutomatico
+        ? perdidaAuto!
+        : (Number(form.perdidaM3) || 0);
+
     const volBruto = bordoN && espesorN ? +(bordoN * espesorN * metrosN).toFixed(4) : null;
-    const volNeto  = volBruto != null   ? +(volBruto - perdidaNum).toFixed(4)         : null;
-    const monto    = volNeto  != null && puN ? +(volNeto * puN).toFixed(2) : null;
+    const volNeto  = volBruto != null   ? +(volBruto - perdidaNum).toFixed(4)        : null;
+    const monto    = volNeto  != null && puN ? +(volNeto * puN).toFixed(2)           : null;
+
+    const fmt2 = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
     const handleSave = async () => {
         if (!form.fechaInicio || !form.fechaFin) { setError('Las fechas son requeridas'); return; }
@@ -156,7 +176,11 @@ function CorteModal({
                 metrosLineales:    Number(form.metrosLineales)     || 0,
                 bordo:             form.bordo      ? Number(form.bordo)      : null,
                 espesor:           form.espesor    ? Number(form.espesor)    : null,
-                perdidaM3: Number(form.perdidaM3) || 0,
+                // Enviar null si vacío → API sabe que la pérdida es manual
+                profundidadCollar: form.profundidadCollar ? Number(form.profundidadCollar) : null,
+                // Si modo automático, no enviamos perdidaM3 (la API la calcula)
+                // Si modo manual, enviamos el valor del campo
+                perdidaM3:         modoAutomatico ? undefined : (Number(form.perdidaM3) || 0),
                 precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
             };
             if (isEdit) {
@@ -203,7 +227,7 @@ function CorteModal({
                     <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Producción del período</p>
                         <div className="grid grid-cols-2 gap-3">
-                            {inp('Barrenos',           'barrenos',       'number', '0')}
+                            {inp('Barrenos',                 'barrenos',       'number', '0')}
                             {inp('Metros lineales (Mt. Ln.)', 'metrosLineales', 'number', '0')}
                         </div>
                     </div>
@@ -214,17 +238,49 @@ function CorteModal({
                         <div className="grid grid-cols-2 gap-3">
                             {inp('Bordo (m)',   'bordo',   'number', '2.7')}
                             {inp('Espesor (m)', 'espesor', 'number', '3.0')}
-                            {inp('Pérdida m³ ("% Perd." del Excel)', 'perdidaM3', 'number', '39.69')}
                         </div>
+
+                        {/* Profundidad de collar */}
+                        <div className="mt-3">
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Profundidad de collar (m)
+                                <span className="ml-1 text-gray-400 font-normal">
+                                    — déjalo vacío para ingresar la pérdida manualmente
+                                </span>
+                            </label>
+                            <input
+                                type="number"
+                                value={form.profundidadCollar}
+                                onChange={set('profundidadCollar')}
+                                placeholder={obra.profundidadCollar ? `${obra.profundidadCollar} (valor de la obra)` : 'ej. 0.30'}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
+                        </div>
+
+                        {/* Campo pérdida manual — solo visible si NO hay profundidadCollar */}
+                        {!modoAutomatico && (
+                            <div className="mt-3">
+                                {inp('Pérdida m³ (ingreso manual — \"% Perd.\" del Excel)', 'perdidaM3', 'number', '39.69')}
+                            </div>
+                        )}
+
                         {/* Vista previa de cálculo */}
                         <div className="mt-3 bg-blue-50 rounded-xl p-4 space-y-1.5 text-xs">
                             <p className="text-gray-500 font-semibold mb-2">Vista previa (replica Plantilla)</p>
+
+                            {modoAutomatico && (
+                                <div className="flex justify-between text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-2">
+                                    <span>Pérdida auto = {barrenosN} bar × {collarN} m × {bordoN} × {espesorN}</span>
+                                    <span className="font-bold">{fmt2(perdidaAuto!)} m³</span>
+                                </div>
+                            )}
+
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Vol. bruto = {bordoN} × {espesorN} × {metrosN} mt ln</span>
                                 <span className="font-bold text-gray-700">{volBruto !== null ? `${fmt2(volBruto)} m³` : '—'}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Vol. neto (−{perdidaNum} m³ pérdida)</span>
+                                <span className="text-gray-500">Vol. neto (−{fmt2(perdidaNum)} m³ pérdida)</span>
                                 <span className="font-bold text-gray-700">{volNeto !== null ? `${fmt2(volNeto)} m³` : '—'}</span>
                             </div>
                             <div className="flex justify-between border-t border-blue-100 pt-1.5">

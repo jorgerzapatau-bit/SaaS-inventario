@@ -378,6 +378,7 @@ model Obra {
   // Dimensiones para cálculo de volumen (hoja Plantilla)
   bordo             Decimal?                      // ancho del bordo (m)
   espesor           Decimal?                      // espesor de la capa (m)
+  profundidadCollar Decimal?                      // profundidad de collar por defecto (m) — usado en pérdida automática
 
   // Contrato
   metrosContratados Decimal?                      // metros lineales totales contratados
@@ -445,10 +446,13 @@ model CorteFacturacion {
   metrosLineales Decimal  @default(0)
 
   // Cálculo de volumen (replica hoja Plantilla)
-  bordo          Decimal?                         // puede diferir del de la obra si cambia
-  espesor        Decimal?
-  volumenBruto   Decimal?                         // bordo × espesor × metrosLineales
-  perdidaM3         Decimal?  @default(0)            // pérdida absoluta en m³ (campo "% Perd." del Excel)
+  bordo             Decimal?                      // puede diferir del de la obra si cambia
+  espesor           Decimal?
+  profundidadCollar Decimal?                      // override por corte; si null usa el de la obra
+  volumenBruto      Decimal?                      // bordo × espesor × metrosLineales
+  // perdidaM3 = barrenos × profundidadCollar × bordo × espesor (si profundidadCollar presente)
+  // o ingresada manualmente si profundidadCollar es null
+  perdidaM3         Decimal?  @default(0)         // pérdida absoluta en m³ (campo "% Perd." del Excel)
   porcentajePerdida Decimal?  @default(0)            // calculado: perdidaM3 / volumenBruto × 100
   volumenNeto    Decimal?                         // volumenBruto − perdidaM3
 
