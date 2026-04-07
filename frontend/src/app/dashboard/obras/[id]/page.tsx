@@ -5,8 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import {
     HardHat, ArrowLeft, Plus, Edit, Trash2,
     CheckCircle, PauseCircle, Clock, Wrench,
-    FileText, Package, TrendingUp, ChevronDown, ChevronUp,
-    Percent,
+    FileText, Package, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -23,6 +22,7 @@ type Corte = {
     bordo: number | null;
     espesor: number | null;
     volumenBruto: number | null;
+    perdidaM3: number | null;
     porcentajePerdida: number | null;
     volumenNeto: number | null;
     precioUnitario: number | null;
@@ -123,7 +123,7 @@ function CorteModal({
         metrosLineales:    corte?.metrosLineales?.toString() ?? '',
         bordo:             corte?.bordo?.toString()          ?? (obra.bordo?.toString() ?? ''),
         espesor:           corte?.espesor?.toString()        ?? (obra.espesor?.toString() ?? ''),
-        porcentajePerdida: corte?.porcentajePerdida?.toString() ?? '0',
+        perdidaM3: corte?.perdidaM3?.toString() ?? '0',
         precioUnitario:    corte?.precioUnitario?.toString() ?? (obra.precioUnitario?.toString() ?? ''),
         moneda:            corte?.moneda                     ?? obra.moneda ?? 'MXN',
         status:            corte?.status                     ?? 'BORRADOR',
@@ -140,10 +140,10 @@ function CorteModal({
     const bordoN   = Number(form.bordo)            || 0;
     const espesorN = Number(form.espesor)          || 0;
     const metrosN  = Number(form.metrosLineales)   || 0;
-    const pctN     = Number(form.porcentajePerdida)|| 0;
+    const perdidaNum = Number(form.perdidaM3) || 0;
     const puN      = Number(form.precioUnitario)   || 0;
     const volBruto = bordoN && espesorN ? +(bordoN * espesorN * metrosN).toFixed(4) : null;
-    const volNeto  = volBruto != null   ? +(volBruto * (1 - pctN / 100)).toFixed(4)  : null;
+    const volNeto  = volBruto != null   ? +(volBruto - perdidaNum).toFixed(4)         : null;
     const monto    = volNeto  != null && puN ? +(volNeto * puN).toFixed(2) : null;
 
     const handleSave = async () => {
@@ -156,7 +156,7 @@ function CorteModal({
                 metrosLineales:    Number(form.metrosLineales)     || 0,
                 bordo:             form.bordo      ? Number(form.bordo)      : null,
                 espesor:           form.espesor    ? Number(form.espesor)    : null,
-                porcentajePerdida: Number(form.porcentajePerdida) || 0,
+                perdidaM3: Number(form.perdidaM3) || 0,
                 precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
             };
             if (isEdit) {
@@ -214,17 +214,17 @@ function CorteModal({
                         <div className="grid grid-cols-2 gap-3">
                             {inp('Bordo (m)',   'bordo',   'number', '2.7')}
                             {inp('Espesor (m)', 'espesor', 'number', '3.0')}
-                            {inp('% Pérdida',   'porcentajePerdida', 'number', '0')}
+                            {inp('Pérdida m³ ("% Perd." del Excel)', 'perdidaM3', 'number', '39.69')}
                         </div>
                         {/* Vista previa de cálculo */}
                         <div className="mt-3 bg-blue-50 rounded-xl p-4 space-y-1.5 text-xs">
                             <p className="text-gray-500 font-semibold mb-2">Vista previa (replica Plantilla)</p>
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Vol. bruto = {bordoN} × {espesorN} × {metrosN} m</span>
+                                <span className="text-gray-500">Vol. bruto = {bordoN} × {espesorN} × {metrosN} mt ln</span>
                                 <span className="font-bold text-gray-700">{volBruto !== null ? `${fmt2(volBruto)} m³` : '—'}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-gray-500">Vol. neto (−{pctN}% pérdida)</span>
+                                <span className="text-gray-500">Vol. neto (−{perdidaNum} m³ pérdida)</span>
                                 <span className="font-bold text-gray-700">{volNeto !== null ? `${fmt2(volNeto)} m³` : '—'}</span>
                             </div>
                             <div className="flex justify-between border-t border-blue-100 pt-1.5">
@@ -467,8 +467,8 @@ function TabCortes({ obraId, obra, cortes, onReload }: {
                                         <p className="text-sm font-semibold text-gray-700">{fmt2(c.volumenBruto!)} m³</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-gray-400">% Pérdida</p>
-                                        <p className="text-sm font-semibold text-gray-700">{c.porcentajePerdida ?? 0}%</p>
+                                        <p className="text-xs text-gray-400">Pérdida</p>
+                                        <p className="text-sm font-semibold text-gray-700">{c.perdidaM3 !== null ? `${fmt2(c.perdidaM3)} m³` : '—'}</p>
                                     </div>
                                     <div>
                                         <p className="text-xs text-gray-400">Vol. neto</p>
