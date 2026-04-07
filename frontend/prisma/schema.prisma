@@ -468,8 +468,27 @@ model CorteFacturacion {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Registros diarios vinculados a este corte
+  corteRegistros CorteRegistro[]
+
   @@unique([obraId, numero])
   @@index([obraId])
+}
+
+// ─────────────────────────────────────────────
+//  VÍNCULO CORTE ↔ REGISTRO DIARIO
+// ─────────────────────────────────────────────
+
+model CorteRegistro {
+  id         String           @id @default(uuid())
+  corteId    String
+  corte      CorteFacturacion @relation(fields: [corteId], references: [id], onDelete: Cascade)
+  registroId String           @unique                // un registro → un solo corte
+  registro   RegistroDiario   @relation(fields: [registroId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+
+  @@index([corteId])
+  @@index([registroId])
 }
 
 // ─────────────────────────────────────────────
@@ -527,6 +546,8 @@ model RegistroDiario {
   updatedAt          DateTime @updatedAt
 
   movimientosInventario MovimientoInventario[]
+  // Vínculo al corte de facturación (null = pendiente de facturar)
+  corteRegistro         CorteRegistro?
 
   @@unique([equipoId, fecha])
   @@index([empresaId])

@@ -11,15 +11,50 @@ export async function GET(req: NextRequest, { params }: Params) {
     if (!user) return unauthorized();
     try {
         const { id: obraId } = await params;
+        const { searchParams } = new URL(req.url);
 
         const obra = await prisma.obra.findFirst({
             where: { id: obraId, empresaId: user.empresaId },
         });
         if (!obra) return Response.json({ error: 'Obra no encontrada' }, { status: 404 });
 
+        // ── Modo: registros disponibles para nuevo corte ──────────────────────
+        if (searchParams.get('disponibles') === 'true') {
+            const registros = await prisma.registroDiario.findMany({
+                where: {
+                    obraId,
+                    corteRegistro: { is: null },
+                },
+                orderBy: { fecha: 'asc' },
+                select: {
+                    id: true,
+                    fecha: true,
+                    barrenos: true,
+                    metrosLineales: true,
+                    equipo: { select: { nombre: true, numeroEconomico: true } },
+                },
+            });
+
+            return Response.json(registros.map(r => ({
+                ...r,
+                metrosLineales: Number(r.metrosLineales),
+                fecha: r.fecha.toISOString().slice(0, 10),
+            })));
+        }
+
+        // ── Modo normal: lista de cortes ──────────────────────────────────────
         const cortes = await prisma.corteFacturacion.findMany({
             where: { obraId },
             orderBy: { numero: 'asc' },
+            include: {
+                corteRegistros: {
+                    include: {
+                        registro: {
+                            select: { id: true, fecha: true, barrenos: true, metrosLineales: true },
+                        },
+                    },
+                },
+            },
         });
 
         return Response.json(cortes.map(serializeCorte));
@@ -30,19 +65,20 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 // ─── POST /api/obras/[id]/cortes ──────────────────────────────────────────────
-// Crea un nuevo corte.
+// Crea un nuevo corte a partir de registros diarios seleccionados.
 //
-// Lógica de perdidaM3:
-//   Si se recibe profundidadCollar (o la obra lo tiene configurado):
-//     perdidaM3 = barrenos × profundidadCollar × bordo × espesor  (automático)
-//   Si no hay profundidadCollar:
-//     perdidaM3 = valor enviado en el body (ingreso manual, igual que antes)
+// Body:
+//   registroIds[]       — IDs de registros diarios (requerido, min 1)
+//   bordo, espesor, profundidadCollar — dimensiones (fallback a obra)
+//   perdidaM3           — solo si profundidadCollar es null (modo manual)
+//   precioUnitario, moneda, tipoCambio, notas, status
 //
-// Fórmulas de volumen (replica hoja Plantilla):
-//   volumenBruto      = bordo × espesor × metrosLineales
-//   volumenNeto       = volumenBruto − perdidaM3
-//   porcentajePerdida = (perdidaM3 / volumenBruto) × 100  ← solo referencia
-//   montoFacturado    = volumenNeto × precioUnitario
+// Calculado automáticamente:
+//   barrenos       = suma de registros
+//   metrosLineales = suma de registros
+//   fechaInicio    = fecha del registro más antiguo
+//   fechaFin       = fecha del registro más reciente
+//   perdidaM3      = barrenos × collar × bordo × espesor (si hay collar)
 export async function POST(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -55,18 +91,45 @@ export async function POST(req: NextRequest, { params }: Params) {
         if (!obra) return Response.json({ error: 'Obra no encontrada' }, { status: 404 });
 
         const {
-            fechaInicio, fechaFin,
-            barrenos, metrosLineales,
+            registroIds,
             bordo, espesor, profundidadCollar,
             perdidaM3,
             precioUnitario, moneda, tipoCambio,
             notas, status,
         } = await req.json();
 
-        if (!fechaInicio || !fechaFin)
-            return Response.json({ error: 'fechaInicio y fechaFin son requeridos' }, { status: 400 });
+        // ── Validar registros ─────────────────────────────────────────────────
+        if (!registroIds || !Array.isArray(registroIds) || registroIds.length === 0)
+            return Response.json(
+                { error: 'Debes seleccionar al menos un registro diario' },
+                { status: 400 }
+            );
 
-        // Número de corte siguiente
+        const registros = await prisma.registroDiario.findMany({
+            where: {
+                id:            { in: registroIds },
+                obraId,
+                corteRegistro: { is: null },
+            },
+            orderBy: { fecha: 'asc' },
+        });
+
+        if (registros.length !== registroIds.length) {
+            const encontrados = registros.map(r => r.id);
+            const invalidos   = registroIds.filter((id: string) => !encontrados.includes(id));
+            return Response.json(
+                { error: `Registros no disponibles o ya facturados: ${invalidos.join(', ')}` },
+                { status: 400 }
+            );
+        }
+
+        // ── Totales de producción ─────────────────────────────────────────────
+        const barrenosTotal = registros.reduce((s, r) => s + Number(r.barrenos), 0);
+        const metrosTotal   = +registros.reduce((s, r) => s + Number(r.metrosLineales), 0).toFixed(4);
+        const fechaInicio   = registros[0].fecha;
+        const fechaFin      = registros[registros.length - 1].fecha;
+
+        // ── Número de corte ───────────────────────────────────────────────────
         const ultimo = await prisma.corteFacturacion.findFirst({
             where: { obraId },
             orderBy: { numero: 'desc' },
@@ -74,27 +137,24 @@ export async function POST(req: NextRequest, { params }: Params) {
         });
         const numero = (ultimo?.numero ?? 0) + 1;
 
-        // Valores numéricos — usa los de la obra como fallback
-        const bordoNum    = bordo              != null ? Number(bordo)
-                          : (obra.bordo        ? Number(obra.bordo)              : null);
-        const espesorNum  = espesor            != null ? Number(espesor)
-                          : (obra.espesor      ? Number(obra.espesor)            : null);
-        const collarNum   = profundidadCollar  != null ? Number(profundidadCollar)
-                          : (obra.profundidadCollar ? Number(obra.profundidadCollar) : null);
-        const metrosNum   = metrosLineales     != null ? Number(metrosLineales)  : 0;
-        const barrenosNum = Number(barrenos    ?? 0);
-        const puNum       = precioUnitario     != null ? Number(precioUnitario)
-                          : (obra.precioUnitario ? Number(obra.precioUnitario)   : null);
+        // ── Dimensiones ───────────────────────────────────────────────────────
+        const bordoNum   = bordo             != null ? Number(bordo)
+                         : (obra.bordo       ? Number(obra.bordo)             : null);
+        const espesorNum = espesor           != null ? Number(espesor)
+                         : (obra.espesor     ? Number(obra.espesor)           : null);
+        const collarNum  = profundidadCollar != null ? Number(profundidadCollar)
+                         : (obra.profundidadCollar ? Number(obra.profundidadCollar) : null);
+        const puNum      = precioUnitario    != null ? Number(precioUnitario)
+                         : (obra.precioUnitario ? Number(obra.precioUnitario) : null);
 
-        // ── Pérdida ──────────────────────────────────────────────────────────
-        // Automática si hay profundidadCollar + bordo + espesor
+        // ── Pérdida ───────────────────────────────────────────────────────────
         const perdidaNum = (collarNum && bordoNum && espesorNum)
-            ? +(barrenosNum * collarNum * bordoNum * espesorNum).toFixed(4)
+            ? +(barrenosTotal * collarNum * bordoNum * espesorNum).toFixed(4)
             : (perdidaM3 != null ? Number(perdidaM3) : 0);
 
-        // ── Volúmenes ────────────────────────────────────────────────────────
+        // ── Volúmenes ─────────────────────────────────────────────────────────
         const volumenBruto = bordoNum && espesorNum
-            ? +(bordoNum * espesorNum * metrosNum).toFixed(4)
+            ? +(bordoNum * espesorNum * metrosTotal).toFixed(4)
             : null;
 
         const volumenNeto = volumenBruto != null
@@ -109,31 +169,43 @@ export async function POST(req: NextRequest, { params }: Params) {
             ? +(volumenNeto * puNum).toFixed(2)
             : null;
 
-        const corte = await prisma.corteFacturacion.create({
-            data: {
-                obraId,
-                numero,
-                fechaInicio:       new Date(fechaInicio),
-                fechaFin:          new Date(fechaFin),
-                barrenos:          barrenosNum,
-                metrosLineales:    metrosNum,
-                bordo:             bordoNum,
-                espesor:           espesorNum,
-                profundidadCollar: collarNum,
-                volumenBruto,
-                perdidaM3:         perdidaNum,
-                porcentajePerdida,
-                volumenNeto,
-                precioUnitario:    puNum,
-                moneda:            moneda === 'USD' ? 'USD' : 'MXN',
-                tipoCambio:        tipoCambio != null ? Number(tipoCambio) : null,
-                montoFacturado,
-                status:            status || 'BORRADOR',
-                notas:             notas || null,
-            },
+        // ── Transacción ───────────────────────────────────────────────────────
+        const corteCreado = await prisma.$transaction(async (tx) => {
+            const corte = await tx.corteFacturacion.create({
+                data: {
+                    obraId,
+                    numero,
+                    fechaInicio,
+                    fechaFin,
+                    barrenos:          barrenosTotal,
+                    metrosLineales:    metrosTotal,
+                    bordo:             bordoNum,
+                    espesor:           espesorNum,
+                    profundidadCollar: collarNum,
+                    volumenBruto,
+                    perdidaM3:         perdidaNum,
+                    porcentajePerdida,
+                    volumenNeto,
+                    precioUnitario:    puNum,
+                    moneda:            moneda === 'USD' ? 'USD' : 'MXN',
+                    tipoCambio:        tipoCambio != null ? Number(tipoCambio) : null,
+                    montoFacturado,
+                    status:            status || 'BORRADOR',
+                    notas:             notas || null,
+                },
+            });
+
+            await tx.corteRegistro.createMany({
+                data: registroIds.map((registroId: string) => ({
+                    corteId:    corte.id,
+                    registroId,
+                })),
+            });
+
+            return corte;
         });
 
-        return Response.json(serializeCorte(corte), { status: 201 });
+        return Response.json(serializeCorte(corteCreado), { status: 201 });
     } catch (error) {
         console.error(error);
         return Response.json({ error: 'Error al crear el corte' }, { status: 500 });
@@ -155,5 +227,11 @@ function serializeCorte(c: any) {
         precioUnitario:    c.precioUnitario     != null ? Number(c.precioUnitario)     : null,
         tipoCambio:        c.tipoCambio         != null ? Number(c.tipoCambio)         : null,
         montoFacturado:    c.montoFacturado     != null ? Number(c.montoFacturado)     : null,
+        registros: c.corteRegistros?.map((cr: any) => ({
+            id:             cr.registro.id,
+            fecha:          cr.registro.fecha?.toISOString?.()?.slice(0, 10) ?? cr.registro.fecha,
+            barrenos:       Number(cr.registro.barrenos),
+            metrosLineales: Number(cr.registro.metrosLineales),
+        })) ?? [],
     };
 }

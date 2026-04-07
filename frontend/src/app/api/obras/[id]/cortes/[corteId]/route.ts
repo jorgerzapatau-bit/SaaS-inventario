@@ -14,7 +14,17 @@ export async function GET(req: NextRequest, { params }: Params) {
 
         const corte = await prisma.corteFacturacion.findFirst({
             where: { id: corteId, obraId },
-            include: { obra: { select: { nombre: true, clienteNombre: true, empresaId: true } } },
+            include: {
+                obra: { select: { nombre: true, clienteNombre: true, empresaId: true } },
+                corteRegistros: {
+                    include: {
+                        registro: {
+                            select: { id: true, fecha: true, barrenos: true, metrosLineales: true,
+                                      equipo: { select: { nombre: true } } },
+                        },
+                    },
+                },
+            },
         });
 
         if (!corte || corte.obra.empresaId !== user.empresaId)
@@ -28,18 +38,12 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 // ─── PUT /api/obras/[id]/cortes/[corteId] ─────────────────────────────────────
-// Actualiza el corte.
+// Actualiza dimensiones, pérdida, precio, status, notas.
+// NO reasigna registros — para cambiar registros hay que eliminar y recrear el corte.
 //
 // Lógica de perdidaM3:
-//   Si profundidadCollar tiene valor (del body, del corte existente o de la obra):
-//     perdidaM3 = barrenos × profundidadCollar × bordo × espesor  (recalculado)
-//   Si no hay profundidadCollar → usa el perdidaM3 enviado en el body (manual).
-//
-// Recalcula:
-//   volumenBruto      = bordo × espesor × metrosLineales
-//   volumenNeto       = volumenBruto − perdidaM3
-//   porcentajePerdida = (perdidaM3 / volumenBruto) × 100  (solo referencia)
-//   montoFacturado    = volumenNeto × precioUnitario
+//   Si profundidadCollar tiene valor → perdidaM3 = barrenos × collar × bordo × espesor
+//   Si no → usa perdidaM3 del body
 export async function PUT(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -64,15 +68,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
             return Response.json({ error: 'Corte no encontrado' }, { status: 404 });
 
         const {
-            fechaInicio, fechaFin, barrenos, metrosLineales,
             bordo, espesor, profundidadCollar,
             perdidaM3,
             precioUnitario, moneda, tipoCambio,
             status, notas,
         } = await req.json();
 
-        // ── Resolver valores ─────────────────────────────────────────────────
-        // Prioridad: body → corte existente → obra
+        // ── Resolver valores (body → corte → obra) ────────────────────────────
         const bordoNum   = bordo   != null ? Number(bordo)
                          : (corteExistente.bordo    ? Number(corteExistente.bordo)
                          : (corteExistente.obra.bordo ? Number(corteExistente.obra.bordo) : null));
@@ -81,7 +83,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
                          : (corteExistente.espesor  ? Number(corteExistente.espesor)
                          : (corteExistente.obra.espesor ? Number(corteExistente.obra.espesor) : null));
 
-        // profundidadCollar: si el body lo envía como null explícito, se borra (modo manual)
         const collarNum  = profundidadCollar !== undefined
             ? (profundidadCollar != null ? Number(profundidadCollar) : null)
             : (corteExistente.profundidadCollar
@@ -89,22 +90,20 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 : (corteExistente.obra.profundidadCollar
                     ? Number(corteExistente.obra.profundidadCollar) : null));
 
-        const metrosNum  = metrosLineales != null ? Number(metrosLineales)
-                         : Number(corteExistente.metrosLineales);
-
-        const barrenosNum = barrenos != null ? Number(barrenos)
-                          : Number(corteExistente.barrenos);
+        // Barrenos y metros vienen del corte (ya están fijados por los registros)
+        const barrenosNum = Number(corteExistente.barrenos);
+        const metrosNum   = Number(corteExistente.metrosLineales);
 
         const puNum      = precioUnitario != null ? Number(precioUnitario)
                          : (corteExistente.precioUnitario ? Number(corteExistente.precioUnitario) : null);
 
-        // ── Pérdida ──────────────────────────────────────────────────────────
+        // ── Pérdida ───────────────────────────────────────────────────────────
         const perdidaNum = (collarNum && bordoNum && espesorNum)
             ? +(barrenosNum * collarNum * bordoNum * espesorNum).toFixed(4)
             : (perdidaM3 != null ? Number(perdidaM3)
                 : Number(corteExistente.perdidaM3 ?? 0));
 
-        // ── Volúmenes ────────────────────────────────────────────────────────
+        // ── Volúmenes ─────────────────────────────────────────────────────────
         const volumenBruto = bordoNum && espesorNum
             ? +(bordoNum * espesorNum * metrosNum).toFixed(4)
             : null;
@@ -124,14 +123,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const corte = await prisma.corteFacturacion.update({
             where: { id: corteId },
             data: {
-                ...(fechaInicio !== undefined && { fechaInicio: new Date(fechaInicio) }),
-                ...(fechaFin    !== undefined && { fechaFin:    new Date(fechaFin) }),
-                ...(status      !== undefined && { status }),
-                ...(notas       !== undefined && { notas: notas || null }),
-                ...(moneda      !== undefined && { moneda: moneda === 'USD' ? 'USD' : 'MXN' }),
-                ...(tipoCambio  !== undefined && { tipoCambio: tipoCambio != null ? Number(tipoCambio) : null }),
-                barrenos:          barrenosNum,
-                metrosLineales:    metrosNum,
+                ...(status     !== undefined && { status }),
+                ...(notas      !== undefined && { notas: notas || null }),
+                ...(moneda     !== undefined && { moneda: moneda === 'USD' ? 'USD' : 'MXN' }),
+                ...(tipoCambio !== undefined && { tipoCambio: tipoCambio != null ? Number(tipoCambio) : null }),
                 bordo:             bordoNum,
                 espesor:           espesorNum,
                 profundidadCollar: collarNum,
@@ -176,6 +171,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 }
 
 // ─── DELETE /api/obras/[id]/cortes/[corteId] ──────────────────────────────────
+// Elimina el corte y libera automáticamente los registros vinculados
+// (el ON DELETE CASCADE en CorteRegistro borra los vínculos).
+// Solo se puede eliminar un corte en BORRADOR.
 export async function DELETE(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -196,8 +194,16 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                 { status: 400 }
             );
 
+        if (corte.status === 'FACTURADO')
+            return Response.json(
+                { error: 'Cambia el status a Borrador antes de eliminar el corte facturado' },
+                { status: 400 }
+            );
+
+        // El CASCADE en CorteRegistro libera los registros automáticamente
         await prisma.corteFacturacion.delete({ where: { id: corteId } });
-        return Response.json({ message: 'Corte eliminado correctamente' });
+
+        return Response.json({ message: 'Corte eliminado. Los registros diarios quedaron disponibles.' });
     } catch (error) {
         console.error(error);
         return Response.json({ error: 'Error al eliminar el corte' }, { status: 500 });
@@ -219,5 +225,12 @@ function serializeCorte(c: any) {
         precioUnitario:    c.precioUnitario     != null ? Number(c.precioUnitario)     : null,
         tipoCambio:        c.tipoCambio         != null ? Number(c.tipoCambio)         : null,
         montoFacturado:    c.montoFacturado     != null ? Number(c.montoFacturado)     : null,
+        registros: c.corteRegistros?.map((cr: any) => ({
+            id:             cr.registro.id,
+            fecha:          cr.registro.fecha?.toISOString?.()?.slice(0, 10) ?? cr.registro.fecha,
+            barrenos:       Number(cr.registro.barrenos),
+            metrosLineales: Number(cr.registro.metrosLineales),
+            equipo:         cr.registro.equipo?.nombre ?? null,
+        })) ?? [],
     };
 }

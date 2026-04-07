@@ -1,15 +1,21 @@
+// src/app/api/registros-diarios/route.ts
 import { NextRequest } from 'next/server';
 import prisma from '../lib/prisma';
 import { getAuthUser, unauthorized } from '../lib/auth';
 
 // ─── GET /api/registros-diarios ───────────────────────────────────────────────
-// Acepta query params: equipoId, fechaInicio, fechaFin, semanaNum, anoNum
+// Query params:
+//   equipoId, semanaNum, anoNum, fechaInicio, fechaFin, limit  (existentes)
+//   obraId    — filtra por obra
+//   sinCorte  — "true" → solo registros sin corte asignado (pendientes de facturar)
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
         const { searchParams } = new URL(req.url);
         const equipoId    = searchParams.get('equipoId')    || undefined;
+        const obraId      = searchParams.get('obraId')      || undefined;
+        const sinCorte    = searchParams.get('sinCorte')    === 'true';
         const semanaNum   = searchParams.get('semanaNum')   ? parseInt(searchParams.get('semanaNum')!)   : undefined;
         const anoNum      = searchParams.get('anoNum')      ? parseInt(searchParams.get('anoNum')!)      : undefined;
         const fechaInicio = searchParams.get('fechaInicio') ? new Date(searchParams.get('fechaInicio')!) : undefined;
@@ -20,8 +26,11 @@ export async function GET(req: NextRequest) {
             where: {
                 empresaId: user.empresaId,
                 ...(equipoId  && { equipoId }),
+                ...(obraId    && { obraId }),
                 ...(semanaNum && { semanaNum }),
                 ...(anoNum    && { anoNum }),
+                // sinCorte=true → corteRegistro es null (pendiente de facturar)
+                ...(sinCorte  && { corteRegistro: { is: null } }),
                 ...(fechaInicio || fechaFin ? {
                     fecha: {
                         ...(fechaInicio && { gte: fechaInicio }),
@@ -32,9 +41,15 @@ export async function GET(req: NextRequest) {
             orderBy: { fecha: 'desc' },
             ...(limit ? { take: limit } : {}),
             include: {
-                equipo:  { select: { nombre: true, numeroEconomico: true } },
-                usuario: { select: { nombre: true } },
-                cliente: { select: { nombre: true } },
+                equipo:        { select: { nombre: true, numeroEconomico: true } },
+                usuario:       { select: { nombre: true } },
+                cliente:       { select: { nombre: true } },
+                // Incluir info del corte para saber si ya está facturado
+                corteRegistro: {
+                    include: {
+                        corte: { select: { id: true, numero: true, status: true } },
+                    },
+                },
             },
         });
 
@@ -46,8 +61,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/registros-diarios ──────────────────────────────────────────────
-// Crea el registro diario de operación (equivalente a una fila de la hoja Rpte).
-// Si se envía litrosDiesel > 0, registra automáticamente el consumo en el kardex.
+// Sin cambios en la lógica de creación — se mantiene igual.
 export async function POST(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -70,13 +84,11 @@ export async function POST(req: NextRequest) {
             clienteId,
             obraNombre,
             notas,
-            // Para el movimiento de diésel en kardex
             almacenId,
             registrarDieselEnKardex,
             obraId,
         } = await req.json();
 
-        // ── Validaciones ──
         if (!equipoId || !fecha || horometroInicio == null || horometroFin == null)
             return Response.json(
                 { error: 'equipoId, fecha, horometroInicio y horometroFin son requeridos' },
@@ -89,73 +101,69 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
             );
 
-        // Verificar que el equipo pertenece a la empresa
         const equipo = await prisma.equipo.findFirst({
             where: { id: equipoId, empresaId: user.empresaId },
         });
         if (!equipo)
             return Response.json({ error: 'Equipo no encontrado' }, { status: 404 });
 
-        const fechaDate      = new Date(fecha);
-        const horasNum       = Number(horometroFin) - Number(horometroInicio);
+        const fechaDate       = new Date(fecha);
+        const horasNum        = Number(horometroFin) - Number(horometroInicio);
         const litrosDieselNum = Number(litrosDiesel ?? 0);
         const precioDieselNum = Number(precioDiesel ?? 0);
-
-        // Calcular semana ISO y año
-        const semanaNum = getISOWeek(fechaDate);
-        const anoNum    = fechaDate.getFullYear();
+        const semanaNum       = getISOWeek(fechaDate);
+        const anoNum          = fechaDate.getFullYear();
 
         const result = await prisma.$transaction(async (tx) => {
-            // 1. Crear el registro diario
             const registro = await tx.registroDiario.create({
                 data: {
-                    empresaId:         user.empresaId,
+                    empresaId:          user.empresaId,
                     equipoId,
-                    fecha:             fechaDate,
-                    horometroInicio:   Number(horometroInicio),
-                    horometroFin:      Number(horometroFin),
-                    horasTrabajadas:   horasNum,
-                    barrenos:          Number(barrenos   ?? 0),
-                    metrosLineales:    Number(metrosLineales ?? 0),
-                    litrosDiesel:      litrosDieselNum,
-                    precioDiesel:      precioDieselNum,
-                    tanqueInicio:      tanqueInicio      != null ? Number(tanqueInicio)      : null,
+                    fecha:              fechaDate,
+                    horometroInicio:    Number(horometroInicio),
+                    horometroFin:       Number(horometroFin),
+                    horasTrabajadas:    horasNum,
+                    barrenos:           Number(barrenos   ?? 0),
+                    metrosLineales:     Number(metrosLineales ?? 0),
+                    litrosDiesel:       litrosDieselNum,
+                    precioDiesel:       precioDieselNum,
+                    tanqueInicio:       tanqueInicio       != null ? Number(tanqueInicio)       : null,
                     litrosTanqueInicio: litrosTanqueInicio != null ? Number(litrosTanqueInicio) : null,
-                    tanqueFin:         tanqueFin         != null ? Number(tanqueFin)         : null,
-                    litrosTanqueFin:   litrosTanqueFin   != null ? Number(litrosTanqueFin)   : null,
-                    operadores:        Number(operadores ?? 1),
-                    peones:            Number(peones     ?? 0),
-                    clienteId:         clienteId || null,
-                    obraNombre:        obraNombre || null,
+                    tanqueFin:          tanqueFin          != null ? Number(tanqueFin)          : null,
+                    litrosTanqueFin:    litrosTanqueFin    != null ? Number(litrosTanqueFin)    : null,
+                    operadores:         Number(operadores ?? 1),
+                    peones:             Number(peones     ?? 0),
+                    clienteId:          clienteId || null,
+                    obraNombre:         obraNombre || null,
                     semanaNum,
                     anoNum,
-                    obraId:            obraId || null,
-                    notas:             notas || null,
-                    usuarioId:         user.id,
+                    obraId:             obraId || null,
+                    notas:              notas || null,
+                    usuarioId:          user.id,
                 },
                 include: {
-                    equipo:  { select: { nombre: true, numeroEconomico: true } },
-                    usuario: { select: { nombre: true } },
-                    cliente: { select: { nombre: true } },
+                    equipo:        { select: { nombre: true, numeroEconomico: true } },
+                    usuario:       { select: { nombre: true } },
+                    cliente:       { select: { nombre: true } },
+                    corteRegistro: {
+                        include: {
+                            corte: { select: { id: true, numero: true, status: true } },
+                        },
+                    },
                 },
             });
 
-            // 2. Actualizar el horómetro actual del equipo al valor final del registro
             await tx.equipo.update({
                 where: { id: equipoId, empresaId: user.empresaId },
                 data:  { hodometroInicial: Number(horometroFin) },
             });
 
-            // 3. Si hay consumo de diésel y se pidió registrarlo en kardex,
-            //    crear un movimiento de SALIDA automáticamente
             if (registrarDieselEnKardex && litrosDieselNum > 0 && almacenId) {
-                // Buscar el producto Diésel de esta empresa
                 const productoDiesel = await tx.producto.findFirst({
                     where: { empresaId: user.empresaId, sku: 'COMB-DSL-001' },
                 });
 
                 if (productoDiesel) {
-                    // Verificar stock suficiente
                     const stockActual = Number(productoDiesel.stockActual);
                     if (stockActual >= litrosDieselNum) {
                         await tx.movimientoInventario.create({
@@ -175,14 +183,11 @@ export async function POST(req: NextRequest) {
                             },
                         });
 
-                        // Actualizar stockActual del diésel
                         await tx.producto.update({
                             where: { id: productoDiesel.id, empresaId: user.empresaId },
                             data:  { stockActual: { decrement: litrosDieselNum } },
                         });
                     }
-                    // Si no hay stock suficiente, el registro diario se guarda igual
-                    // pero no se descuenta del kardex (el operador deberá hacer una entrada primero)
                 }
             }
 
@@ -203,11 +208,10 @@ export async function POST(req: NextRequest) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Serializa Decimal → number y calcula KPIs al vuelo
 function serializeRegistro(r: any) {
-    const horas   = Number(r.horasTrabajadas);
-    const metros  = Number(r.metrosLineales);
-    const litros  = Number(r.litrosDiesel);
+    const horas    = Number(r.horasTrabajadas);
+    const metros   = Number(r.metrosLineales);
+    const litros   = Number(r.litrosDiesel);
     const barrenos = Number(r.barrenos);
 
     return {
@@ -224,16 +228,18 @@ function serializeRegistro(r: any) {
         litrosTanqueInicio: r.litrosTanqueInicio != null ? Number(r.litrosTanqueInicio) : null,
         tanqueFin:          r.tanqueFin          != null ? Number(r.tanqueFin)          : null,
         litrosTanqueFin:    r.litrosTanqueFin    != null ? Number(r.litrosTanqueFin)    : null,
-        // KPIs (equivalentes a las columnas LT/HR, LT/MT, MT/HR del Excel)
+        // Info del corte (null si pendiente)
+        corte: r.corteRegistro
+            ? { id: r.corteRegistro.corte.id, numero: r.corteRegistro.corte.numero, status: r.corteRegistro.corte.status }
+            : null,
         kpi: {
-            litrosPorHora:   horas   > 0 ? +(litros / horas).toFixed(2)   : null,
-            litrosPorMetro:  metros  > 0 ? +(litros / metros).toFixed(2)  : null,
-            metrosPorHora:   horas   > 0 ? +(metros / horas).toFixed(2)   : null,
+            litrosPorHora:  horas  > 0 ? +(litros / horas).toFixed(2)  : null,
+            litrosPorMetro: metros > 0 ? +(litros / metros).toFixed(2) : null,
+            metrosPorHora:  horas  > 0 ? +(metros / horas).toFixed(2)  : null,
         },
     };
 }
 
-// Calcula el número de semana ISO 8601
 function getISOWeek(date: Date): number {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));

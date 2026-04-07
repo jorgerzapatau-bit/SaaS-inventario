@@ -21,7 +21,7 @@ type Corte = {
     metrosLineales: number;
     bordo: number | null;
     espesor: number | null;
-    profundidadCollar: number | null;   // ← NUEVO
+    profundidadCollar: number | null;
     volumenBruto: number | null;
     perdidaM3: number | null;
     porcentajePerdida: number | null;
@@ -31,6 +31,16 @@ type Corte = {
     moneda: string;
     status: 'BORRADOR' | 'FACTURADO' | 'COBRADO';
     notas: string | null;
+    registros: { id: string; fecha: string; barrenos: number; metrosLineales: number }[];
+};
+
+// Nuevo tipo para los registros disponibles en el selector
+type RegistroDisponible = {
+    id: string;
+    fecha: string;
+    barrenos: number;
+    metrosLineales: number;
+    equipo: { nombre: string; numeroEconomico: string | null };
 };
 
 type RegistroDiario = {
@@ -119,17 +129,20 @@ function CorteModal({
 }) {
     const isEdit = !!corte;
 
+    // Paso del modal: 1 = selección de registros, 2 = dimensiones y facturación
+    const [paso, setPaso] = useState<1 | 2>(isEdit ? 2 : 1);
+
+    // Registros disponibles (solo en creación)
+    const [registrosDisponibles, setRegistrosDisponibles] = useState<RegistroDisponible[]>([]);
+    const [loadingRegistros, setLoadingRegistros]         = useState(!isEdit);
+    const [seleccionados, setSeleccionados]               = useState<Set<string>>(new Set());
+
+    // Form de dimensiones/facturación
     const [form, setForm] = useState({
-        fechaInicio:       corte?.fechaInicio?.slice(0, 10)     ?? '',
-        fechaFin:          corte?.fechaFin?.slice(0, 10)        ?? '',
-        barrenos:          corte?.barrenos?.toString()          ?? '0',
-        metrosLineales:    corte?.metrosLineales?.toString()    ?? '',
         bordo:             corte?.bordo?.toString()             ?? (obra.bordo?.toString()              ?? ''),
         espesor:           corte?.espesor?.toString()           ?? (obra.espesor?.toString()            ?? ''),
-        // Profundidad de collar: prioridad corte → obra → vacío
         profundidadCollar: corte?.profundidadCollar?.toString()
-                           ?? (obra.profundidadCollar?.toString() ?? ''),
-        // perdidaM3 solo se usa si profundidadCollar está vacío (modo manual)
+                           ?? ((obra as any).profundidadCollar?.toString() ?? ''),
         perdidaM3:         corte?.perdidaM3?.toString()         ?? '0',
         precioUnitario:    corte?.precioUnitario?.toString()    ?? (obra.precioUnitario?.toString() ?? ''),
         moneda:            corte?.moneda                        ?? obra.moneda ?? 'MXN',
@@ -139,62 +152,66 @@ function CorteModal({
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
 
-    const set = (key: keyof typeof form) =>
-        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-            setForm(f => ({ ...f, [key]: e.target.value }));
+    // Cargar registros disponibles al abrir (solo creación)
+    useEffect(() => {
+        if (isEdit) return;
+        fetchApi(`/obras/${obraId}/cortes?disponibles=true`)
+            .then(setRegistrosDisponibles)
+            .catch(() => setRegistrosDisponibles([]))
+            .finally(() => setLoadingRegistros(false));
+    }, [obraId, isEdit]);
 
-    // ── Cálculos en tiempo real ──────────────────────────────────────────────
-    const bordoN    = Number(form.bordo)              || 0;
-    const espesorN  = Number(form.espesor)            || 0;
-    const metrosN   = Number(form.metrosLineales)     || 0;
-    const barrenosN = Number(form.barrenos)           || 0;
-    const collarN   = Number(form.profundidadCollar)  || 0;
-    const puN       = Number(form.precioUnitario)     || 0;
+    const toggleRegistro = (id: string) => {
+        setSeleccionados(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
 
-    // Si hay profundidadCollar, la pérdida se calcula automáticamente
+    const toggleTodos = () => {
+        if (seleccionados.size === registrosDisponibles.length) {
+            setSeleccionados(new Set());
+        } else {
+            setSeleccionados(new Set(registrosDisponibles.map(r => r.id)));
+        }
+    };
+
+    // Totales calculados de los registros seleccionados
+    const registrosSeleccionados = registrosDisponibles.filter(r => seleccionados.has(r.id));
+    const barrenosTotal = registrosSeleccionados.reduce((s, r) => s + r.barrenos, 0);
+    const metrosTotal   = +registrosSeleccionados.reduce((s, r) => s + r.metrosLineales, 0).toFixed(2);
+    const fechaMin      = registrosSeleccionados.length > 0
+        ? registrosSeleccionados.map(r => r.fecha).sort()[0]
+        : null;
+    const fechaMax      = registrosSeleccionados.length > 0
+        ? registrosSeleccionados.map(r => r.fecha).sort().at(-1)!
+        : null;
+
+    // Cálculos de volumen en tiempo real (paso 2)
+    const bordoN    = Number(form.bordo)             || 0;
+    const espesorN  = Number(form.espesor)           || 0;
+    const collarN   = Number(form.profundidadCollar) || 0;
+    const puN       = Number(form.precioUnitario)    || 0;
+
+    const barrenosN = isEdit ? (corte?.barrenos ?? 0) : barrenosTotal;
+    const metrosN   = isEdit ? (corte?.metrosLineales ?? 0) : metrosTotal;
+
     const modoAutomatico = collarN > 0 && bordoN > 0 && espesorN > 0;
     const perdidaAuto    = modoAutomatico
         ? +(barrenosN * collarN * bordoN * espesorN).toFixed(4)
         : null;
-    const perdidaNum     = modoAutomatico
-        ? perdidaAuto!
-        : (Number(form.perdidaM3) || 0);
-
-    const volBruto = bordoN && espesorN ? +(bordoN * espesorN * metrosN).toFixed(4) : null;
-    const volNeto  = volBruto != null   ? +(volBruto - perdidaNum).toFixed(4)        : null;
-    const monto    = volNeto  != null && puN ? +(volNeto * puN).toFixed(2)           : null;
+    const perdidaNum     = modoAutomatico ? perdidaAuto! : (Number(form.perdidaM3) || 0);
+    const volBruto       = bordoN && espesorN ? +(bordoN * espesorN * metrosN).toFixed(4) : null;
+    const volNeto        = volBruto != null   ? +(volBruto - perdidaNum).toFixed(4)        : null;
+    const monto          = volNeto  != null && puN ? +(volNeto * puN).toFixed(2)           : null;
 
     const fmt2 = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const fDate = (s: string) => new Date(s + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
 
-    const handleSave = async () => {
-        if (!form.fechaInicio || !form.fechaFin) { setError('Las fechas son requeridas'); return; }
-        setSaving(true); setError('');
-        try {
-            const body = {
-                ...form,
-                barrenos:          Number(form.barrenos)           || 0,
-                metrosLineales:    Number(form.metrosLineales)     || 0,
-                bordo:             form.bordo      ? Number(form.bordo)      : null,
-                espesor:           form.espesor    ? Number(form.espesor)    : null,
-                // Enviar null si vacío → API sabe que la pérdida es manual
-                profundidadCollar: form.profundidadCollar ? Number(form.profundidadCollar) : null,
-                // Si modo automático, no enviamos perdidaM3 (la API la calcula)
-                // Si modo manual, enviamos el valor del campo
-                perdidaM3:         modoAutomatico ? undefined : (Number(form.perdidaM3) || 0),
-                precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
-            };
-            if (isEdit) {
-                await fetchApi(`/obras/${obraId}/cortes/${corte!.id}`, { method: 'PUT', body: JSON.stringify(body) });
-            } else {
-                await fetchApi(`/obras/${obraId}/cortes`, { method: 'POST', body: JSON.stringify(body) });
-            }
-            onSaved();
-        } catch (e: any) {
-            setError(e.message || 'Error al guardar');
-        } finally {
-            setSaving(false);
-        }
-    };
+    const set = (key: keyof typeof form) =>
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+            setForm(f => ({ ...f, [key]: e.target.value }));
 
     const inp = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
         <div>
@@ -204,134 +221,291 @@ function CorteModal({
         </div>
     );
 
+    const handleSave = async () => {
+        if (!isEdit && seleccionados.size === 0) {
+            setError('Selecciona al menos un registro diario');
+            return;
+        }
+        setSaving(true); setError('');
+        try {
+            if (isEdit) {
+                // Editar: solo actualiza dimensiones, pérdida, precio, status
+                await fetchApi(`/obras/${obraId}/cortes/${corte!.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        ...form,
+                        bordo:             form.bordo      ? Number(form.bordo)      : null,
+                        espesor:           form.espesor    ? Number(form.espesor)    : null,
+                        profundidadCollar: form.profundidadCollar ? Number(form.profundidadCollar) : null,
+                        perdidaM3:         modoAutomatico ? undefined : (Number(form.perdidaM3) || 0),
+                        precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
+                    }),
+                });
+            } else {
+                // Crear: envía registroIds y dimensiones
+                await fetchApi(`/obras/${obraId}/cortes`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        registroIds:       Array.from(seleccionados),
+                        bordo:             form.bordo      ? Number(form.bordo)      : null,
+                        espesor:           form.espesor    ? Number(form.espesor)    : null,
+                        profundidadCollar: form.profundidadCollar ? Number(form.profundidadCollar) : null,
+                        perdidaM3:         modoAutomatico ? undefined : (Number(form.perdidaM3) || 0),
+                        precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
+                        moneda:            form.moneda,
+                        status:            form.status,
+                        notas:             form.notas,
+                    }),
+                });
+            }
+            onSaved();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── PASO 1: Selector de registros ─────────────────────────────────────────
+    const renderPaso1 = () => (
+        <div className="px-6 py-5 space-y-4">
+            <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Registros diarios disponibles ({registrosDisponibles.length})
+                </p>
+                {registrosDisponibles.length > 0 && (
+                    <button onClick={toggleTodos}
+                        className="text-xs text-blue-600 hover:underline">
+                        {seleccionados.size === registrosDisponibles.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                    </button>
+                )}
+            </div>
+
+            {loadingRegistros ? (
+                <div className="text-center py-8 text-gray-400 text-sm">Cargando registros...</div>
+            ) : registrosDisponibles.length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded-xl">
+                    <p className="text-sm font-semibold text-gray-500">No hay registros pendientes</p>
+                    <p className="text-xs text-gray-400 mt-1">Todos los registros de esta obra ya tienen corte asignado.</p>
+                </div>
+            ) : (
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                    {registrosDisponibles.map(r => {
+                        const checked = seleccionados.has(r.id);
+                        return (
+                            <label key={r.id}
+                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                                    checked ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100 hover:border-gray-200'
+                                }`}>
+                                <input type="checkbox" checked={checked}
+                                    onChange={() => toggleRegistro(r.id)}
+                                    className="w-4 h-4 accent-blue-600 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-sm font-semibold text-gray-700">{fDate(r.fecha)}</span>
+                                        <span className="text-xs text-gray-400">{r.equipo.nombre}</span>
+                                    </div>
+                                    <div className="flex gap-4 mt-0.5 text-xs text-gray-500">
+                                        <span>{r.barrenos} barrenos</span>
+                                        <span>{r.metrosLineales.toFixed(1)} m</span>
+                                    </div>
+                                </div>
+                            </label>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Resumen de selección */}
+            {seleccionados.size > 0 && (
+                <div className="bg-blue-50 rounded-xl p-4 text-xs space-y-1">
+                    <p className="font-semibold text-blue-700">{seleccionados.size} registro{seleccionados.size !== 1 ? 's' : ''} seleccionado{seleccionados.size !== 1 ? 's' : ''}</p>
+                    <div className="flex gap-6 text-gray-600 mt-1">
+                        <span>Período: <strong>{fechaMin ? fDate(fechaMin) : '—'} → {fechaMax ? fDate(fechaMax) : '—'}</strong></span>
+                        <span>Barrenos: <strong>{barrenosTotal}</strong></span>
+                        <span>Metros: <strong>{metrosTotal.toFixed(1)} m</strong></span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    // ── PASO 2: Dimensiones y facturación ─────────────────────────────────────
+    const renderPaso2 = () => (
+        <div className="px-6 py-5 space-y-5">
+            {/* Resumen del período (informativo) */}
+            {!isEdit && (
+                <div className="bg-gray-50 rounded-xl p-4 text-xs">
+                    <p className="font-semibold text-gray-600 mb-1">Producción del corte (de registros)</p>
+                    <div className="flex gap-6 text-gray-500">
+                        <span>Período: <strong className="text-gray-700">{fechaMin ? fDate(fechaMin) : '—'} → {fechaMax ? fDate(fechaMax) : '—'}</strong></span>
+                        <span>Barrenos: <strong className="text-gray-700">{barrenosTotal}</strong></span>
+                        <span>Metros: <strong className="text-gray-700">{metrosTotal.toFixed(1)} m</strong></span>
+                    </div>
+                </div>
+            )}
+            {isEdit && (
+                <div className="bg-gray-50 rounded-xl p-4 text-xs">
+                    <p className="font-semibold text-gray-600 mb-1">Producción del corte</p>
+                    <div className="flex gap-6 text-gray-500">
+                        <span>Barrenos: <strong className="text-gray-700">{corte!.barrenos}</strong></span>
+                        <span>Metros: <strong className="text-gray-700">{corte!.metrosLineales.toFixed(1)} m</strong></span>
+                        <span className="text-gray-400">{corte!.registros.length} registro{corte!.registros.length !== 1 ? 's' : ''}</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Dimensiones */}
+            <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Cálculo de volumen</p>
+                <div className="grid grid-cols-2 gap-3">
+                    {inp('Bordo (m)',   'bordo',   'number', '2.7')}
+                    {inp('Espesor (m)', 'espesor', 'number', '3.0')}
+                </div>
+                <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Profundidad de collar (m)
+                        <span className="ml-1 text-gray-400 font-normal">— vacío = pérdida manual</span>
+                    </label>
+                    <input type="number" value={form.profundidadCollar} onChange={set('profundidadCollar')}
+                        placeholder="ej. 0.30"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                </div>
+                {!modoAutomatico && (
+                    <div className="mt-3">
+                        {inp('Pérdida m³ (manual — "% Perd." del Excel)', 'perdidaM3', 'number', '39.69')}
+                    </div>
+                )}
+                {/* Vista previa */}
+                <div className="mt-3 bg-blue-50 rounded-xl p-4 space-y-1.5 text-xs">
+                    <p className="text-gray-500 font-semibold mb-2">Vista previa</p>
+                    {modoAutomatico && (
+                        <div className="flex justify-between text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-2">
+                            <span>Pérdida auto = {barrenosN} bar × {collarN} m × {bordoN} × {espesorN}</span>
+                            <span className="font-bold">{fmt2(perdidaAuto!)} m³</span>
+                        </div>
+                    )}
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Vol. bruto = {bordoN} × {espesorN} × {metrosN} mt ln</span>
+                        <span className="font-bold text-gray-700">{volBruto !== null ? `${fmt2(volBruto)} m³` : '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Vol. neto (−{fmt2(perdidaNum)} m³)</span>
+                        <span className="font-bold text-gray-700">{volNeto !== null ? `${fmt2(volNeto)} m³` : '—'}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-blue-100 pt-1.5">
+                        <span className="text-gray-500">Monto = Vol. neto × ${puN}/m³</span>
+                        <span className="font-bold text-blue-700 text-sm">{monto !== null ? `$${fmt2(monto)}` : '—'}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Facturación */}
+            <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Facturación</p>
+                <div className="grid grid-cols-2 gap-3">
+                    {inp('Precio unitario (P.U.)', 'precioUnitario', 'number', '24.50')}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+                        <select value={form.moneda} onChange={set('moneda')}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                            <option value="MXN">MXN</option>
+                            <option value="USD">USD</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                    <select value={form.status} onChange={set('status')}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                        <option value="BORRADOR">Borrador</option>
+                        <option value="FACTURADO">Facturado</option>
+                        <option value="COBRADO">Cobrado</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))}
+                    rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none" />
+            </div>
+        </div>
+    );
+
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl">
-                    <h2 className="text-lg font-bold text-gray-800">{isEdit ? `Editar Corte #${corte!.numero}` : 'Nuevo Corte de Facturación'}</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Replica la hoja Plantilla del Excel</p>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl flex-shrink-0">
+                    <h2 className="text-lg font-bold text-gray-800">
+                        {isEdit ? `Editar Corte #${corte!.numero}` : 'Nuevo Corte de Facturación'}
+                    </h2>
+                    {!isEdit && (
+                        <div className="flex items-center gap-2 mt-2">
+                            <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${paso === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${paso === 1 ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'}`}>1</span>
+                                Seleccionar registros
+                            </div>
+                            <div className="h-px flex-1 bg-gray-200" />
+                            <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${paso === 2 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${paso === 2 ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'}`}>2</span>
+                                Dimensiones y precio
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                <div className="px-6 py-5 space-y-5">
-
-                    {/* Período */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Período del corte</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Fecha inicio (f i)', 'fechaInicio', 'date')}
-                            {inp('Fecha fin (f f)',    'fechaFin',    'date')}
-                        </div>
-                    </div>
-
-                    {/* Producción */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Producción del período</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Barrenos',                 'barrenos',       'number', '0')}
-                            {inp('Metros lineales (Mt. Ln.)', 'metrosLineales', 'number', '0')}
-                        </div>
-                    </div>
-
-                    {/* Dimensiones + cálculo de volumen */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Cálculo de volumen</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Bordo (m)',   'bordo',   'number', '2.7')}
-                            {inp('Espesor (m)', 'espesor', 'number', '3.0')}
-                        </div>
-
-                        {/* Profundidad de collar */}
-                        <div className="mt-3">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Profundidad de collar (m)
-                                <span className="ml-1 text-gray-400 font-normal">
-                                    — déjalo vacío para ingresar la pérdida manualmente
-                                </span>
-                            </label>
-                            <input
-                                type="number"
-                                value={form.profundidadCollar}
-                                onChange={set('profundidadCollar')}
-                                placeholder={obra.profundidadCollar ? `${obra.profundidadCollar} (valor de la obra)` : 'ej. 0.30'}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                            />
-                        </div>
-
-                        {/* Campo pérdida manual — solo visible si NO hay profundidadCollar */}
-                        {!modoAutomatico && (
-                            <div className="mt-3">
-                                {inp('Pérdida m³ (ingreso manual — \"% Perd.\" del Excel)', 'perdidaM3', 'number', '39.69')}
-                            </div>
-                        )}
-
-                        {/* Vista previa de cálculo */}
-                        <div className="mt-3 bg-blue-50 rounded-xl p-4 space-y-1.5 text-xs">
-                            <p className="text-gray-500 font-semibold mb-2">Vista previa (replica Plantilla)</p>
-
-                            {modoAutomatico && (
-                                <div className="flex justify-between text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 mb-2">
-                                    <span>Pérdida auto = {barrenosN} bar × {collarN} m × {bordoN} × {espesorN}</span>
-                                    <span className="font-bold">{fmt2(perdidaAuto!)} m³</span>
-                                </div>
-                            )}
-
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Vol. bruto = {bordoN} × {espesorN} × {metrosN} mt ln</span>
-                                <span className="font-bold text-gray-700">{volBruto !== null ? `${fmt2(volBruto)} m³` : '—'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Vol. neto (−{fmt2(perdidaNum)} m³ pérdida)</span>
-                                <span className="font-bold text-gray-700">{volNeto !== null ? `${fmt2(volNeto)} m³` : '—'}</span>
-                            </div>
-                            <div className="flex justify-between border-t border-blue-100 pt-1.5">
-                                <span className="text-gray-500">Monto = Vol. neto × ${puN}/m³</span>
-                                <span className="font-bold text-blue-700 text-sm">{monto !== null ? `$${fmt2(monto)}` : '—'}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Facturación */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Facturación</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Precio unitario (P.U.)', 'precioUnitario', 'number', '24.50')}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
-                                <select value={form.moneda} onChange={set('moneda')}
-                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                    <option value="MXN">MXN</option>
-                                    <option value="USD">USD</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                            <select value={form.status} onChange={set('status')}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="BORRADOR">Borrador</option>
-                                <option value="FACTURADO">Facturado</option>
-                                <option value="COBRADO">Cobrado</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                        <textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))}
-                            rows={2} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none" />
-                    </div>
+                {/* Body scrollable */}
+                <div className="overflow-y-auto flex-1">
+                    {!isEdit && paso === 1 ? renderPaso1() : renderPaso2()}
                 </div>
 
-                {error && <p className="text-xs text-red-500 px-6 pb-2">{error}</p>}
+                {error && <p className="text-xs text-red-500 px-6 pb-2 flex-shrink-0">{error}</p>}
 
-                <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSave} disabled={saving}
-                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear corte'}
-                    </button>
+                {/* Footer */}
+                <div className="border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2 flex-shrink-0">
+                    {!isEdit && paso === 2 ? (
+                        <>
+                            <button onClick={() => setPaso(1)}
+                                className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                                ← Atrás
+                            </button>
+                            <button onClick={handleSave} disabled={saving}
+                                className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
+                                {saving ? 'Guardando...' : 'Crear corte'}
+                            </button>
+                        </>
+                    ) : !isEdit ? (
+                        <>
+                            <button onClick={onClose}
+                                className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (seleccionados.size === 0) { setError('Selecciona al menos un registro'); return; }
+                                    setError('');
+                                    setPaso(2);
+                                }}
+                                disabled={seleccionados.size === 0}
+                                className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-40">
+                                Siguiente → ({seleccionados.size} seleccionado{seleccionados.size !== 1 ? 's' : ''})
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button onClick={onClose}
+                                className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                                Cancelar
+                            </button>
+                            <button onClick={handleSave} disabled={saving}
+                                className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
+                                {saving ? 'Guardando...' : 'Guardar cambios'}
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>
