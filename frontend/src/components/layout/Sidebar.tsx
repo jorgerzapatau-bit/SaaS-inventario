@@ -4,26 +4,27 @@ import { useRouter, usePathname } from 'next/navigation';
 import {
     LayoutDashboard, Package, Truck, ShoppingCart,
     LogOut, ArrowRightLeft, FileText, Upload, Settings,
-    Users, Wrench, ClipboardList, BarChart2, HardHat,
+    Users, Wrench, ClipboardList, BarChart2, HardHat, Receipt,
 } from 'lucide-react';
 import { useCompany } from '@/context/CompanyContext';
 
 const NAV = [
-    { href: '/dashboard',                   icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
-    { href: '/dashboard/products',          icon: <Package size={20}/>,         label: 'Productos' },
-    { href: '/dashboard/inventory',         icon: <ArrowRightLeft size={20}/>,  label: 'Kardex / Movimientos' },
-    { href: '/dashboard/purchases',         icon: <ShoppingCart size={20}/>,    label: 'Compras (Entradas)' },
-    { href: '/dashboard/sales',             icon: <Upload size={20}/>,          label: 'Consumo de Insumos' },
+    { href: '/dashboard',                        icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
+    { href: '/dashboard/products',               icon: <Package size={20}/>,         label: 'Productos' },
+    { href: '/dashboard/inventory',              icon: <ArrowRightLeft size={20}/>,  label: 'Kardex / Movimientos' },
+    { href: '/dashboard/purchases',              icon: <ShoppingCart size={20}/>,    label: 'Compras (Entradas)' },
+    { href: '/dashboard/sales',                  icon: <Upload size={20}/>,          label: 'Consumo de Insumos' },
     // ── Sección Operación ──────────────────────────────────────────────────────
-    { href: '/dashboard/obras',             icon: <HardHat size={20}/>,         label: 'Obras' },
-    { href: '/dashboard/equipos',           icon: <Wrench size={20}/>,          label: 'Equipos' },
-    { href: '/dashboard/registros-diarios', icon: <ClipboardList size={20}/>,   label: 'Registro Diario' },
-    { href: '/dashboard/resumen-semanal',   icon: <BarChart2 size={20}/>,       label: 'Resumen Semanal' },
+    { href: '/dashboard/obras',                  icon: <HardHat size={20}/>,         label: 'Obras' },
+    { href: '/dashboard/equipos',                icon: <Wrench size={20}/>,          label: 'Equipos' },
+    { href: '/dashboard/registros-diarios',      icon: <ClipboardList size={20}/>,   label: 'Registro Diario' },
+    { href: '/dashboard/resumen-semanal',        icon: <BarChart2 size={20}/>,       label: 'Resumen Semanal' },
+    { href: '/dashboard/gastos-operativos',      icon: <Receipt size={20}/>,         label: 'Gastos Operativos' },
     // ── Sección Administración ─────────────────────────────────────────────────
-    { href: '/dashboard/suppliers',         icon: <Truck size={20}/>,           label: 'Proveedores' },
-    { href: '/dashboard/clients',           icon: <Users size={20}/>,           label: 'Clientes' },
-    { href: '/dashboard/reports',           icon: <FileText size={20}/>,        label: 'Reportes' },
-    { href: '/dashboard/settings',         icon: <Settings size={20}/>,        label: 'Parámetros' },
+    { href: '/dashboard/suppliers',              icon: <Truck size={20}/>,           label: 'Proveedores' },
+    { href: '/dashboard/clients',                icon: <Users size={20}/>,           label: 'Clientes' },
+    { href: '/dashboard/reports',                icon: <FileText size={20}/>,        label: 'Reportes' },
+    { href: '/dashboard/settings',               icon: <Settings size={20}/>,        label: 'Parámetros' },
 ];
 
 export default function Sidebar() {
@@ -72,18 +73,16 @@ export default function Sidebar() {
 
             {/* Nav */}
             <div className="flex flex-col flex-1 p-4 space-y-1 overflow-y-auto">
-
-                {/* Separador visual antes de la sección de operación */}
                 {NAV.map((item, idx) => (
                     <div key={item.href}>
-                        {/* Separador antes de Obras */}
+                        {/* Separador antes de Obras (idx 5) */}
                         {idx === 5 && (
                             <div className="pt-3 pb-1 px-4">
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Operación</p>
                             </div>
                         )}
-                        {/* Separador antes de Proveedores */}
-                        {idx === 9 && (
+                        {/* Separador antes de Proveedores (idx 10 — se corrió por Gastos Operativos) */}
+                        {idx === 10 && (
                             <div className="pt-3 pb-1 px-4">
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Administración</p>
                             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { Wrench, Plus, Edit, Trash2, CheckCircle, XCircle, ClipboardList } from 'lucide-react';
+import { Wrench, Plus, Edit, Trash2, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
@@ -15,7 +15,15 @@ type Equipo = {
     hodometroInicial: number;
     activo: boolean;
     notas: string | null;
-    _count: { registrosDiarios: number };
+    // Campos técnicos (C2-A)
+    marca: string | null;
+    anoFabricacion: number | null;
+    facturaCompra: string | null;
+    apodo: string | null;
+    acopladoCon: string | null;
+    seriePistolaActual: string | null;
+    statusEquipo: string | null;
+    _count: { registrosDiarios: number; componentesInstalados: number };
 };
 
 // ── Modal Crear / Editar Equipo ───────────────────────────────────────────────
@@ -27,25 +35,60 @@ function EquipoModal({
     onSaved: () => void;
 }) {
     const isEdit = !!equipo;
+    const [showTecnicos, setShowTecnicos] = useState(false);
+
     const [form, setForm] = useState({
-        nombre:           equipo?.nombre           ?? '',
-        modelo:           equipo?.modelo           ?? '',
-        numeroSerie:      equipo?.numeroSerie      ?? '',
-        numeroEconomico:  equipo?.numeroEconomico  ?? '',
-        hodometroInicial: equipo?.hodometroInicial ?? 0,
-        notas:            equipo?.notas            ?? '',
+        // Datos básicos
+        nombre:             equipo?.nombre             ?? '',
+        modelo:             equipo?.modelo             ?? '',
+        numeroSerie:        equipo?.numeroSerie        ?? '',
+        numeroEconomico:    equipo?.numeroEconomico    ?? '',
+        hodometroInicial:   equipo?.hodometroInicial   ?? 0,
+        notas:              equipo?.notas              ?? '',
+        // Datos técnicos / ficha (C2-A)
+        marca:              equipo?.marca              ?? '',
+        anoFabricacion:     equipo?.anoFabricacion?.toString() ?? '',
+        facturaCompra:      equipo?.facturaCompra      ?? '',
+        apodo:              equipo?.apodo              ?? '',
+        acopladoCon:        equipo?.acopladoCon        ?? '',
+        seriePistolaActual: equipo?.seriePistolaActual ?? '',
+        statusEquipo:       equipo?.statusEquipo       ?? 'ACTIVO',
     });
+
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
+
+    // Abrir la sección técnica automáticamente si hay datos al editar
+    useEffect(() => {
+        if (isEdit && (equipo?.marca || equipo?.apodo || equipo?.acopladoCon || equipo?.seriePistolaActual)) {
+            setShowTecnicos(true);
+        }
+    }, []);
 
     const handleSave = async () => {
         if (!form.nombre.trim()) { setError('El nombre es requerido'); return; }
         setSaving(true); setError('');
         try {
+            const body = {
+                nombre:             form.nombre.trim(),
+                modelo:             form.modelo             || null,
+                numeroSerie:        form.numeroSerie        || null,
+                numeroEconomico:    form.numeroEconomico    || null,
+                hodometroInicial:   Number(form.hodometroInicial),
+                notas:              form.notas              || null,
+                // Técnicos (C2-A)
+                marca:              form.marca              || null,
+                anoFabricacion:     form.anoFabricacion     ? Number(form.anoFabricacion) : null,
+                facturaCompra:      form.facturaCompra      || null,
+                apodo:              form.apodo              || null,
+                acopladoCon:        form.acopladoCon        || null,
+                seriePistolaActual: form.seriePistolaActual || null,
+                statusEquipo:       form.statusEquipo       || 'ACTIVO',
+            };
             if (isEdit) {
-                await fetchApi(`/equipos/${equipo!.id}`, { method: 'PUT', body: JSON.stringify(form) });
+                await fetchApi(`/equipos/${equipo!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             } else {
-                await fetchApi('/equipos', { method: 'POST', body: JSON.stringify(form) });
+                await fetchApi('/equipos', { method: 'POST', body: JSON.stringify(body) });
             }
             onSaved();
         } catch (e: any) {
@@ -55,13 +98,13 @@ function EquipoModal({
         }
     };
 
-    const field = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
+    const txt = (label: string, key: keyof typeof form, placeholder = '') => (
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
             <input
-                type={type}
+                type="text"
                 value={String(form[key])}
-                onChange={e => setForm(f => ({ ...f, [key]: type === 'number' ? Number(e.target.value) : e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                 placeholder={placeholder}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
@@ -70,19 +113,101 @@ function EquipoModal({
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-                <h2 className="text-lg font-bold text-gray-800 mb-4">
-                    {isEdit ? 'Editar Equipo' : 'Nuevo Equipo'}
-                </h2>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+                onClick={e => e.stopPropagation()}>
 
-                <div className="space-y-3">
-                    {field('Nombre *', 'nombre', 'text', 'Ej: Perforadora Atlas Copco')}
-                    {field('Modelo', 'modelo', 'text', 'Ej: ROC D7')}
-                    <div className="grid grid-cols-2 gap-3">
-                        {field('Número de serie', 'numeroSerie')}
-                        {field('Número económico', 'numeroEconomico', 'text', 'Ej: EQ-001')}
+                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl">
+                    <h2 className="text-lg font-bold text-gray-800">
+                        {isEdit ? 'Editar Equipo' : 'Nuevo Equipo'}
+                    </h2>
+                    <p className="text-xs text-gray-400 mt-0.5">Maquinaria y equipos de perforación</p>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+
+                    {/* ── Datos básicos ─────────────────────────────────── */}
+                    <div className="space-y-3">
+                        {txt('Nombre *', 'nombre', 'Ej: Track Drill JOVERO #1')}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            {txt('Modelo', 'modelo', 'Ej: ECM350')}
+                            {txt('Número económico', 'numeroEconomico', 'Ej: TD-10')}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            {txt('Número de serie', 'numeroSerie', 'Ej: R10565JD')}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Horómetro inicial (hrs)</label>
+                                <input
+                                    type="number"
+                                    value={form.hodometroInicial}
+                                    onChange={e => setForm(f => ({ ...f, hodometroInicial: Number(e.target.value) }))}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
                     </div>
-                    {field('Horómetro inicial (hrs)', 'hodometroInicial', 'number')}
+
+                    {/* ── Datos técnicos / ficha (C2-A) — sección colapsable ── */}
+                    <div className="border border-gray-100 rounded-xl overflow-hidden">
+                        <button
+                            type="button"
+                            onClick={() => setShowTecnicos(v => !v)}
+                            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50/70 hover:bg-gray-100/70 transition-colors text-left"
+                        >
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Datos técnicos / ficha
+                            </span>
+                            {showTecnicos
+                                ? <ChevronUp size={15} className="text-gray-400" />
+                                : <ChevronDown size={15} className="text-gray-400" />
+                            }
+                        </button>
+
+                        {showTecnicos && (
+                            <div className="px-4 pb-4 pt-3 space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                    {txt('Marca', 'marca', 'Ej: Ingersoll-Rand')}
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Año de fabricación</label>
+                                        <input
+                                            type="number"
+                                            value={form.anoFabricacion}
+                                            onChange={e => setForm(f => ({ ...f, anoFabricacion: e.target.value }))}
+                                            placeholder="Ej: 1996"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                {txt('Factura / referencia de compra', 'facturaCompra', 'Ej: 219 SIETE CERROS')}
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    {txt('Apodo', 'apodo', 'Ej: perf VL140 Nueva')}
+                                    {txt('Acoplado con', 'acopladoCon', 'Ej: XP825-2015 #1')}
+                                </div>
+
+                                {txt('Serie pistola VL140 actual', 'seriePistolaActual', 'Ej: 4521')}
+
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Status del equipo</label>
+                                    <select
+                                        value={form.statusEquipo}
+                                        onChange={e => setForm(f => ({ ...f, statusEquipo: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        <option value="ACTIVO">Activo</option>
+                                        <option value="EN_TALLER">En taller</option>
+                                        <option value="VENDIDO">Vendido</option>
+                                        <option value="ABANDONO">Abandono</option>
+                                        <option value="BAJA">Baja</option>
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Notas */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
                         <textarea
@@ -94,17 +219,15 @@ function EquipoModal({
                     </div>
                 </div>
 
-                {error && <p className="text-xs text-red-500 mt-3">{error}</p>}
+                {error && <p className="text-xs text-red-500 px-6 pb-2">{error}</p>}
 
-                <div className="flex gap-2 mt-5">
-                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2">
+                    <button onClick={onClose}
+                        className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
                         Cancelar
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50"
-                    >
+                    <button onClick={handleSave} disabled={saving}
+                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
                         {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear equipo'}
                     </button>
                 </div>
@@ -177,7 +300,7 @@ export default function EquiposPage() {
 
             {/* KPIs */}
             {!loading && (
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <p className="text-xs text-gray-400 mb-1">Total equipos</p>
                         <p className="text-2xl font-bold text-gray-800">{equipos.length}</p>
@@ -190,6 +313,12 @@ export default function EquiposPage() {
                         <p className="text-xs text-gray-400 mb-1">Total registros diarios</p>
                         <p className="text-2xl font-bold text-gray-800">
                             {equipos.reduce((a, e) => a + e._count.registrosDiarios, 0)}
+                        </p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                        <p className="text-xs text-gray-400 mb-1">Componentes instalados</p>
+                        <p className="text-2xl font-bold text-purple-600">
+                            {equipos.reduce((a, e) => a + (e._count.componentesInstalados ?? 0), 0)}
                         </p>
                     </div>
                 </div>
@@ -211,8 +340,9 @@ export default function EquiposPage() {
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100">
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Modelo</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">N° Económico</th>
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Modelo / Marca</th>
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">N° Econ.</th>
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Acoplado</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Horómetro ini.</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center">Registros</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center">Estado</th>
@@ -228,15 +358,25 @@ export default function EquiposPage() {
                                                     <Wrench size={14} className="text-blue-600" />
                                                 </div>
                                                 <div>
-                                                    <Link href={`/dashboard/equipos/${eq.id}`} className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                                                    <Link href={`/dashboard/equipos/${eq.id}`}
+                                                        className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
                                                         {eq.nombre}
                                                     </Link>
-                                                    {eq.numeroSerie && <p className="text-xs text-gray-400 font-mono">S/N: {eq.numeroSerie}</p>}
+                                                    {eq.apodo && (
+                                                        <p className="text-xs text-gray-400 italic">"{eq.apodo}"</p>
+                                                    )}
+                                                    {!eq.apodo && eq.numeroSerie && (
+                                                        <p className="text-xs text-gray-400 font-mono">S/N: {eq.numeroSerie}</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-3 text-sm text-gray-500">{eq.modelo || '—'}</td>
+                                        <td className="p-3">
+                                            <p className="text-sm text-gray-600">{eq.modelo || '—'}</p>
+                                            {eq.marca && <p className="text-xs text-gray-400">{eq.marca}{eq.anoFabricacion ? ` · ${eq.anoFabricacion}` : ''}</p>}
+                                        </td>
                                         <td className="p-3 text-sm font-mono text-gray-600">{eq.numeroEconomico || '—'}</td>
+                                        <td className="p-3 text-sm text-gray-500">{eq.acopladoCon || '—'}</td>
                                         <td className="p-3 text-right text-sm font-semibold text-gray-700">
                                             {eq.hodometroInicial.toLocaleString('es-MX')} hrs
                                         </td>

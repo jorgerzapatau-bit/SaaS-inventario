@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BarChart2, Gauge, Droplets, DollarSign, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import { BarChart2, Gauge, Droplets, DollarSign, ChevronDown, ChevronUp, Calendar, HardHat } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
@@ -20,7 +20,20 @@ type Registro = {
     peones: number;
     semanaNum: number | null;
     anoNum: number | null;
-    kpi: { litrosPorHora: number | null; litrosPorMetro: number | null; metrosPorHora: number | null };
+    // Campos de perforación (Fase 4)
+    bordo: number | null;
+    espaciamiento: number | null;
+    profundidadPromedio: number | null;
+    volumenRoca: number | null;
+    porcentajePerdida: number | null;
+    porcentajeAvance: number | null;
+    rentaEquipoDiaria: number | null;
+    kpi: {
+        litrosPorHora: number | null;
+        litrosPorMetro: number | null;
+        metrosPorHora: number | null;
+        metrosPorDia: number | null;
+    };
 };
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
@@ -39,7 +52,11 @@ type ResumenSemana = {
     costoDiesel: number;
     costoOperadores: number;
     costoPeones: number;
+    costoRenta: number;      // Fase 5: renta equipo acumulada
     costoTotal: number;
+    // Perforación acumulada
+    volumenRocaTotal: number | null;
+    profundidadPromProm: number | null;
     kpi: {
         litrosPorHora: number | null;
         litrosPorMetro: number | null;
@@ -49,8 +66,8 @@ type ResumenSemana = {
     registros: Registro[];
 };
 
-// Costo de operador y peón por jornada (del seed)
-const COSTO_OPERADOR = 450;   // 2700/6
+// Costo de operador y peón por jornada
+const COSTO_OPERADOR = 450;    // 2700/6
 const COSTO_PEON     = 283.33; // 1700/6
 
 function kpiColor(val: number | null, bueno: number, malo: number) {
@@ -63,9 +80,13 @@ function kpiColor(val: number | null, bueno: number, malo: number) {
 function SemanaCard({ semana }: { semana: ResumenSemana }) {
     const [expanded, setExpanded] = useState(false);
 
+    const tienePerforacion = semana.registros.some(r =>
+        r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
+    );
+
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            {/* Header de semana */}
+            {/* Header */}
             <button
                 onClick={() => setExpanded(v => !v)}
                 className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -117,10 +138,10 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         </p>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             {[
-                                { label: 'Lt / Hr',   val: semana.kpi.litrosPorHora,   unit: '',    bueno: 15, malo: 20 },
-                                { label: 'Lt / Mt',   val: semana.kpi.litrosPorMetro,  unit: '',    bueno: 1.5, malo: 2 },
-                                { label: 'Mt / Hr',   val: semana.kpi.metrosPorHora,   unit: '',    bueno: null, malo: null },
-                                { label: 'Mt / Día',  val: semana.kpi.metrosPorDia,    unit: ' m',  bueno: null, malo: null },
+                                { label: 'Lt / Hr',  val: semana.kpi.litrosPorHora,  unit: '',   bueno: 15,   malo: 20 },
+                                { label: 'Lt / Mt',  val: semana.kpi.litrosPorMetro, unit: '',   bueno: 1.5,  malo: 2 },
+                                { label: 'Mt / Hr',  val: semana.kpi.metrosPorHora,  unit: '',   bueno: null, malo: null },
+                                { label: 'Mt / Día', val: semana.kpi.metrosPorDia,   unit: ' m', bueno: null, malo: null },
                             ].map(k => (
                                 <div key={k.label} className="bg-gray-50 rounded-lg p-3 text-center">
                                     <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -132,21 +153,55 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         </div>
                     </div>
 
-                    {/* Costos desglosados (equivalente a hoja Semana del Excel) */}
+                    {/* KPIs de perforación (Fase 5 — solo si hay datos) */}
+                    {tienePerforacion && (
+                        <div>
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                <HardHat size={12} /> Perforación
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {semana.volumenRocaTotal !== null && (
+                                    <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                                        <p className="text-xs text-indigo-400 mb-1">Volumen roca total</p>
+                                        <p className="text-lg font-bold text-indigo-700">{semana.volumenRocaTotal.toFixed(2)} m³</p>
+                                    </div>
+                                )}
+                                {semana.profundidadPromProm !== null && (
+                                    <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                                        <p className="text-xs text-indigo-400 mb-1">Prof. promedio</p>
+                                        <p className="text-lg font-bold text-indigo-700">{semana.profundidadPromProm.toFixed(2)} m</p>
+                                    </div>
+                                )}
+                                {semana.barrenos > 0 && semana.volumenRocaTotal !== null && (
+                                    <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                                        <p className="text-xs text-indigo-400 mb-1">m³ / barreno</p>
+                                        <p className="text-lg font-bold text-indigo-700">
+                                            {(semana.volumenRocaTotal / semana.barrenos).toFixed(2)}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Costos desglosados */}
                     <div>
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                             <DollarSign size={12} /> Costos de la semana
                         </p>
                         <div className="space-y-2">
                             {[
-                                { label: 'Diésel',       val: semana.costoDiesel,    color: 'bg-blue-500' },
-                                { label: 'Operadores',   val: semana.costoOperadores, color: 'bg-purple-500' },
-                                { label: 'Peones',       val: semana.costoPeones,     color: 'bg-indigo-400' },
+                                { label: 'Diésel',     val: semana.costoDiesel,     color: 'bg-blue-500' },
+                                { label: 'Operadores', val: semana.costoOperadores, color: 'bg-purple-500' },
+                                { label: 'Peones',     val: semana.costoPeones,     color: 'bg-indigo-400' },
+                                ...(semana.costoRenta > 0
+                                    ? [{ label: 'Renta equipo', val: semana.costoRenta, color: 'bg-orange-400' }]
+                                    : []),
                             ].map(c => {
                                 const pct = semana.costoTotal > 0 ? (c.val / semana.costoTotal) * 100 : 0;
                                 return (
                                     <div key={c.label} className="flex items-center gap-3">
-                                        <span className="text-xs text-gray-500 w-24 flex-shrink-0">{c.label}</span>
+                                        <span className="text-xs text-gray-500 w-28 flex-shrink-0">{c.label}</span>
                                         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                                             <div className={`h-full rounded-full ${c.color}`} style={{ width: `${pct}%` }} />
                                         </div>
@@ -158,7 +213,7 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                                 );
                             })}
                             <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                                <span className="text-xs font-bold text-gray-700 w-24 flex-shrink-0">TOTAL</span>
+                                <span className="text-xs font-bold text-gray-700 w-28 flex-shrink-0">TOTAL</span>
                                 <div className="flex-1" />
                                 <span className="text-sm font-bold text-gray-800 w-24 text-right">
                                     ${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
@@ -181,9 +236,11 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                                         <th className="p-2 font-semibold text-gray-400 text-right">Hrs</th>
                                         <th className="p-2 font-semibold text-gray-400 text-right">Barrenos</th>
                                         <th className="p-2 font-semibold text-gray-400 text-right">Metros</th>
+                                        <th className="p-2 font-semibold text-gray-400 text-right">Vol. roca (m³)</th>
                                         <th className="p-2 font-semibold text-gray-400 text-right">Diésel (lt)</th>
                                         <th className="p-2 font-semibold text-gray-400 text-right">Lt/Hr</th>
                                         <th className="p-2 font-semibold text-gray-400 text-right">Mt/Hr</th>
+                                        <th className="p-2 font-semibold text-gray-400 text-right">Renta ($)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-50">
@@ -195,22 +252,38 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                                             <td className="p-2 text-right font-semibold text-gray-700">{r.horasTrabajadas}</td>
                                             <td className="p-2 text-right text-gray-600">{r.barrenos}</td>
                                             <td className="p-2 text-right text-gray-600">{r.metrosLineales.toFixed(1)}</td>
+                                            <td className="p-2 text-right text-indigo-600">
+                                                {r.volumenRoca != null ? r.volumenRoca.toFixed(2) : '—'}
+                                            </td>
                                             <td className="p-2 text-right text-blue-600 font-semibold">{r.litrosDiesel}</td>
                                             <td className={`p-2 text-right font-semibold ${kpiColor(r.kpi.litrosPorHora, 15, 20)}`}>
                                                 {r.kpi.litrosPorHora ?? '—'}
                                             </td>
                                             <td className="p-2 text-right text-gray-600">{r.kpi.metrosPorHora ?? '—'}</td>
+                                            <td className="p-2 text-right text-orange-600">
+                                                {r.rentaEquipoDiaria != null
+                                                    ? `$${r.rentaEquipoDiaria.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
+                                                    : '—'}
+                                            </td>
                                         </tr>
                                     ))}
-                                    {/* Fila de totales */}
+                                    {/* Fila totales */}
                                     <tr className="bg-blue-50 font-bold border-t-2 border-blue-200">
                                         <td className="p-2 text-blue-700">SEMANA {semana.semanaNum}</td>
                                         <td className="p-2 text-right text-blue-700">{semana.horasTotales.toFixed(1)}</td>
                                         <td className="p-2 text-right text-blue-700">{semana.barrenos}</td>
                                         <td className="p-2 text-right text-blue-700">{semana.metrosLineales.toFixed(1)}</td>
+                                        <td className="p-2 text-right text-indigo-700">
+                                            {semana.volumenRocaTotal != null ? semana.volumenRocaTotal.toFixed(2) : '—'}
+                                        </td>
                                         <td className="p-2 text-right text-blue-700">{semana.litrosDiesel}</td>
                                         <td className="p-2 text-right text-blue-700">{semana.kpi.litrosPorHora?.toFixed(2) ?? '—'}</td>
                                         <td className="p-2 text-right text-blue-700">{semana.kpi.metrosPorHora?.toFixed(2) ?? '—'}</td>
+                                        <td className="p-2 text-right text-orange-700">
+                                            {semana.costoRenta > 0
+                                                ? `$${semana.costoRenta.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
+                                                : '—'}
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -251,7 +324,6 @@ function ResumenSemanalInner() {
         load();
     }, [filtroEquipo]);
 
-    // Agrupar registros por semana (equivalente a hoja Semana del Excel)
     const semanas = useMemo<ResumenSemana[]>(() => {
         if (!registros.length) return [];
 
@@ -266,6 +338,7 @@ function ResumenSemanalInner() {
         return Object.entries(mapa)
             .map(([, regs]) => {
                 regs.sort((a, b) => a.fecha.localeCompare(b.fecha));
+
                 const totalHoras  = regs.reduce((a, r) => a + r.horasTrabajadas, 0);
                 const totalMetros = regs.reduce((a, r) => a + r.metrosLineales,  0);
                 const totalLitros = regs.reduce((a, r) => a + r.litrosDiesel,    0);
@@ -273,10 +346,25 @@ function ResumenSemanalInner() {
                 const costoDiesel = regs.reduce((a, r) => a + r.costoDiesel,     0);
                 const totalOps    = regs.reduce((a, r) => a + r.operadores,      0);
                 const totalPeones = regs.reduce((a, r) => a + r.peones,          0);
-                const costoOps    = totalOps    * COSTO_OPERADOR;
+                const costoOps    = totalOps * COSTO_OPERADOR;
                 const costoPeones = totalPeones * COSTO_PEON;
-                const costoTotal  = costoDiesel + costoOps + costoPeones;
+
+                // Fase 5: renta equipo acumulada
+                const costoRenta  = regs.reduce((a, r) => a + (r.rentaEquipoDiaria ?? 0), 0);
+
+                const costoTotal  = costoDiesel + costoOps + costoPeones + costoRenta;
                 const dias        = regs.filter(r => r.horasTrabajadas > 0).length;
+
+                // Perforación acumulada
+                const regsConVol  = regs.filter(r => r.volumenRoca != null);
+                const volumenRocaTotal = regsConVol.length > 0
+                    ? regsConVol.reduce((a, r) => a + (r.volumenRoca ?? 0), 0)
+                    : null;
+
+                const regsConProf = regs.filter(r => r.profundidadPromedio != null);
+                const profundidadPromProm = regsConProf.length > 0
+                    ? regsConProf.reduce((a, r) => a + (r.profundidadPromedio ?? 0), 0) / regsConProf.length
+                    : null;
 
                 return {
                     semanaNum:    regs[0].semanaNum!,
@@ -285,14 +373,17 @@ function ResumenSemanalInner() {
                     fechaInicio:  regs[0].fecha.slice(0, 10),
                     fechaFin:     regs[regs.length - 1].fecha.slice(0, 10),
                     dias,
-                    horasTotales:   totalHoras,
-                    barrenos:       totalBarr,
-                    metrosLineales: totalMetros,
-                    litrosDiesel:   totalLitros,
+                    horasTotales:    totalHoras,
+                    barrenos:        totalBarr,
+                    metrosLineales:  totalMetros,
+                    litrosDiesel:    totalLitros,
                     costoDiesel,
                     costoOperadores: costoOps,
                     costoPeones,
+                    costoRenta,
                     costoTotal,
+                    volumenRocaTotal,
+                    profundidadPromProm,
                     kpi: {
                         litrosPorHora:  totalHoras  > 0 ? +(totalLitros / totalHoras).toFixed(2)  : null,
                         litrosPorMetro: totalMetros > 0 ? +(totalLitros / totalMetros).toFixed(2) : null,
@@ -308,25 +399,22 @@ function ResumenSemanalInner() {
             });
     }, [registros]);
 
-    // Totales acumulados de todo el período visible
-    const totales = useMemo(() => ({
-        semanas:    semanas.length,
-        horas:      semanas.reduce((a, s) => a + s.horasTotales,   0),
-        metros:     semanas.reduce((a, s) => a + s.metrosLineales,  0),
-        litros:     semanas.reduce((a, s) => a + s.litrosDiesel,    0),
-        costoTotal: semanas.reduce((a, s) => a + s.costoTotal,      0),
-        ltHr:       null as number | null,
-        mtHr:       null as number | null,
-    }), [semanas]);
-
-    if (totales.horas > 0) {
-        (totales as any).ltHr = +(totales.litros / totales.horas).toFixed(2);
-        (totales as any).mtHr = +(totales.metros / totales.horas).toFixed(2);
-    }
+    const totales = useMemo(() => {
+        const horas      = semanas.reduce((a, s) => a + s.horasTotales,   0);
+        const metros     = semanas.reduce((a, s) => a + s.metrosLineales,  0);
+        const litros     = semanas.reduce((a, s) => a + s.litrosDiesel,    0);
+        const costoTotal = semanas.reduce((a, s) => a + s.costoTotal,      0);
+        const costoRenta = semanas.reduce((a, s) => a + s.costoRenta,      0);
+        return {
+            semanas: semanas.length,
+            horas, metros, litros, costoTotal, costoRenta,
+            ltHr: horas > 0 ? +(litros / horas).toFixed(2) : null,
+            mtHr: horas > 0 ? +(metros / horas).toFixed(2) : null,
+        };
+    }, [semanas]);
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
-
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Resumen Semanal</h1>
@@ -350,12 +438,12 @@ function ResumenSemanalInner() {
             {!loading && semanas.length > 0 && (
                 <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                     {[
-                        { label: 'Semanas',        val: totales.semanas,                                              unit: '',    icon: <BarChart2 size={14}/>,  color: 'text-gray-800' },
-                        { label: 'Horas totales',  val: totales.horas.toFixed(1),                                     unit: ' hrs', icon: <Gauge size={14}/>,      color: 'text-gray-800' },
-                        { label: 'Metros totales', val: totales.metros.toFixed(1),                                    unit: ' m',  icon: <BarChart2 size={14}/>,  color: 'text-gray-800' },
-                        { label: 'Diésel total',   val: totales.litros.toLocaleString('es-MX'),                       unit: ' lt', icon: <Droplets size={14}/>,   color: 'text-blue-600' },
-                        { label: 'Lt/hr prom.',    val: (totales as any).ltHr ?? '—',                                 unit: '',    icon: <Gauge size={14}/>,      color: 'text-gray-700' },
-                        { label: 'Costo total',    val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '', icon: <DollarSign size={14}/>, color: 'text-gray-800' },
+                        { label: 'Semanas',        val: totales.semanas,                                                                           unit: '',     icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
+                        { label: 'Horas totales',  val: totales.horas.toFixed(1),                                                                  unit: ' hrs', icon: <Gauge size={14}/>,    color: 'text-gray-800' },
+                        { label: 'Metros totales', val: totales.metros.toFixed(1),                                                                  unit: ' m',   icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
+                        { label: 'Diésel total',   val: totales.litros.toLocaleString('es-MX'),                                                     unit: ' lt',  icon: <Droplets size={14}/>, color: 'text-blue-600' },
+                        { label: 'Lt/hr prom.',    val: totales.ltHr ?? '—',                                                                        unit: '',     icon: <Gauge size={14}/>,    color: 'text-gray-700' },
+                        { label: 'Costo total',    val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`,              unit: '',     icon: <DollarSign size={14}/>, color: 'text-gray-800' },
                     ].map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                             <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">{k.icon}{k.label}</p>
