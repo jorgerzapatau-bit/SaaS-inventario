@@ -278,10 +278,10 @@ model Equipo {
   facturaCompra          String?
 
   // --- CAMPOS TÉCNICOS ---
-  apodo                  String?                 // Ej: "Gringo #1", "Viejito"
-  acopladoCon            String?                 // Ej: "XP750-2013"
+  apodo                  String?
+  acopladoCon            String?
   proveedorOrigen        String?
-  seriePistolaActual     String?                 // Serie de la VL140 instalada actualmente
+  seriePistolaActual     String?
   // -----------------------
 
   statusEquipo           StatusEquipo?           @default(ACTIVO)
@@ -295,10 +295,14 @@ model Equipo {
   registrosMantenimiento   RegistroMantenimiento[]
   resumenesSemana          ResumenSemana[]
   salidas                  Salida[]
-  // --- NUEVAS RELACIONES para trazabilidad de componentes ---
+  // --- Trazabilidad de componentes ---
   componentesInstalados    Componente[]            @relation("ComponenteEnEquipo")
   movimientosComponente    MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
 }
+
+// =============================================================================
+// C1-A + C1-B: Obra con espaciamiento y PlantillaObra
+// =============================================================================
 
 model Obra {
   id                     String                  @id @default(uuid())
@@ -309,6 +313,7 @@ model Obra {
   ubicacion              String?
   bordo                  Decimal?
   espesor                Decimal?
+  espaciamiento          Decimal?                // Spacing de la malla (C1-A)
   metrosContratados      Decimal?
   precioUnitario         Decimal?
   moneda                 Moneda                  @default(MXN)
@@ -327,6 +332,7 @@ model Obra {
   cliente                Cliente?                @relation(fields: [clienteId], references: [id])
   empresa                Empresa                 @relation(fields: [empresaId], references: [id])
   obraEquipos            ObraEquipo[]
+  plantillas             PlantillaObra[]         // (C1-B)
   registrosDiarios       RegistroDiario[]
   registrosMantenimiento RegistroMantenimiento[]
   salidas                Salida[]
@@ -335,16 +341,40 @@ model Obra {
   @@index([status])
 }
 
+// C1-B: Plantillas por obra (Plt1, Plt2, ...)
+model PlantillaObra {
+  id                String    @id @default(uuid())
+  obraId            String
+  numero            Int       // 1, 2, 3...
+  metrosContratados Decimal
+  barrenos          Int       @default(0)
+  bordo             Decimal?
+  espaciamiento     Decimal?
+  precioUnitario    Decimal?
+  moneda            Moneda    @default(MXN)
+  fechaInicio       DateTime? @db.Date
+  fechaFin          DateTime? @db.Date
+  notas             String?
+  createdAt         DateTime  @default(now())
+  obra              Obra      @relation(fields: [obraId], references: [id])
+
+  @@unique([obraId, numero])
+  @@index([obraId])
+}
+
+// C3-A: ObraEquipo con horómetros por obra
 model ObraEquipo {
-  id          String    @id @default(uuid())
-  obraId      String
-  equipoId    String
-  fechaInicio DateTime  @db.Date
-  fechaFin    DateTime? @db.Date
-  notas       String?
-  createdAt   DateTime  @default(now())
-  equipo      Equipo    @relation(fields: [equipoId], references: [id])
-  obra        Obra      @relation(fields: [obraId], references: [id])
+  id                String    @id @default(uuid())
+  obraId            String
+  equipoId          String
+  fechaInicio       DateTime  @db.Date
+  fechaFin          DateTime? @db.Date
+  horometroInicial  Decimal?  // horómetro al inicio de esta obra (C3-A)
+  horometroFinal    Decimal?  // horómetro al cierre (C3-A)
+  notas             String?
+  createdAt         DateTime  @default(now())
+  equipo            Equipo    @relation(fields: [equipoId], references: [id])
+  obra              Obra      @relation(fields: [obraId], references: [id])
 
   @@index([obraId])
   @@index([equipoId])
@@ -404,12 +434,12 @@ model RegistroDiario {
   barrenos              Int                    @default(0)
   metrosLineales        Decimal                @default(0)
 
-  // --- CAMPOS DE PERFORACIÓN (Hoja Plantilla) ---
-  bordo                 Decimal?               @db.Decimal  // Burden
+  // --- CAMPOS DE PERFORACIÓN ---
+  bordo                 Decimal?               @db.Decimal
   espaciamiento         Decimal?               @db.Decimal
-  volumenRoca           Decimal?               @db.Decimal  // Bordo x Espaciamiento x Profundidad
+  volumenRoca           Decimal?               @db.Decimal
   porcentajePerdida     Decimal?               @db.Decimal
-  // -----------------------------------------------
+  // -----------------------------
 
   litrosDiesel          Decimal                @default(0)
   precioDiesel          Decimal                @default(0)
@@ -490,8 +520,6 @@ model RegistroMantenimiento {
   fecha         DateTime           @db.Date
   horometro     Decimal?           @db.Decimal
   tipo          TipoMantenimiento? @default(CORRECTIVO)
-  // descripcion es obligatorio — en validación backend usar .min(10)
-  // Ej: "Se retiró Pistola VL140 S/N 4521 para reparación de empaque"
   descripcion   String
   observaciones String?
   costo         Decimal?           @default(0) @db.Decimal
@@ -541,24 +569,21 @@ model GastoOperativo {
 }
 
 // =============================================================================
-// NUEVO: Trazabilidad de componentes móviles (Pistola VL140, etc.)
+// Trazabilidad de componentes móviles (Pistola VL140, etc.)
 // =============================================================================
 
 model Componente {
   id             String                 @id @default(uuid())
   empresaId      String
-  nombre         String                 // Ej: "Pistola VL140"
-  serie          String?                // Número de serie del componente
-  tipo           String?                // Ej: "Pistola", "Cabezal", "Compresor"
+  nombre         String
+  serie          String?
+  tipo           String?
   notas          String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
-
-  // Equipo donde está instalado ACTUALMENTE. null = en taller o almacén
   equipoActualId String?
   equipoActual   Equipo?                @relation("ComponenteEnEquipo", fields: [equipoActualId], references: [id])
   empresa        Empresa                @relation(fields: [empresaId], references: [id])
-
   historial      MovimientoComponente[]
 
   @@index([empresaId])
@@ -568,14 +593,11 @@ model Componente {
 model MovimientoComponente {
   id           String     @id @default(uuid())
   componenteId String
-  equipoId     String?    // Equipo destino. null = regresó a taller/almacén
+  equipoId     String?
   fecha        DateTime   @db.Date
-  // Valores: "INSTALACION" | "RETIRO" | "ENVIO_REPARACION" | "RETORNO_REPARACION"
   tipo         String
-  // Obligatorio: describir qué pasó. Ej: "Instalada en Track-02, se retiró de Track-01"
   notas        String
   createdAt    DateTime   @default(now())
-
   componente   Componente @relation(fields: [componenteId], references: [id])
   equipo       Equipo?    @relation("MovimientosComponenteEquipo", fields: [equipoId], references: [id])
 

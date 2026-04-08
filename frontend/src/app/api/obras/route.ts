@@ -3,7 +3,6 @@ import prisma from '../lib/prisma';
 import { getAuthUser, unauthorized } from '../lib/auth';
 
 // ─── GET /api/obras ───────────────────────────────────────────────────────────
-// Devuelve obras con métricas acumuladas: metros perforados, % avance, costos
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -23,24 +22,24 @@ export async function GET(req: NextRequest) {
                     where: { fechaFin: null },
                     include: { equipo: { select: { nombre: true, numeroEconomico: true } } },
                 },
+                plantillas: { orderBy: { numero: 'asc' } },       // C1-B
                 _count: {
                     select: {
-                        registrosDiarios: true,
+                        registrosDiarios:  true,
                         cortesFacturacion: true,
                     },
                 },
             },
         });
 
-        // Para cada obra calcular métricas acumuladas desde registros diarios
         const obras_con_metricas = await Promise.all(obras.map(async (obra) => {
             const agg = await prisma.registroDiario.aggregate({
                 where: { obraId: obra.id, empresaId: user.empresaId },
                 _sum: {
-                    metrosLineales: true,
+                    metrosLineales:  true,
                     horasTrabajadas: true,
-                    litrosDiesel: true,
-                    barrenos: true,
+                    litrosDiesel:    true,
+                    barrenos:        true,
                 },
             });
 
@@ -49,7 +48,6 @@ export async function GET(req: NextRequest) {
                 ? (metrosPerforados / Number(obra.metrosContratados)) * 100
                 : null;
 
-            // Monto total facturado en cortes
             const cortesAgg = await prisma.corteFacturacion.aggregate({
                 where: { obraId: obra.id, status: { in: ['FACTURADO', 'COBRADO'] } },
                 _sum: { montoFacturado: true },
@@ -61,15 +59,23 @@ export async function GET(req: NextRequest) {
                 metrosContratados: obra.metrosContratados ? Number(obra.metrosContratados) : null,
                 bordo:             obra.bordo             ? Number(obra.bordo)             : null,
                 espesor:           obra.espesor           ? Number(obra.espesor)           : null,
+                espaciamiento:     obra.espaciamiento     ? Number(obra.espaciamiento)     : null,  // C1-A
                 tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
-                // Métricas acumuladas
+                // Serializar plantillas (C1-B)
+                plantillas: obra.plantillas.map(p => ({
+                    ...p,
+                    metrosContratados: Number(p.metrosContratados),
+                    bordo:             p.bordo          ? Number(p.bordo)          : null,
+                    espaciamiento:     p.espaciamiento  ? Number(p.espaciamiento)  : null,
+                    precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
+                })),
                 metricas: {
                     metrosPerforados,
-                    horasTotales:    Number(agg._sum.horasTrabajadas ?? 0),
-                    litrosDiesel:    Number(agg._sum.litrosDiesel    ?? 0),
-                    barrenos:        Number(agg._sum.barrenos        ?? 0),
+                    horasTotales:   Number(agg._sum.horasTrabajadas ?? 0),
+                    litrosDiesel:   Number(agg._sum.litrosDiesel    ?? 0),
+                    barrenos:       Number(agg._sum.barrenos        ?? 0),
                     pctAvance,
-                    montoFacturado:  Number(cortesAgg._sum.montoFacturado ?? 0),
+                    montoFacturado: Number(cortesAgg._sum.montoFacturado ?? 0),
                 },
             };
         }));
@@ -88,11 +94,12 @@ export async function POST(req: NextRequest) {
     try {
         const {
             nombre, clienteId, ubicacion,
-            bordo, espesor, metrosContratados, precioUnitario,
+            bordo, espesor, espaciamiento,      // C1-A
+            metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
-            // Lista de equipos: [{ equipoId, fechaInicio? }]
-            equipos,
+            equipos,                             // [{ equipoId, fechaInicio?, horometroInicial? }]
+            plantillas,                          // C1-B: [{ numero, metrosContratados, barrenos, bordo, espaciamiento, precioUnitario, moneda, fechaInicio, fechaFin, notas }]
         } = await req.json();
 
         if (!nombre?.trim())
@@ -111,6 +118,7 @@ export async function POST(req: NextRequest) {
                     ubicacion:         ubicacion         || null,
                     bordo:             bordo             != null ? Number(bordo)             : null,
                     espesor:           espesor           != null ? Number(espesor)           : null,
+                    espaciamiento:     espaciamiento     != null ? Number(espaciamiento)     : null,  // C1-A
                     metrosContratados: metrosContratados != null ? Number(metrosContratados) : null,
                     precioUnitario:    precioUnitario    != null ? Number(precioUnitario)    : null,
                     moneda:            monedaVal,
@@ -122,11 +130,10 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // Crear registros ObraEquipo para cada equipo enviado
+            // Crear ObraEquipo con horometroInicial (C3-A)
             if (Array.isArray(equipos) && equipos.length > 0) {
                 for (const eq of equipos) {
                     if (!eq.equipoId) continue;
-                    // Cerrar asignaciones abiertas del mismo equipo en otras obras
                     const fechaInicioDate = eq.fechaInicio
                         ? new Date(eq.fechaInicio)
                         : (fechaInicio ? new Date(fechaInicio) : new Date());
@@ -135,7 +142,34 @@ export async function POST(req: NextRequest) {
                         data:  { fechaFin: fechaInicioDate },
                     });
                     await tx.obraEquipo.create({
-                        data: { obraId: nueva.id, equipoId: eq.equipoId, fechaInicio: fechaInicioDate },
+                        data: {
+                            obraId:           nueva.id,
+                            equipoId:         eq.equipoId,
+                            fechaInicio:      fechaInicioDate,
+                            horometroInicial: eq.horometroInicial != null ? Number(eq.horometroInicial) : null,  // C3-A
+                        },
+                    });
+                }
+            }
+
+            // Crear PlantillaObra (C1-B)
+            if (Array.isArray(plantillas) && plantillas.length > 0) {
+                for (const plt of plantillas) {
+                    if (!plt.metrosContratados) continue;
+                    await tx.plantillaObra.create({
+                        data: {
+                            obraId:            nueva.id,
+                            numero:            plt.numero,
+                            metrosContratados: Number(plt.metrosContratados),
+                            barrenos:          Number(plt.barrenos   || 0),
+                            bordo:             plt.bordo          ? Number(plt.bordo)          : null,
+                            espaciamiento:     plt.espaciamiento  ? Number(plt.espaciamiento)  : null,
+                            precioUnitario:    plt.precioUnitario ? Number(plt.precioUnitario) : null,
+                            moneda:            plt.moneda         || 'MXN',
+                            fechaInicio:       plt.fechaInicio    ? new Date(plt.fechaInicio)  : null,
+                            fechaFin:          plt.fechaFin       ? new Date(plt.fechaFin)     : null,
+                            notas:             plt.notas          || null,
+                        },
                     });
                 }
             }

@@ -5,7 +5,6 @@ import { getAuthUser, unauthorized } from '../../lib/auth';
 type Params = { params: Promise<{ id: string }> };
 
 // ─── GET /api/obras/[id] ──────────────────────────────────────────────────────
-// Detalle completo: métricas, equipos, cortes, últimos registros
 export async function GET(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
@@ -28,9 +27,8 @@ export async function GET(req: NextRequest, { params }: Params) {
                         },
                     },
                 },
-                cortesFacturacion: {
-                    orderBy: { numero: 'desc' },
-                },
+                plantillas: { orderBy: { numero: 'asc' } },       // C1-B
+                cortesFacturacion: { orderBy: { numero: 'desc' } },
                 _count: {
                     select: { registrosDiarios: true, cortesFacturacion: true },
                 },
@@ -40,7 +38,6 @@ export async function GET(req: NextRequest, { params }: Params) {
         if (!obra)
             return Response.json({ error: 'Obra no encontrada' }, { status: 404 });
 
-        // Métricas acumuladas totales
         const agg = await prisma.registroDiario.aggregate({
             where: { obraId: id, empresaId: user.empresaId },
             _sum: {
@@ -51,7 +48,6 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
         });
 
-        // Costo acumulado de insumos (movimientos SALIDA vinculados a la obra)
         const costoInsumos = await prisma.movimientoInventario.aggregate({
             where: {
                 obraId:         id,
@@ -61,7 +57,6 @@ export async function GET(req: NextRequest, { params }: Params) {
             _sum: { costoUnitario: true, cantidad: true },
         });
 
-        // Monto total facturado
         const facturacion = await prisma.corteFacturacion.aggregate({
             where: { obraId: id },
             _sum: { montoFacturado: true },
@@ -78,9 +73,21 @@ export async function GET(req: NextRequest, { params }: Params) {
             metrosContratados: obra.metrosContratados ? Number(obra.metrosContratados) : null,
             bordo:             obra.bordo             ? Number(obra.bordo)             : null,
             espesor:           obra.espesor           ? Number(obra.espesor)           : null,
+            espaciamiento:     obra.espaciamiento     ? Number(obra.espaciamiento)     : null,  // C1-A
             tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
+            // C1-B: plantillas serializadas
+            plantillas: obra.plantillas.map(p => ({
+                ...p,
+                metrosContratados: Number(p.metrosContratados),
+                bordo:             p.bordo          ? Number(p.bordo)          : null,
+                espaciamiento:     p.espaciamiento  ? Number(p.espaciamiento)  : null,
+                precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
+            })),
+            // C3-A: horómetros en ObraEquipo
             obraEquipos: obra.obraEquipos.map(oe => ({
                 ...oe,
+                horometroInicial: oe.horometroInicial ? Number(oe.horometroInicial) : null,
+                horometroFinal:   oe.horometroFinal   ? Number(oe.horometroFinal)   : null,
                 equipo: {
                     ...oe.equipo,
                     hodometroInicial: Number(oe.equipo.hodometroInicial),
@@ -122,7 +129,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const { id } = await params;
         const {
             nombre, clienteId, ubicacion,
-            bordo, espesor, metrosContratados, precioUnitario,
+            bordo, espesor, espaciamiento,      // C1-A
+            metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
         } = await req.json();
@@ -135,14 +143,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 ...(nombre            !== undefined && { nombre }),
                 ...(clienteId         !== undefined && { clienteId:         clienteId || null }),
                 ...(ubicacion         !== undefined && { ubicacion:         ubicacion || null }),
-                ...(bordo             !== undefined && { bordo:             bordo != null ? Number(bordo) : null }),
-                ...(espesor           !== undefined && { espesor:           espesor != null ? Number(espesor) : null }),
+                ...(bordo             !== undefined && { bordo:             bordo         != null ? Number(bordo)             : null }),
+                ...(espesor           !== undefined && { espesor:           espesor       != null ? Number(espesor)           : null }),
+                ...(espaciamiento     !== undefined && { espaciamiento:     espaciamiento != null ? Number(espaciamiento)     : null }),  // C1-A
                 ...(metrosContratados !== undefined && { metrosContratados: metrosContratados != null ? Number(metrosContratados) : null }),
-                ...(precioUnitario    !== undefined && { precioUnitario:    precioUnitario != null ? Number(precioUnitario) : null }),
+                ...(precioUnitario    !== undefined && { precioUnitario:    precioUnitario    != null ? Number(precioUnitario)    : null }),
                 ...(monedaVal         !== undefined && { moneda:            monedaVal }),
                 ...(tipoCambio        !== undefined && { tipoCambio:        tipoCambio != null ? Number(tipoCambio) : null }),
                 ...(fechaInicio       !== undefined && { fechaInicio:       fechaInicio ? new Date(fechaInicio) : null }),
-                ...(fechaFin          !== undefined && { fechaFin:          fechaFin ? new Date(fechaFin) : null }),
+                ...(fechaFin          !== undefined && { fechaFin:          fechaFin    ? new Date(fechaFin)    : null }),
                 ...(status            !== undefined && { status }),
                 ...(notas             !== undefined && { notas: notas || null }),
             },

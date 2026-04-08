@@ -10,6 +10,22 @@ import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
+type PlantillaObra = {
+    id?: string;
+    numero: number;
+    metrosContratados: string;
+    barrenos: string;
+    fechaInicio: string;
+    fechaFin: string;
+    notas: string;
+};
+
+type EquipoSeleccionado = {
+    equipoId: string;
+    fechaInicio: string;
+    horometroInicial: string;   // C3-A
+};
+
 type Obra = {
     id: string;
     nombre: string;
@@ -100,9 +116,15 @@ function ObraModal({
 }) {
     const isEdit = !!obra;
 
-    const [equiposSeleccionados, setEquiposSeleccionados] = useState<
-        { equipoId: string; fechaInicio: string }[]
-    >([{ equipoId: '', fechaInicio: '' }]);
+    // C3-A: equipos con horómetro inicial
+    const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
+        [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
+    );
+
+    // C1-B: plantillas dinámicas
+    const [plantillas, setPlantillas] = useState<PlantillaObra[]>([
+        { numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' },
+    ]);
 
     const [form, setForm] = useState({
         nombre:            obra?.nombre            ?? '',
@@ -116,8 +138,11 @@ function ObraModal({
         fechaInicio:       obra?.fechaInicio?.slice(0, 10)     ?? '',
         fechaFin:          obra?.fechaFin?.slice(0, 10)        ?? '',
         status:            obra?.status            ?? 'ACTIVA',
+        bordo:             '',   // C1-A
+        espaciamiento:     '',   // C1-A
         notas:             obra?.notas             ?? '',
     });
+
     const [dirty,  setDirty]  = useState(false);
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
@@ -137,6 +162,13 @@ function ObraModal({
         form.metrosContratados && form.precioUnitario
             ? Number(form.metrosContratados) * Number(form.precioUnitario)
             : null;
+
+    // C1-A: área calculada
+    const areaCalculada =
+        form.bordo && form.espaciamiento
+            ? (Number(form.bordo) * Number(form.espaciamiento)).toFixed(2)
+            : null;
+
     const fmtMoney = (n: number) =>
         n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -145,13 +177,14 @@ function ObraModal({
         onClose();
     };
 
+    // ── Equipos ──────────────────────────────────────────────────────────────
     const addEquipo = () =>
-        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '' }]);
+        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
 
     const removeEquipo = (idx: number) =>
         setEquiposSeleccionados(prev => prev.filter((_, i) => i !== idx));
 
-    const updateEquipo = (idx: number, field: 'equipoId' | 'fechaInicio', value: string) => {
+    const updateEquipo = (idx: number, field: keyof EquipoSeleccionado, value: string) => {
         setEquiposSeleccionados(prev =>
             prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e))
         );
@@ -160,6 +193,26 @@ function ObraModal({
 
     const equiposUsados = new Set(equiposSeleccionados.map(e => e.equipoId).filter(Boolean));
 
+    // ── Plantillas (C1-B) ─────────────────────────────────────────────────────
+    const addPlantilla = () =>
+        setPlantillas(prev => [
+            ...prev,
+            { numero: prev.length + 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' },
+        ]);
+
+    const removePlantilla = (idx: number) =>
+        setPlantillas(prev =>
+            prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, numero: i + 1 }))
+        );
+
+    const updatePlantilla = (idx: number, field: keyof PlantillaObra, value: string) => {
+        setPlantillas(prev =>
+            prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
+        );
+        setDirty(true);
+    };
+
+    // ── Guardar ───────────────────────────────────────────────────────────────
     const handleSave = async () => {
         if (!form.nombre.trim()) { setError('El nombre de la obra es requerido'); return; }
         if (!form.clienteId)     { setError('Debes seleccionar un cliente del catálogo'); return; }
@@ -168,6 +221,12 @@ function ObraModal({
         const equiposValidos = equiposSeleccionados.filter(e => e.equipoId);
         if (!isEdit && equiposValidos.length === 0) {
             setError('Debes asignar al menos un equipo a la obra');
+            return;
+        }
+
+        const plantillasValidas = plantillas.filter(p => p.metrosContratados);
+        if (!isEdit && plantillasValidas.length === 0) {
+            setError('Debes agregar al menos una plantilla con metros contratados');
             return;
         }
 
@@ -183,14 +242,29 @@ function ObraModal({
                 fechaInicio:       form.fechaInicio       || null,
                 fechaFin:          form.fechaFin          || null,
                 status:            form.status,
-                notas:             form.notas             || null,
+                bordo:             form.bordo         ? Number(form.bordo)         : null,   // C1-A
+                espaciamiento:     form.espaciamiento ? Number(form.espaciamiento) : null,   // C1-A
+                notas:             form.notas         || null,
             };
+
             if (!isEdit) {
+                // C3-A: equipos con horometroInicial
                 body.equipos = equiposValidos.map(e => ({
-                    equipoId:    e.equipoId,
-                    fechaInicio: e.fechaInicio || form.fechaInicio || undefined,
+                    equipoId:         e.equipoId,
+                    fechaInicio:      e.fechaInicio || form.fechaInicio || undefined,
+                    horometroInicial: e.horometroInicial ? Number(e.horometroInicial) : null,
+                }));
+                // C1-B: plantillas
+                body.plantillas = plantillasValidas.map(p => ({
+                    numero:            p.numero,
+                    metrosContratados: Number(p.metrosContratados),
+                    barrenos:          p.barrenos ? Number(p.barrenos) : 0,
+                    fechaInicio:       p.fechaInicio || null,
+                    fechaFin:          p.fechaFin   || null,
+                    notas:             p.notas      || null,
                 }));
             }
+
             if (isEdit) {
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             } else {
@@ -225,7 +299,7 @@ function ObraModal({
 
                     {/* Nombre y status */}
                     <div className="grid grid-cols-2 gap-3">
-                        {inp('Nombre de la obra *', 'nombre', 'text', 'Ej: Mina El Toro – Frente 3')}
+                        {inp('Nombre de la obra *', 'nombre', 'text', 'Ej: JOVERO')}
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
                             <select value={form.status} onChange={handleFieldChange('status')}
@@ -237,7 +311,7 @@ function ObraModal({
                         </div>
                     </div>
 
-                    {/* Cliente — solo catálogo */}
+                    {/* Cliente */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Cliente <span className="text-red-500">*</span>
@@ -263,8 +337,8 @@ function ObraModal({
                     <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Contrato</p>
                         <div className="grid grid-cols-2 gap-3">
-                            {inp('Metros contratados (mt ln)', 'metrosContratados', 'number', '2000')}
-                            {inp('Precio unitario ($/m³ o mt)', 'precioUnitario', 'number', '24.50')}
+                            {inp('Metros contratados totales (m)', 'metrosContratados', 'number', '2000')}
+                            {inp('Precio unitario ($/m)', 'precioUnitario', 'number', '24.50')}
                         </div>
                         <div className="mt-3">
                             <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
@@ -284,7 +358,22 @@ function ObraModal({
                         )}
                     </div>
 
-                    {/* Fechas con validación cruzada */}
+                    {/* C1-A: Malla de perforación — bordo + espaciamiento + área calculada */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Malla de perforación</p>
+                        <div className="grid grid-cols-3 gap-3">
+                            {inp('Bordo (m)', 'bordo', 'number', '2.7')}
+                            {inp('Espaciamiento (m)', 'espaciamiento', 'number', '3.0')}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Área (m²)</label>
+                                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                                    {areaCalculada ? areaCalculada : '—'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Fechas */}
                     <div className="grid grid-cols-2 gap-3">
                         {inp('Fecha inicio', 'fechaInicio', 'date')}
                         <div>
@@ -300,7 +389,63 @@ function ObraModal({
                     </div>
                     {fechaError && <p className="text-xs text-red-500 -mt-3">{fechaError}</p>}
 
-                    {/* Equipos: lista dinámica (solo en creación) */}
+                    {/* C1-B: Plantillas (solo en creación) */}
+                    {!isEdit && (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    Plantillas <span className="text-red-500">*</span>
+                                </p>
+                                <button type="button" onClick={addPlantilla}
+                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                    <Plus size={12} /> Agregar plantilla
+                                </button>
+                            </div>
+                            <div className="space-y-3">
+                                {plantillas.map((plt, idx) => (
+                                    <div key={idx} className="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-gray-600">Plantilla {plt.numero}</span>
+                                            {plantillas.length > 1 && (
+                                                <button type="button" onClick={() => removePlantilla(idx)}
+                                                    className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
+                                                    <X size={13} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Metros contratados *</label>
+                                                <input type="number" placeholder="841.50" value={plt.metrosContratados}
+                                                    onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
+                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Barrenos</label>
+                                                <input type="number" placeholder="89" value={plt.barrenos}
+                                                    onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
+                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
+                                                <input type="date" value={plt.fechaInicio}
+                                                    onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
+                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Fecha fin</label>
+                                                <input type="date" value={plt.fechaFin}
+                                                    onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
+                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* C3-A: Equipos con horómetro inicial (solo en creación) */}
                     {!isEdit && (
                         <div>
                             <div className="flex items-center justify-between mb-2">
@@ -314,24 +459,36 @@ function ObraModal({
                             </div>
                             <div className="space-y-2">
                                 {equiposSeleccionados.map((eq, idx) => (
-                                    <div key={idx} className="flex gap-2 items-center">
-                                        <select value={eq.equipoId}
-                                            onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                            <option value="">— Selecciona un equipo —</option>
-                                            {equipos.map(e => (
-                                                <option key={e.id} value={e.id}
-                                                    disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
-                                                    {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <input type="date" value={eq.fechaInicio}
-                                            onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
-                                            className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                    <div key={idx} className="flex gap-2 items-end flex-wrap">
+                                        <div className="flex-1 min-w-[160px]">
+                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Equipo</label>}
+                                            <select value={eq.equipoId}
+                                                onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                                <option value="">— Selecciona —</option>
+                                                {equipos.map(e => (
+                                                    <option key={e.id} value={e.id}
+                                                        disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
+                                                        {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>}
+                                            <input type="date" value={eq.fechaInicio}
+                                                onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
+                                                className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
+                                        <div>
+                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Horómetro inicial (hrs)</label>}
+                                            <input type="number" placeholder="7662" value={eq.horometroInicial}
+                                                onChange={e => updateEquipo(idx, 'horometroInicial', e.target.value)}
+                                                className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
                                         {equiposSeleccionados.length > 1 && (
                                             <button type="button" onClick={() => removeEquipo(idx)}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mb-0.5">
                                                 <X size={14} />
                                             </button>
                                         )}
@@ -465,8 +622,8 @@ export default function ObrasPage() {
                         { label: 'Activas',    value: activas,    color: 'text-green-600' },
                         { label: 'Pausadas',   value: pausadas,   color: 'text-yellow-600' },
                         { label: 'Terminadas', value: terminadas, color: 'text-gray-500' },
-                        { label: 'Total facturado',              value: `$${fmt(totalFacturado)}`, color: 'text-blue-600' },
-                        { label: 'Metros perforados (activas)',  value: `${fmt(metrosTotales)} m`, color: 'text-purple-600' },
+                        { label: 'Total facturado',             value: `$${fmt(totalFacturado)}`, color: 'text-blue-600' },
+                        { label: 'Metros perforados (activas)', value: `${fmt(metrosTotales)} m`, color: 'text-purple-600' },
                     ].map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                             <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -559,7 +716,6 @@ export default function ObrasPage() {
                                             <td className="p-3 text-sm text-gray-500">
                                                 {obra.cliente?.nombre ?? '—'}
                                             </td>
-                                            {/* Todos los equipos activos */}
                                             <td className="p-3">
                                                 {equiposActivos.length === 0 ? (
                                                     <span className="text-xs text-gray-300">—</span>
