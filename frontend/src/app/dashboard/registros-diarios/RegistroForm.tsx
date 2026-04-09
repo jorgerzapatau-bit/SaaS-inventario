@@ -99,7 +99,8 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
         barrenosAcumulados: number;
     } | null>(null);
     const [perforacionExpanded, setPerforacionExpanded] = useState(false);
-    const [horometroLocked, setHorometroLocked] = useState(mode === 'new');
+    // En edición siempre bloqueado al inicio; en nuevo también (se puede desbloquear manualmente)
+    const [horometroLocked, setHorometroLocked] = useState(true);
 
     const [form, setForm] = useState<RegistroFormValues>(() => ({
         ...emptyForm(hoy, equipoIdParam, obraIdParam),

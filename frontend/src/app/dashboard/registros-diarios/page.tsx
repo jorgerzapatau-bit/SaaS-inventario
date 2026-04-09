@@ -90,11 +90,12 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
 }
 
 // ── Fila de tabla ──────────────────────────────────────────────────────────────
-function RegistroRow({ r, onDelete, onEdit, onDuplicate }: {
+function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     r: Registro;
     onDelete: (r: Registro) => void;
     onEdit: (id: string) => void;
     onDuplicate: (r: Registro) => void;
+    isLastForEquipo: boolean;
 }) {
     const [expanded, setExpanded] = useState(false);
     const [yr, mo, dy] = r.fecha.slice(0, 10).split('-').map(Number);
@@ -136,11 +137,16 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate }: {
                 </td>
                 <td className="p-3 text-right">
                     <div className="flex justify-end items-center gap-1">
-                        <button onClick={e => { e.stopPropagation(); onDuplicate(r); }}
-                            title="Duplicar registro"
-                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                            <Copy size={13}/>
-                        </button>
+                        {isLastForEquipo ? (
+                            <button onClick={e => { e.stopPropagation(); onDuplicate(r); }}
+                                title="Duplicar como nuevo registro (continúa desde el horómetro final)"
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                                <Copy size={13}/>
+                            </button>
+                        ) : (
+                            // Placeholder invisible para mantener alineación
+                            <span className="p-1.5 w-[28px]"/>
+                        )}
                         <button onClick={e => { e.stopPropagation(); onEdit(r.id); }}
                             title="Editar registro"
                             className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
@@ -345,6 +351,19 @@ function RegistrosDiariosInner() {
     const hayFiltros = filtroEquipo !== 'todos' || filtroObra !== 'todas' || filtroSemana !== 'todas' || !!filtroDesde || !!filtroHasta || !!busqueda;
     const clearFiltros = () => { setFiltroEquipo('todos'); setFiltroObra('todas'); setFiltroSemana('todas'); setFiltroDesde(''); setFiltroHasta(''); setBusqueda(''); };
 
+    // Último registro por equipo (por horómetro fin más alto) — solo ese puede duplicarse
+    const lastIdByEquipo = useMemo(() => {
+        const map = new Map<string, string>(); // equipoNombre -> id del registro con mayor horometroFin
+        for (const r of registros) {
+            const key = r.equipo.nombre;
+            const current = registros.find(x => x.id === map.get(key));
+            if (!current || r.horometroFin > current.horometroFin) {
+                map.set(key, r.id);
+            }
+        }
+        return map;
+    }, [registros]);
+
     const totalHoras  = filtrados.reduce((a, r) => a + r.horasTrabajadas, 0);
     const totalMetros = filtrados.reduce((a, r) => a + r.metrosLineales,  0);
     const totalLitros = filtrados.reduce((a, r) => a + r.litrosDiesel,    0);
@@ -480,7 +499,8 @@ function RegistrosDiariosInner() {
                                             <RegistroRow key={r.id} r={r}
                                                 onDelete={setRegistroAEliminar}
                                                 onEdit={handleEdit}
-                                                onDuplicate={handleDuplicate}/>
+                                                onDuplicate={handleDuplicate}
+                                                isLastForEquipo={lastIdByEquipo.get(r.equipo.nombre) === r.id}/>
                                         ))}
                                     </tbody>
                                 </table>
