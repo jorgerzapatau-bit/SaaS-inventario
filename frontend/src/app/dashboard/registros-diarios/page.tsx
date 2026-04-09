@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, Suspense, useMemo } from 'react';
+import { useEffect, useState, Suspense, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
     ClipboardList, Plus, Trash2, Gauge,
     Droplets, ChevronDown, ChevronUp,
     Search, X, Filter, Drill, Pencil, Copy,
     ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
-    AlertTriangle,
+    AlertTriangle, LayoutList, Table2, CheckCircle2, Loader2,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -229,6 +229,316 @@ function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     );
 }
 
+// ── Planilla de carga masiva (vista grid tipo Excel) ──────────────────────────
+type GridRow = {
+    fecha: string;
+    horometroInicio: string;
+    horometroFin: string;
+    barrenos: string;
+    metrosLineales: string;
+    litrosDiesel: string;
+    precioDiesel: string;
+    rentaEquipoDiaria: string;
+    operadores: string;
+    peones: string;
+    _status: 'idle' | 'saving' | 'saved' | 'error';
+    _error: string;
+};
+
+const COLS: { key: keyof Omit<GridRow,'_status'|'_error'>; label: string; width: number; type: string; readOnly?: boolean }[] = [
+    { key: 'fecha',             label: 'Fecha',       width: 130, type: 'date' },
+    { key: 'horometroInicio',   label: 'H. Ini',      width: 88,  type: 'number' },
+    { key: 'horometroFin',      label: 'H. Fin',      width: 88,  type: 'number' },
+    { key: 'barrenos',          label: 'Barrenos',    width: 88,  type: 'number' },
+    { key: 'metrosLineales',    label: 'Metros Lin.', width: 100, type: 'number' },
+    { key: 'litrosDiesel',      label: 'Litros Diés.', width: 100, type: 'number' },
+    { key: 'precioDiesel',      label: 'P.U. Diés.',  width: 96,  type: 'number' },
+    { key: 'rentaEquipoDiaria', label: 'Renta/Día',   width: 100, type: 'number' },
+    { key: 'operadores',        label: 'Op.',         width: 60,  type: 'number' },
+    { key: 'peones',            label: 'Pn.',         width: 60,  type: 'number' },
+];
+
+function emptyRow(): GridRow {
+    return { fecha:'', horometroInicio:'', horometroFin:'', barrenos:'', metrosLineales:'',
+        litrosDiesel:'', precioDiesel:'21.95', rentaEquipoDiaria:'', operadores:'1', peones:'1',
+        _status:'idle', _error:'' };
+}
+
+function validateGridRow(r: GridRow) {
+    if (!r.fecha) return 'Fecha requerida';
+    if (!r.horometroInicio || isNaN(Number(r.horometroInicio))) return 'H. Ini requerido';
+    if (!r.horometroFin   || isNaN(Number(r.horometroFin)))   return 'H. Fin requerido';
+    if (Number(r.horometroFin) < Number(r.horometroInicio))   return 'H. Fin < H. Ini';
+    return '';
+}
+
+function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple[] }) {
+    const INITIAL_ROWS = 8;
+    const [equipoId, setEquipoId] = useState(equipos[0]?.id ?? '');
+    const [obraId,   setObraId]   = useState('');
+    const [rows,     setRows]     = useState<GridRow[]>(() => Array.from({length: INITIAL_ROWS}, emptyRow));
+    const [active,   setActive]   = useState<{r:number;c:number}|null>(null);
+    const [saving,   setSaving]   = useState(false);
+    const gridRef = useRef<HTMLDivElement>(null);
+    const inputRefs = useRef<(HTMLInputElement|null)[][]>([]);
+
+    // Auto-fill H. Inicio from previous H. Fin
+    const updateRow = useCallback((ri: number, key: keyof GridRow, val: string) => {
+        setRows(prev => {
+            const next = prev.map((r,i) => i === ri ? {...r, [key]: val, _status: 'idle', _error: ''} : r);
+            // Propagate horometroInicio to next row if editing horometroFin
+            if (key === 'horometroFin' && ri + 1 < next.length) {
+                if (!next[ri+1].horometroInicio || next[ri+1].horometroInicio === prev[ri].horometroFin) {
+                    next[ri+1] = {...next[ri+1], horometroInicio: val, _status: 'idle', _error: ''};
+                }
+            }
+            return next;
+        });
+    }, []);
+
+    // Navigate with Tab / Enter / Arrow keys
+    const handleKeyDown = (e: React.KeyboardEvent, ri: number, ci: number) => {
+        const colCount = COLS.length;
+        const rowCount = rows.length;
+        if (e.key === 'Tab' || e.key === 'Enter') {
+            e.preventDefault();
+            const nextCi = e.shiftKey ? ci - 1 : ci + 1;
+            if (nextCi >= 0 && nextCi < colCount) {
+                inputRefs.current[ri]?.[nextCi]?.focus();
+            } else if (!e.shiftKey && ri + 1 < rowCount) {
+                inputRefs.current[ri+1]?.[0]?.focus();
+            }
+        } else if (e.key === 'ArrowDown' && ri + 1 < rowCount) {
+            e.preventDefault();
+            inputRefs.current[ri+1]?.[ci]?.focus();
+        } else if (e.key === 'ArrowUp' && ri > 0) {
+            e.preventDefault();
+            inputRefs.current[ri-1]?.[ci]?.focus();
+        }
+    };
+
+    // Paste from Excel (tab-separated)
+    const handlePaste = (e: React.ClipboardEvent, startRow: number, startCol: number) => {
+        const text = e.clipboardData.getData('text');
+        if (!text.includes('\t') && !text.includes('\n')) return; // single cell, let native paste handle
+        e.preventDefault();
+        const pastedRows = text.trim().split('\n').map(line => line.split('\t').map(v => v.trim()));
+        setRows(prev => {
+            const next = [...prev];
+            pastedRows.forEach((pastedCols, dR) => {
+                const ri = startRow + dR;
+                if (ri >= next.length) next.push(emptyRow());
+                pastedCols.forEach((val, dC) => {
+                    const ci = startCol + dC;
+                    if (ci < COLS.length) {
+                        const col = COLS[ci];
+                        (next[ri] as any)[col.key] = val;
+                    }
+                });
+                next[ri] = {...next[ri], _status: 'idle', _error: ''};
+            });
+            // Re-propagate horometroInicio after paste
+            for (let i = 1; i < next.length; i++) {
+                if (!next[i].horometroInicio && next[i-1].horometroFin) {
+                    next[i] = {...next[i], horometroInicio: next[i-1].horometroFin};
+                }
+            }
+            return next;
+        });
+    };
+
+    const addRows = (n=5) => setRows(prev => [...prev, ...Array.from({length:n}, emptyRow)]);
+
+    const clearRow = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
+
+    const saveAll = async () => {
+        setSaving(true);
+        const filledRows = rows.filter(r => r.fecha || r.horometroFin);
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue; // skip empty
+            const errMsg = validateGridRow(r);
+            if (errMsg) {
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error', _error: errMsg} : x));
+                continue;
+            }
+            setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saving'} : x));
+            try {
+                const body: Record<string,unknown> = {
+                    equipoId,
+                    obraId: obraId || null,
+                    fecha:              r.fecha,
+                    horometroInicio:    Number(r.horometroInicio),
+                    horometroFin:       Number(r.horometroFin),
+                    barrenos:           r.barrenos           ? Number(r.barrenos)           : 0,
+                    metrosLineales:     r.metrosLineales      ? Number(r.metrosLineales)     : 0,
+                    litrosDiesel:       r.litrosDiesel        ? Number(r.litrosDiesel)       : 0,
+                    precioDiesel:       r.precioDiesel        ? Number(r.precioDiesel)       : 0,
+                    rentaEquipoDiaria:  r.rentaEquipoDiaria   ? Number(r.rentaEquipoDiaria)  : null,
+                    operadores:         r.operadores          ? Number(r.operadores)         : 1,
+                    peones:             r.peones              ? Number(r.peones)             : 0,
+                };
+                await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify(body) });
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved', _error:''} : x));
+            } catch (err: any) {
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error', _error: err.message || 'Error'} : x));
+            }
+            await new Promise(res => setTimeout(res, 180));
+        }
+        setSaving(false);
+    };
+
+    const filledCount = rows.filter(r => r.fecha || r.horometroFin).length;
+    const savedCount  = rows.filter(r => r._status === 'saved').length;
+    const errorCount  = rows.filter(r => r._status === 'error').length;
+
+    return (
+        <div className="space-y-4 animate-in fade-in duration-300">
+            {/* ── Selectores equipo / obra ── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Equipo *</label>
+                        <select value={equipoId} onChange={e => setEquipoId(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
+                            {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre} ({eq.numeroEconomico})</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Obra</label>
+                        <select value={obraId} onChange={e => setObraId(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
+                            <option value="">— Sin obra —</option>
+                            {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-2.5">
+                    💡 Pega datos directamente desde Excel/Google Sheets con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd> en cualquier celda. El H. Inicial se autocompleta con el H. Final del día anterior.
+                </p>
+            </div>
+
+            {/* ── Grid ── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" ref={gridRef}>
+                <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm" style={{minWidth: 860}}>
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100">#</th>
+                                {COLS.map(col => (
+                                    <th key={col.key} className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap"
+                                        style={{minWidth: col.width}}>
+                                        {col.label}
+                                    </th>
+                                ))}
+                                {/* Horas (calculado) */}
+                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:70}}>
+                                    Hrs ⚡
+                                </th>
+                                {/* Estado */}
+                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:90}}>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row, ri) => {
+                                const hrs = row.horometroFin && row.horometroInicio
+                                    ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
+                                    : null;
+                                const isEmpty = !row.fecha && !row.horometroFin && !row.horometroInicio;
+                                const rowBg = row._status === 'saved'  ? 'bg-green-50'
+                                            : row._status === 'error'  ? 'bg-red-50'
+                                            : row._status === 'saving' ? 'bg-blue-50'
+                                            : isEmpty ? 'bg-white' : 'bg-white hover:bg-gray-50/60';
+                                if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
+                                return (
+                                    <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
+                                        {/* Row number */}
+                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1">{ri+1}</td>
+
+                                        {COLS.map((col, ci) => {
+                                            const isActive = active?.r === ri && active?.c === ci;
+                                            const val = row[col.key] as string;
+                                            return (
+                                                <td key={col.key} className={`border-r border-gray-100 p-0 ${isActive ? 'ring-2 ring-inset ring-blue-500' : ''}`}
+                                                    onClick={() => setActive({r:ri,c:ci})}>
+                                                    <input
+                                                        ref={el => { inputRefs.current[ri][ci] = el; }}
+                                                        type={col.type === 'date' ? 'date' : 'text'}
+                                                        inputMode={col.type === 'number' ? 'decimal' : undefined}
+                                                        value={val}
+                                                        disabled={row._status === 'saved' || row._status === 'saving'}
+                                                        onChange={e => updateRow(ri, col.key, e.target.value)}
+                                                        onKeyDown={e => handleKeyDown(e, ri, ci)}
+                                                        onPaste={e => handlePaste(e, ri, ci)}
+                                                        onFocus={() => setActive({r:ri,c:ci})}
+                                                        onBlur={() => setActive(null)}
+                                                        className={`w-full h-9 px-2.5 bg-transparent text-sm focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed
+                                                            ${col.key === 'horometroInicio' ? 'text-gray-500' : 'text-gray-800'}
+                                                            ${col.key === 'fecha' ? 'font-medium' : ''}
+                                                        `}
+                                                        style={{minWidth: col.width - 8}}
+                                                        placeholder={col.type === 'date' ? 'YYYY-MM-DD' : '—'}
+                                                        tabIndex={ri * COLS.length + ci + 1}
+                                                    />
+                                                </td>
+                                            );
+                                        })}
+
+                                        {/* Horas calculadas */}
+                                        <td className="border-r border-gray-100 text-center">
+                                            {hrs !== null
+                                                ? <span className={`text-sm font-bold px-2 py-0.5 rounded-md ${hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs} h</span>
+                                                : <span className="text-gray-200 text-xs">—</span>}
+                                        </td>
+
+                                        {/* Estado */}
+                                        <td className="text-center px-1">
+                                            {row._status === 'saved'  && <span className="flex items-center justify-center gap-1 text-xs text-green-600"><CheckCircle2 size={13}/> Guardado</span>}
+                                            {row._status === 'saving' && <span className="flex items-center justify-center gap-1 text-xs text-blue-500"><Loader2 size={13} className="animate-spin"/> Guardando</span>}
+                                            {row._status === 'error'  && (
+                                                <span className="text-xs text-red-500 px-1 leading-tight block" title={row._error}>
+                                                    ⚠ {row._error.length > 18 ? row._error.slice(0,18)+'…' : row._error}
+                                                </span>
+                                            )}
+                                            {row._status === 'idle' && !isEmpty && (
+                                                <button onClick={() => clearRow(ri)} className="text-gray-300 hover:text-red-400 transition-colors text-xs p-1 rounded">✕</button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Footer del grid */}
+                <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
+                    <button onClick={() => addRows(5)}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline">
+                        + Agregar 5 filas
+                    </button>
+                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                        <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>
+                        {savedCount  > 0 && <span className="text-green-600 font-medium">✓ {savedCount} guardados</span>}
+                        {errorCount  > 0 && <span className="text-red-500 font-medium">✗ {errorCount} con error</span>}
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Botón guardar ── */}
+            <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-400">
+                    Se guardan solo las filas que tengan Fecha, H.Ini y H.Fin. Las filas en verde ya están guardadas.
+                </p>
+                <button onClick={saveAll} disabled={saving || filledCount === 0}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
+                    {saving ? <><Loader2 size={15} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''}</>}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // ── Página principal ───────────────────────────────────────────────────────────
 function RegistrosDiariosInner() {
     const searchParams  = useSearchParams();
@@ -241,6 +551,7 @@ function RegistrosDiariosInner() {
     const [obras,     setObras]     = useState<ObraSimple[]>([]);
     const [loading,   setLoading]   = useState(true);
     const [error,     setError]     = useState('');
+    const [vista,     setVista]     = useState<'lista'|'planilla'>('lista');
 
     const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam ?? 'todos');
     const [filtroObra,   setFiltroObra]   = useState(obraIdParam   ?? 'todas');
@@ -382,20 +693,41 @@ function RegistrosDiariosInner() {
                         <h1 className="text-3xl font-bold text-gray-900">Registro Diario</h1>
                         <p className="text-sm text-gray-500 mt-1">Control diario de operación — equivalente a la hoja Rpte del Excel.</p>
                     </div>
-                    <button onClick={() => {
-                        const params = new URLSearchParams();
-                        if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
-                        if (filtroObra   !== 'todas') params.set('obraId',   filtroObra);
-                        const qs = params.toString();
-                        router.push(`/dashboard/registros-diarios/new${qs ? `?${qs}` : ''}`);
-                    }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                        <Plus size={16}/> Nuevo Registro
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* Toggle vista */}
+                        <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+                            <button onClick={() => setVista('lista')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${vista==='lista' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+                                <LayoutList size={14}/> Lista
+                            </button>
+                            <button onClick={() => setVista('planilla')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${vista==='planilla' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                                <Table2 size={14}/> Planilla
+                            </button>
+                        </div>
+                        {vista === 'lista' && (
+                            <button onClick={() => {
+                                const params = new URLSearchParams();
+                                if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
+                                if (filtroObra   !== 'todas') params.set('obraId',   filtroObra);
+                                const qs = params.toString();
+                                router.push(`/dashboard/registros-diarios/new${qs ? `?${qs}` : ''}`);
+                            }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
+                                <Plus size={16}/> Nuevo Registro
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-                {/* Filtros */}
+                {/* Vista Planilla */}
+                {vista === 'planilla' && (
+                    <PlanillaGrid equipos={equipos} obras={obras} />
+                )}
+
+                {/* Vista Lista — Filtros */}
+                {vista === 'lista' && (<>
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                     <div className="flex items-center gap-2">
                         <Filter size={14} className="text-blue-500"/>
@@ -542,6 +874,7 @@ function RegistrosDiariosInner() {
                         </>
                     )}
                 </Card>
+                </>)}
             </div>
         </>
     );
