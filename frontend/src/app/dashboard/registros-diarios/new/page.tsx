@@ -7,7 +7,12 @@ import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodometroInicial: number };
-type ObraSimple = { id: string; nombre: string; status: string; bordo?: number | null; espaciamiento?: number | null };
+type ObraSimple = {
+    id: string; nombre: string; status: string;
+    bordo?: number | null; espaciamiento?: number | null;
+    plantillas?: { id: string; numero: number; metrosContratados: number; barrenos: number; fechaInicio: string | null; fechaFin: string | null }[];
+};
+type ObraEquipo = { equipoId: string; obraId: string; horometroInicial: number | null };
 
 function NuevoRegistroDiarioInner() {
     const router        = useRouter();
@@ -20,6 +25,13 @@ function NuevoRegistroDiarioInner() {
     const [almacenId, setAlmacenId] = useState('');
     const [saving,    setSaving]    = useState(false);
     const [error,     setError]     = useState('');
+    // Mejora 3: horómetro desde ObraEquipo + avance acumulado
+    const [horometroFuente, setHorometroFuente] = useState<'obra' | 'equipo' | null>(null);
+    const [avancePlantilla, setAvancePlantilla] = useState<{
+        plantilla: ObraSimple['plantillas'] extends (infer T)[] | undefined ? T : never;
+        metrosAcumulados: number;
+        barrenosAcumulados: number;
+    } | null>(null);
 
     const hoy = new Date().toISOString().slice(0, 10);
 
@@ -52,6 +64,56 @@ function NuevoRegistroDiarioInner() {
         rentaEquipoDiaria:   '',
     });
 
+    // Mejora 3: fetch del horómetro inicial desde ObraEquipo al cambiar obra+equipo
+    const fetchHorometroObraEquipo = async (obraId: string, equipoId: string) => {
+        if (!obraId || !equipoId) return;
+        try {
+            const obraEquipos: ObraEquipo[] = await fetchApi(`/obras/${obraId}/equipos`);
+            const asignacion = obraEquipos.find(oe => oe.equipoId === equipoId);
+            if (asignacion && asignacion.horometroInicial != null) {
+                setForm(f => ({ ...f, horometroInicio: String(asignacion.horometroInicial) }));
+                setHorometroFuente('obra');
+            } else {
+                // Fallback: usar el del equipo
+                const eq = equipos.find(e => e.id === equipoId);
+                if (eq) {
+                    setForm(f => ({ ...f, horometroInicio: String(eq.hodometroInicial) }));
+                    setHorometroFuente('equipo');
+                }
+            }
+        } catch {
+            // Si falla el fetch, usar el del equipo
+            const eq = equipos.find(e => e.id === equipoId);
+            if (eq) {
+                setForm(f => ({ ...f, horometroInicio: String(eq.hodometroInicial) }));
+                setHorometroFuente('equipo');
+            }
+        }
+    };
+
+    // Mejora 5: fetch del avance acumulado contra la plantilla activa
+    const fetchAvancePlantilla = async (obraId: string) => {
+        if (!obraId) { setAvancePlantilla(null); return; }
+        try {
+            const obra = obras.find(o => o.id === obraId);
+            if (!obra?.plantillas?.length) { setAvancePlantilla(null); return; }
+
+            // Plantilla activa = la que tiene fecha_fin más próxima o la primera sin cerrar
+            const ahora = new Date().toISOString().slice(0, 10);
+            const activa = obra.plantillas.find(p =>
+                (!p.fechaFin || p.fechaFin >= ahora) && (!p.fechaInicio || p.fechaInicio <= ahora)
+            ) ?? obra.plantillas[0];
+
+            const registros = await fetchApi(`/registros-diarios?obraId=${obraId}`);
+            const metrosAcumulados   = registros.reduce((a: number, r: { metrosLineales?: number }) => a + (r.metrosLineales ?? 0), 0);
+            const barrenosAcumulados = registros.reduce((a: number, r: { barrenos?: number })       => a + (r.barrenos      ?? 0), 0);
+
+            setAvancePlantilla({ plantilla: activa, metrosAcumulados, barrenosAcumulados });
+        } catch {
+            setAvancePlantilla(null);
+        }
+    };
+
     useEffect(() => {
         Promise.all([
             fetchApi('/equipos'),
@@ -62,6 +124,7 @@ function NuevoRegistroDiarioInner() {
             setObras(obs);
             if (alms?.length > 0) setAlmacenId(alms[0].id);
 
+            // Precarga equipo inicial — horómetro desde el equipo (sin obra aún)
             const targetId = equipoIdParam || eqs[0]?.id;
             const eq = eqs.find((e: Equipo) => e.id === targetId);
             if (eq) {
@@ -70,6 +133,7 @@ function NuevoRegistroDiarioInner() {
                     equipoId:        eq.id,
                     horometroInicio: String(eq.hodometroInicial),
                 }));
+                setHorometroFuente('equipo');
             }
 
             if (obraIdParam) {
@@ -77,10 +141,15 @@ function NuevoRegistroDiarioInner() {
                 if (ob) {
                     setForm(f => ({
                         ...f,
-                        obraId:       ob.id,
-                        bordo:        ob.bordo        != null ? String(ob.bordo)        : f.bordo,
+                        obraId:        ob.id,
+                        bordo:         ob.bordo        != null ? String(ob.bordo)        : f.bordo,
                         espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
                     }));
+                    // Si hay equipo preseleccionado, buscar el horómetro de ObraEquipo
+                    if (targetId) {
+                        fetchHorometroObraEquipo(obraIdParam, targetId);
+                    }
+                    fetchAvancePlantilla(obraIdParam);
                 }
             }
         }).catch(() => setError('Error al cargar datos'));
@@ -88,11 +157,17 @@ function NuevoRegistroDiarioInner() {
 
     const handleEquipoChange = (equipoId: string) => {
         const eq = equipos.find(e => e.id === equipoId);
+        // Precarga horómetro desde el equipo como fallback inmediato
         setForm(f => ({
             ...f,
             equipoId,
             horometroInicio: eq ? String(eq.hodometroInicial) : '',
         }));
+        setHorometroFuente(eq ? 'equipo' : null);
+        // Si hay obra seleccionada, sobreescribir con el de ObraEquipo (Mejora 3)
+        if (form.obraId && equipoId) {
+            fetchHorometroObraEquipo(form.obraId, equipoId);
+        }
     };
 
     const handleObraChange = (obraId: string) => {
@@ -103,6 +178,12 @@ function NuevoRegistroDiarioInner() {
             bordo:         ob?.bordo        != null ? String(ob.bordo)         : f.bordo,
             espaciamiento: ob?.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
         }));
+        // Mejora 3: si ya hay equipo seleccionado, buscar horómetro de la asignación
+        if (obraId && form.equipoId) {
+            fetchHorometroObraEquipo(obraId, form.equipoId);
+        }
+        // Mejora 5: cargar avance vs plantilla activa
+        fetchAvancePlantilla(obraId);
     };
 
     const horas = form.horometroFin && form.horometroInicio
@@ -110,9 +191,15 @@ function NuevoRegistroDiarioInner() {
         : null;
 
     const volumenCalculado =
-        form.bordo && form.espaciamiento && form.profundidadPromedio
+        form.bordo && form.espaciamiento && form.profundidadPromedio && form.barrenos
+            ? (Number(form.bordo) * Number(form.espaciamiento) * Number(form.profundidadPromedio) * Number(form.barrenos)).toFixed(3)
+            : form.bordo && form.espaciamiento && form.profundidadPromedio
             ? (Number(form.bordo) * Number(form.espaciamiento) * Number(form.profundidadPromedio)).toFixed(3)
             : null;
+
+    const volumenLabel = form.barrenos
+        ? `${form.bordo} × ${form.espaciamiento} × ${form.profundidadPromedio} × ${form.barrenos} bar.`
+        : `${form.bordo} × ${form.espaciamiento} × ${form.profundidadPromedio}`;
 
     const set = (key: keyof typeof form, val: string | boolean) =>
         setForm(f => ({ ...f, [key]: val }));
@@ -236,6 +323,44 @@ function NuevoRegistroDiarioInner() {
                             ))}
                         </select>
                     </div>
+                    {/* Mejora 5: banner de avance vs plantilla activa */}
+                    {avancePlantilla && (
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs space-y-1">
+                            <p className="font-semibold text-blue-700">
+                                Plantilla {avancePlantilla.plantilla.numero}
+                                {avancePlantilla.plantilla.fechaFin && (
+                                    <span className="font-normal text-blue-400 ml-2">
+                                        cierra {avancePlantilla.plantilla.fechaFin.slice(0, 10)}
+                                    </span>
+                                )}
+                            </p>
+                            <div className="flex gap-4 text-blue-600">
+                                <span>
+                                    Metros: <strong>
+                                        {avancePlantilla.metrosAcumulados.toFixed(1)} / {avancePlantilla.plantilla.metrosContratados} m
+                                    </strong>
+                                    <span className="text-blue-400 ml-1">
+                                        ({avancePlantilla.plantilla.metrosContratados > 0
+                                            ? ((avancePlantilla.metrosAcumulados / avancePlantilla.plantilla.metrosContratados) * 100).toFixed(1)
+                                            : 0}%)
+                                    </span>
+                                </span>
+                                {avancePlantilla.plantilla.barrenos > 0 && (
+                                    <span>
+                                        Barrenos: <strong>
+                                            {avancePlantilla.barrenosAcumulados} / {avancePlantilla.plantilla.barrenos}
+                                        </strong>
+                                    </span>
+                                )}
+                            </div>
+                            {/* Barra de progreso */}
+                            <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden mt-1">
+                                <div className="h-full bg-blue-500 rounded-full transition-all"
+                                    style={{ width: `${Math.min(100, avancePlantilla.plantilla.metrosContratados > 0
+                                        ? (avancePlantilla.metrosAcumulados / avancePlantilla.plantilla.metrosContratados) * 100 : 0)}%` }} />
+                            </div>
+                        </div>
+                    )}
                     {!form.obraId && inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro — Frente 3')}
                     {inp('Notas', 'notas')}
                 </div>
@@ -251,10 +376,19 @@ function NuevoRegistroDiarioInner() {
                             <input
                                 type="number"
                                 value={form.horometroInicio}
-                                readOnly
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                                onChange={e => { set('horometroInicio', e.target.value); setHorometroFuente(null); }}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                             />
-                            <p className="text-xs text-gray-400 mt-1">Automático — horómetro actual del equipo</p>
+                            {horometroFuente === 'obra' && (
+                                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                                    ✓ Precargado desde la asignación — verifica antes de guardar
+                                </p>
+                            )}
+                            {horometroFuente === 'equipo' && (
+                                <p className="text-xs text-amber-600 mt-1">
+                                    ⚠ Sin asignación en esta obra — valor del equipo
+                                </p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">H. Final (h f) *</label>
@@ -283,13 +417,27 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* Producción */}
+            {/* Producción + Costos */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Producción</p>
                     <div className="grid grid-cols-2 gap-4">
                         {inp('Barrenos (BARRNS)', 'barrenos',       'number', '13')}
                         {inp('Metros lineales (MTS)', 'metrosLineales', 'number', '134.7')}
+                    </div>
+                    {/* Mejora 6: Renta de equipo junto a los costos principales */}
+                    <div className="border-t border-gray-100 pt-3">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Costos del día</p>
+                        <div className="grid grid-cols-1 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Renta de equipo/día ($)</label>
+                                <input type="number" step="0.01" value={form.rentaEquipoDiaria}
+                                    onChange={e => set('rentaEquipoDiaria', e.target.value)}
+                                    placeholder="Ej: 4950"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"/>
+                                <p className="text-xs text-gray-400 mt-1">Costo más importante del día — registra aquí antes de continuar</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </Card>
@@ -340,7 +488,7 @@ function NuevoRegistroDiarioInner() {
                             </label>
                             <input type="number" step="0.001" value={form.volumenRoca}
                                 onChange={e => set('volumenRoca', e.target.value)}
-                                placeholder={volumenCalculado ?? 'Bordo × Esp. × Prof.'}
+                                placeholder={volumenCalculado ?? 'Bordo × Esp. × Prof. × Barrenos'}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
                         </div>
                         {volumenCalculado && (
@@ -348,7 +496,7 @@ function NuevoRegistroDiarioInner() {
                                 <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2 text-sm">
                                     <span className="text-indigo-400 text-xs">Auto:</span>
                                     <span className="font-semibold text-indigo-700">
-                                        {form.bordo} × {form.espaciamiento} × {form.profundidadPromedio} = <strong>{volumenCalculado} m³</strong>
+                                        {volumenLabel} = <strong>{volumenCalculado} m³</strong>
                                     </span>
                                     {!form.volumenRoca && (
                                         <button type="button"
@@ -362,8 +510,8 @@ function NuevoRegistroDiarioInner() {
                         )}
                     </div>
 
-                    {/* % Pérdida / % Avance / Renta */}
-                    <div className="grid grid-cols-3 gap-4">
+                    {/* % Pérdida / % Avance (renta ya está en Producción/Costos) */}
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">% Pérdida</label>
                             <input type="number" step="0.1" min="0" max="100" value={form.porcentajePerdida}
@@ -376,13 +524,6 @@ function NuevoRegistroDiarioInner() {
                             <input type="number" step="0.1" min="0" max="100" value={form.porcentajeAvance}
                                 onChange={e => set('porcentajeAvance', e.target.value)}
                                 placeholder="Ej: 75"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Renta equipo/día ($)</label>
-                            <input type="number" step="0.01" value={form.rentaEquipoDiaria}
-                                onChange={e => set('rentaEquipoDiaria', e.target.value)}
-                                placeholder="Ej: 12500"
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
                         </div>
                     </div>

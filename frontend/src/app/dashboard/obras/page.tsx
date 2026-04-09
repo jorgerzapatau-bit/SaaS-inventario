@@ -20,6 +20,17 @@ type PlantillaObra = {
     notas: string;
 };
 
+// Tipo extendido de Obra con plantillas
+type PlantillaObraDB = {
+    id: string;
+    numero: number;
+    metrosContratados: number;
+    barrenos: number;
+    fechaInicio: string | null;
+    fechaFin: string | null;
+    notas: string | null;
+};
+
 type EquipoSeleccionado = {
     equipoId: string;
     fechaInicio: string;
@@ -36,8 +47,11 @@ type Obra = {
     moneda: 'MXN' | 'USD';
     fechaInicio: string | null;
     fechaFin: string | null;
+    bordo: number | null;
+    espaciamiento: number | null;
     status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
     notas: string | null;
+    plantillas: PlantillaObraDB[];
     _count: { registrosDiarios: number; cortesFacturacion: number };
     obraEquipos: { equipo: { nombre: string; numeroEconomico: string | null } }[];
     metricas: {
@@ -121,10 +135,20 @@ function ObraModal({
         [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
     );
 
-    // C1-B: plantillas dinámicas
-    const [plantillas, setPlantillas] = useState<PlantillaObra[]>([
-        { numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' },
-    ]);
+    // C1-B: plantillas — precargar desde la obra en modo edición
+    const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
+        obra?.plantillas && obra.plantillas.length > 0
+            ? obra.plantillas.map(p => ({
+                id:                p.id,
+                numero:            p.numero,
+                metrosContratados: String(p.metrosContratados),
+                barrenos:          String(p.barrenos ?? ''),
+                fechaInicio:       p.fechaInicio ? p.fechaInicio.slice(0, 10) : '',
+                fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
+                notas:             p.notas ?? '',
+            }))
+            : [{ numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' }]
+    );
 
     const [form, setForm] = useState({
         nombre:            obra?.nombre            ?? '',
@@ -138,8 +162,8 @@ function ObraModal({
         fechaInicio:       obra?.fechaInicio?.slice(0, 10)     ?? '',
         fechaFin:          obra?.fechaFin?.slice(0, 10)        ?? '',
         status:            obra?.status            ?? 'ACTIVA',
-        bordo:             '',   // C1-A
-        espaciamiento:     '',   // C1-A
+        bordo:             obra?.bordo?.toString()         ?? '',   // C1-A
+        espaciamiento:     obra?.espaciamiento?.toString() ?? '',   // C1-A
         notas:             obra?.notas             ?? '',
     });
 
@@ -266,6 +290,15 @@ function ObraModal({
             }
 
             if (isEdit) {
+                body.plantillas = plantillasValidas.map(p => ({
+                    id:                p.id || undefined,
+                    numero:            p.numero,
+                    metrosContratados: Number(p.metrosContratados),
+                    barrenos:          p.barrenos ? Number(p.barrenos) : 0,
+                    fechaInicio:       p.fechaInicio || null,
+                    fechaFin:          p.fechaFin   || null,
+                    notas:             p.notas      || null,
+                }));
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             } else {
                 await fetchApi('/obras', { method: 'POST', body: JSON.stringify(body) });
@@ -389,20 +422,27 @@ function ObraModal({
                     </div>
                     {fechaError && <p className="text-xs text-red-500 -mt-3">{fechaError}</p>}
 
-                    {/* C1-B: Plantillas (solo en creación) */}
-                    {!isEdit && (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                    Plantillas <span className="text-red-500">*</span>
-                                </p>
-                                <button type="button" onClick={addPlantilla}
-                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                    <Plus size={12} /> Agregar plantilla
-                                </button>
-                            </div>
-                            <div className="space-y-3">
-                                {plantillas.map((plt, idx) => (
+                    {/* C1-B: Plantillas (creación y edición) */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Plantillas {!isEdit && <span className="text-red-500">*</span>}
+                            </p>
+                            <button type="button" onClick={addPlantilla}
+                                className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                <Plus size={12} /> Agregar plantilla
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {plantillas.map((plt, idx) => {
+                                // Mejora 1: área y volumen estimado heredados de la malla de la obra
+                                const bordoN         = Number(form.bordo);
+                                const espacN         = Number(form.espaciamiento);
+                                const metros         = Number(plt.metrosContratados);
+                                const areaPlantilla  = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
+                                const volEstimado    = areaPlantilla && metros
+                                    ? (Number(areaPlantilla) * metros).toFixed(1) : null;
+                                return (
                                     <div key={idx} className="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-2">
                                         <div className="flex items-center justify-between">
                                             <span className="text-xs font-semibold text-gray-600">Plantilla {plt.numero}</span>
@@ -439,11 +479,28 @@ function ObraModal({
                                                     className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
                                             </div>
                                         </div>
+                                        {/* Mejora 1: área y volumen estimado */}
+                                        {(areaPlantilla || volEstimado) && (
+                                            <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
+                                                {areaPlantilla && (
+                                                    <span className="text-blue-600">
+                                                        Área: <strong>{areaPlantilla} m²</strong>
+                                                        <span className="text-blue-400 ml-1">({form.bordo} × {form.espaciamiento})</span>
+                                                    </span>
+                                                )}
+                                                {volEstimado && (
+                                                    <span className="text-blue-700 font-medium">
+                                                        Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m³</strong>
+                                                        <span className="text-blue-400 ml-1">({plt.metrosContratados} m × {areaPlantilla} m²)</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
                         </div>
-                    )}
+                    </div>
 
                     {/* C3-A: Equipos con horómetro inicial (solo en creación) */}
                     {!isEdit && (

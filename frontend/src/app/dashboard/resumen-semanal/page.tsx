@@ -37,6 +37,10 @@ type Registro = {
 };
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
+type ObraSimple = {
+    id: string; nombre: string; status: string;
+    plantillas?: { id: string; numero: number; metrosContratados: number; barrenos: number }[];
+};
 
 type ResumenSemana = {
     semanaNum: number;
@@ -301,20 +305,28 @@ function ResumenSemanalInner() {
 
     const [registros,    setRegistros]    = useState<Registro[]>([]);
     const [equipos,      setEquipos]      = useState<Equipo[]>([]);
+    const [obras,        setObras]        = useState<ObraSimple[]>([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
     const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam);
+    const [filtroObra,   setFiltroObra]   = useState('');  // Mejora 7
 
     useEffect(() => {
         const load = async () => {
             setLoading(true);
             try {
-                const [regs, eqs] = await Promise.all([
-                    fetchApi(`/registros-diarios${filtroEquipo !== 'todos' ? `?equipoId=${filtroEquipo}` : ''}`),
+                const params = new URLSearchParams();
+                if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
+                if (filtroObra)              params.set('obraId',   filtroObra);   // Mejora 7
+
+                const [regs, eqs, obs] = await Promise.all([
+                    fetchApi(`/registros-diarios${params.toString() ? '?' + params.toString() : ''}`),
                     fetchApi('/equipos'),
+                    fetchApi('/obras'),
                 ]);
                 setRegistros(regs);
                 setEquipos(eqs);
+                setObras(obs);
             } catch (e: any) {
                 setError(e.message || 'Error al cargar');
             } finally {
@@ -322,7 +334,7 @@ function ResumenSemanalInner() {
             }
         };
         load();
-    }, [filtroEquipo]);
+    }, [filtroEquipo, filtroObra]);  // Mejora 7: re-fetch al cambiar filtroObra
 
     const semanas = useMemo<ResumenSemana[]>(() => {
         if (!registros.length) return [];
@@ -413,6 +425,12 @@ function ResumenSemanalInner() {
         };
     }, [semanas]);
 
+    // Mejora 8: plantilla activa de la obra seleccionada para comparativo
+    const obraSeleccionada = obras.find(o => o.id === filtroObra);
+    const plantillaActiva = obraSeleccionada?.plantillas?.[0] ?? null;
+    const metrosTotalesAcum = semanas.reduce((a, s) => a + s.metrosLineales, 0);
+    const barrTotalesAcum   = semanas.reduce((a, s) => a + s.barrenos, 0);
+
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -420,22 +438,36 @@ function ResumenSemanalInner() {
                     <h1 className="text-3xl font-bold text-gray-900">Resumen Semanal</h1>
                     <p className="text-sm text-gray-500 mt-1">KPIs y costos agrupados por semana.</p>
                 </div>
-                <select
-                    value={filtroEquipo}
-                    onChange={e => setFiltroEquipo(e.target.value)}
-                    className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                    <option value="todos">Todos los equipos</option>
-                    {equipos.map(eq => (
-                        <option key={eq.id} value={eq.id}>{eq.nombre}</option>
-                    ))}
-                </select>
+                {/* Mejora 7: Filtros por equipo y por obra */}
+                <div className="flex gap-2 flex-wrap">
+                    <select
+                        value={filtroObra}
+                        onChange={e => setFiltroObra(e.target.value)}
+                        className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                        <option value="">Todas las obras</option>
+                        {obras.map(o => (
+                            <option key={o.id} value={o.id}>{o.nombre}</option>
+                        ))}
+                    </select>
+                    <select
+                        value={filtroEquipo}
+                        onChange={e => setFiltroEquipo(e.target.value)}
+                        className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                        <option value="todos">Todos los equipos</option>
+                        {equipos.map(eq => (
+                            <option key={eq.id} value={eq.id}>{eq.nombre}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
             {/* Totales acumulados */}
             {!loading && semanas.length > 0 && (
+                <>
                 <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                     {[
                         { label: 'Semanas',        val: totales.semanas,                                                                           unit: '',     icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
@@ -451,6 +483,61 @@ function ResumenSemanalInner() {
                         </div>
                     ))}
                 </div>
+                {/* Mejora 8: Comparativo vs plantilla activa */}
+                {filtroObra && plantillaActiva && (
+                    <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <HardHat size={13} className="text-blue-500" />
+                            Comparativo Plantilla {plantillaActiva.numero} — {obraSeleccionada!.nombre}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {/* Metros */}
+                            <div>
+                                <div className="flex justify-between items-end mb-1">
+                                    <span className="text-xs text-gray-500">Metros perforados</span>
+                                    <span className={`text-xs font-bold ${metrosTotalesAcum >= plantillaActiva.metrosContratados ? 'text-green-600' : 'text-blue-600'}`}>
+                                        {metrosTotalesAcum.toFixed(1)} / {plantillaActiva.metrosContratados} m
+                                        {metrosTotalesAcum >= plantillaActiva.metrosContratados && ' ✓'}
+                                    </span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${metrosTotalesAcum >= plantillaActiva.metrosContratados ? 'bg-green-500' : 'bg-blue-500'}`}
+                                        style={{ width: `${Math.min(100, plantillaActiva.metrosContratados > 0 ? (metrosTotalesAcum / plantillaActiva.metrosContratados) * 100 : 0)}%` }} />
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    {plantillaActiva.metrosContratados > 0
+                                        ? `${((metrosTotalesAcum / plantillaActiva.metrosContratados) * 100).toFixed(1)}% completado`
+                                        : '—'}
+                                </p>
+                            </div>
+                            {/* Barrenos */}
+                            {plantillaActiva.barrenos > 0 && (
+                                <div>
+                                    <div className="flex justify-between items-end mb-1">
+                                        <span className="text-xs text-gray-500">Barrenos</span>
+                                        <span className={`text-xs font-bold ${barrTotalesAcum >= plantillaActiva.barrenos ? 'text-green-600' : 'text-blue-600'}`}>
+                                            {barrTotalesAcum} / {plantillaActiva.barrenos}
+                                            {barrTotalesAcum >= plantillaActiva.barrenos && ' ✓'}
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all ${barrTotalesAcum >= plantillaActiva.barrenos ? 'bg-green-500' : 'bg-blue-500'}`}
+                                            style={{ width: `${Math.min(100, (barrTotalesAcum / plantillaActiva.barrenos) * 100)}%` }} />
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {((barrTotalesAcum / plantillaActiva.barrenos) * 100).toFixed(1)}% completado
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        {metrosTotalesAcum >= plantillaActiva.metrosContratados && barrTotalesAcum >= plantillaActiva.barrenos && (
+                            <div className="mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-xs font-semibold text-green-700">
+                                ✓ Plantilla {plantillaActiva.numero} completa — {plantillaActiva.metrosContratados} m / {plantillaActiva.barrenos} barrenos
+                            </div>
+                        )}
+                    </div>
+                )}
+                </>
             )}
 
             {/* Lista de semanas */}

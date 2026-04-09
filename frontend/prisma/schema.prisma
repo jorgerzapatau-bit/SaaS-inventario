@@ -676,5 +676,6 @@ enum CategoriaGasto {
   COMBUSTIBLE
   PERSONAL
   VEHICULO
+  RENTA_EQUIPO
   OTRO
 }

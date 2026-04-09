@@ -72,6 +72,16 @@ type Movimiento = {
     moneda: string;
 };
 
+type PlantillaObraDetalle = {
+    id: string;
+    numero: number;
+    metrosContratados: number;
+    barrenos: number;
+    fechaInicio: string | null;
+    fechaFin: string | null;
+    notas: string | null;
+};
+
 type ObraDetalle = {
     id: string;
     nombre: string;
@@ -82,12 +92,14 @@ type ObraDetalle = {
     precioUnitario: number | null;
     bordo: number | null;
     espesor: number | null;
-    profundidadCollar: number | null; 
+    espaciamiento: number | null;
+    profundidadCollar: number | null;
     moneda: string;
     fechaInicio: string | null;
     fechaFin: string | null;
     status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
     notas: string | null;
+    plantillas: PlantillaObraDetalle[];   // Mejora 10
     obraEquipos: ObraEquipo[];
     cortesFacturacion: Corte[];
     metricas: {
@@ -607,6 +619,102 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
     );
 }
 
+// ─── Tab Plantillas ───────────────────────────────────────────────────────────
+function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => void }) {
+    const plantillas = obra.plantillas ?? [];
+    const metrosPerforados = obra.metricas?.metrosPerforados ?? 0;
+    const barrenosPerforados = obra.metricas?.barrenos ?? 0;
+
+    if (plantillas.length === 0) {
+        return (
+            <div className="text-center py-10 text-gray-400 text-sm">
+                <HardHat size={32} className="mx-auto mb-3 text-gray-200" />
+                <p className="font-semibold text-gray-500">Sin plantillas registradas</p>
+                <p className="text-xs mt-1">Edita la obra para agregar plantillas de contrato.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm font-semibold text-gray-700">Plantillas del contrato ({plantillas.length})</p>
+            <div className="space-y-4">
+                {plantillas.map(p => {
+                    const pctMetros = p.metrosContratados > 0
+                        ? Math.min(100, (metrosPerforados / p.metrosContratados) * 100)
+                        : 0;
+                    const pctBarr = p.barrenos > 0
+                        ? Math.min(100, (barrenosPerforados / p.barrenos) * 100)
+                        : 0;
+                    const completa = metrosPerforados >= p.metrosContratados
+                        && (p.barrenos === 0 || barrenosPerforados >= p.barrenos);
+
+                    return (
+                        <div key={p.id} className={`border rounded-xl p-4 ${completa ? 'border-green-200 bg-green-50/30' : 'border-gray-100 bg-white'}`}>
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${completa ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        P{p.numero}
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-800">
+                                            Plantilla {p.numero}
+                                            {completa && (
+                                                <span className="ml-2 text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ Completa</span>
+                                            )}
+                                        </p>
+                                        <div className="flex gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
+                                            {p.fechaInicio && <span>Inicio: {fDate(p.fechaInicio)}</span>}
+                                            {p.fechaFin    && <span>Cierre: {fDate(p.fechaFin)}</span>}
+                                            {p.notas       && <span className="italic">{p.notas}</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Métricas de la plantilla */}
+                            <div className="grid grid-cols-2 gap-4 mb-3">
+                                <div>
+                                    <div className="flex justify-between items-end mb-1">
+                                        <span className="text-xs text-gray-500">Metros perforados</span>
+                                        <span className={`text-xs font-bold ${completa ? 'text-green-600' : 'text-blue-600'}`}>
+                                            {metrosPerforados.toFixed(1)} / {p.metrosContratados} m
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all ${pctMetros >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                            style={{ width: `${pctMetros}%` }} />
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">{pctMetros.toFixed(1)}%</p>
+                                </div>
+                                {p.barrenos > 0 && (
+                                    <div>
+                                        <div className="flex justify-between items-end mb-1">
+                                            <span className="text-xs text-gray-500">Barrenos</span>
+                                            <span className={`text-xs font-bold ${pctBarr >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                                {barrenosPerforados} / {p.barrenos}
+                                            </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all ${pctBarr >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                                style={{ width: `${pctBarr}%` }} />
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-1">{pctBarr.toFixed(1)}%</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <p className="text-xs text-gray-400 text-right">
+                                Nota: edita la obra para modificar fechas o metros de esta plantilla.
+                            </p>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 // ─── Tab Cortes ───────────────────────────────────────────────────────────────
 function TabCortes({ obraId, obra, cortes, onReload }: {
     obraId: string;
@@ -812,7 +920,7 @@ export default function ObraDetallePage() {
     const [obra,    setObra]    = useState<ObraDetalle | null>(null);
     const [loading, setLoading] = useState(true);
     const [error,   setError]   = useState('');
-    const [tab,     setTab]     = useState<'operacion' | 'cortes' | 'costos'>('operacion');
+    const [tab, setTab] = useState<'operacion' | 'plantillas' | 'cortes' | 'costos'>('operacion');
 
     const load = async () => {
         setLoading(true);
@@ -912,11 +1020,12 @@ export default function ObraDetallePage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
                 {([
-                    { key: 'operacion', label: 'Operación',  icon: <ClipboardListIcon /> },
-                    { key: 'cortes',    label: 'Cortes',     icon: <FileText size={14}/> },
-                    { key: 'costos',    label: 'Costos',     icon: <Package size={14}/> },
+                    { key: 'operacion',  label: 'Operación',  icon: <ClipboardListIcon /> },
+                    { key: 'plantillas', label: 'Plantillas', icon: <HardHat size={14}/> },
+                    { key: 'cortes',     label: 'Cortes',     icon: <FileText size={14}/> },
+                    { key: 'costos',     label: 'Costos',     icon: <Package size={14}/> },
                 ] as const).map(t => (
                     <button
                         key={t.key}
@@ -928,6 +1037,11 @@ export default function ObraDetallePage() {
                         }`}
                     >
                         {t.icon} {t.label}
+                        {t.key === 'plantillas' && (obra.plantillas?.length ?? 0) > 0 && (
+                            <span className="ml-1 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-semibold">
+                                {obra.plantillas.length}
+                            </span>
+                        )}
                     </button>
                 ))}
             </div>
@@ -935,9 +1049,10 @@ export default function ObraDetallePage() {
             {/* Tab content */}
             <Card>
                 <div className="p-5">
-                    {tab === 'operacion' && <TabOperacion obraId={obraId} obra={obra} />}
-                    {tab === 'cortes'    && <TabCortes obraId={obraId} obra={obra} cortes={obra.cortesFacturacion} onReload={load} />}
-                    {tab === 'costos'    && <TabCostos obraId={obraId} />}
+                    {tab === 'operacion'  && <TabOperacion obraId={obraId} obra={obra} />}
+                    {tab === 'plantillas' && <TabPlantillas obra={obra} onReload={load} />}
+                    {tab === 'cortes'     && <TabCortes obraId={obraId} obra={obra} cortes={obra.cortesFacturacion} onReload={load} />}
+                    {tab === 'costos'     && <TabCostos obraId={obraId} />}
                 </div>
             </Card>
         </div>

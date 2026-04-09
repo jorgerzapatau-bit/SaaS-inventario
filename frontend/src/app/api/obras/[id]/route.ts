@@ -28,6 +28,9 @@ export async function GET(req: NextRequest, { params }: Params) {
                         },
                     },
                 },
+                plantillas: {
+                    orderBy: { numero: 'asc' },   // Mejora 10
+                },
                 cortesFacturacion: {
                     orderBy: { numero: 'desc' },
                 },
@@ -79,6 +82,15 @@ export async function GET(req: NextRequest, { params }: Params) {
             bordo:             obra.bordo             ? Number(obra.bordo)             : null,
             espesor:           obra.espesor           ? Number(obra.espesor)           : null,
             tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
+            // Mejora 10: serializar plantillas con Decimals como número
+            plantillas: (obra.plantillas ?? []).map(p => ({
+                ...p,
+                metrosContratados: Number(p.metrosContratados),
+                barrenos:          Number(p.barrenos ?? 0),
+                bordo:             p.bordo         ? Number(p.bordo)         : null,
+                espaciamiento:     p.espaciamiento ? Number(p.espaciamiento) : null,
+                precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
+            })),
             obraEquipos: obra.obraEquipos.map(oe => ({
                 ...oe,
                 equipo: {
@@ -122,30 +134,69 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const { id } = await params;
         const {
             nombre, clienteId, ubicacion,
-            bordo, espesor, metrosContratados, precioUnitario,
+            bordo, espesor, espaciamiento, metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
+            plantillas,   // Mejora 2: [{ id?, numero, metrosContratados, barrenos, fechaInicio, fechaFin, notas }]
         } = await req.json();
 
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
 
-        const obra = await prisma.obra.update({
-            where: { id, empresaId: user.empresaId },
-            data: {
-                ...(nombre            !== undefined && { nombre }),
-                ...(clienteId         !== undefined && { clienteId:         clienteId || null }),
-                ...(ubicacion         !== undefined && { ubicacion:         ubicacion || null }),
-                ...(bordo             !== undefined && { bordo:             bordo != null ? Number(bordo) : null }),
-                ...(espesor           !== undefined && { espesor:           espesor != null ? Number(espesor) : null }),
-                ...(metrosContratados !== undefined && { metrosContratados: metrosContratados != null ? Number(metrosContratados) : null }),
-                ...(precioUnitario    !== undefined && { precioUnitario:    precioUnitario != null ? Number(precioUnitario) : null }),
-                ...(monedaVal         !== undefined && { moneda:            monedaVal }),
-                ...(tipoCambio        !== undefined && { tipoCambio:        tipoCambio != null ? Number(tipoCambio) : null }),
-                ...(fechaInicio       !== undefined && { fechaInicio:       fechaInicio ? new Date(fechaInicio) : null }),
-                ...(fechaFin          !== undefined && { fechaFin:          fechaFin ? new Date(fechaFin) : null }),
-                ...(status            !== undefined && { status }),
-                ...(notas             !== undefined && { notas: notas || null }),
-            },
+        const obra = await prisma.$transaction(async (tx) => {
+            const updated = await tx.obra.update({
+                where: { id, empresaId: user.empresaId },
+                data: {
+                    ...(nombre            !== undefined && { nombre }),
+                    ...(clienteId         !== undefined && { clienteId:         clienteId || null }),
+                    ...(ubicacion         !== undefined && { ubicacion:         ubicacion || null }),
+                    ...(bordo             !== undefined && { bordo:             bordo != null ? Number(bordo) : null }),
+                    ...(espesor           !== undefined && { espesor:           espesor != null ? Number(espesor) : null }),
+                    ...(espaciamiento     !== undefined && { espaciamiento:     espaciamiento != null ? Number(espaciamiento) : null }),
+                    ...(metrosContratados !== undefined && { metrosContratados: metrosContratados != null ? Number(metrosContratados) : null }),
+                    ...(precioUnitario    !== undefined && { precioUnitario:    precioUnitario != null ? Number(precioUnitario) : null }),
+                    ...(monedaVal         !== undefined && { moneda:            monedaVal }),
+                    ...(tipoCambio        !== undefined && { tipoCambio:        tipoCambio != null ? Number(tipoCambio) : null }),
+                    ...(fechaInicio       !== undefined && { fechaInicio:       fechaInicio ? new Date(fechaInicio) : null }),
+                    ...(fechaFin          !== undefined && { fechaFin:          fechaFin ? new Date(fechaFin) : null }),
+                    ...(status            !== undefined && { status }),
+                    ...(notas             !== undefined && { notas: notas || null }),
+                },
+            });
+
+            // Mejora 2: upsert de plantillas si vienen en el body
+            if (Array.isArray(plantillas)) {
+                for (const p of plantillas) {
+                    if (!p.metrosContratados) continue;
+                    if (p.id) {
+                        // Actualizar plantilla existente
+                        await tx.plantillaObra.update({
+                            where: { id: p.id },
+                            data: {
+                                metrosContratados: Number(p.metrosContratados),
+                                barrenos:          Number(p.barrenos ?? 0),
+                                fechaInicio:       p.fechaInicio ? new Date(p.fechaInicio) : null,
+                                fechaFin:          p.fechaFin   ? new Date(p.fechaFin)    : null,
+                                notas:             p.notas      || null,
+                            },
+                        });
+                    } else {
+                        // Crear nueva plantilla
+                        await tx.plantillaObra.create({
+                            data: {
+                                obraId:            id,
+                                numero:            p.numero,
+                                metrosContratados: Number(p.metrosContratados),
+                                barrenos:          Number(p.barrenos ?? 0),
+                                fechaInicio:       p.fechaInicio ? new Date(p.fechaInicio) : null,
+                                fechaFin:          p.fechaFin   ? new Date(p.fechaFin)    : null,
+                                notas:             p.notas      || null,
+                            },
+                        });
+                    }
+                }
+            }
+
+            return updated;
         });
 
         return Response.json(obra);

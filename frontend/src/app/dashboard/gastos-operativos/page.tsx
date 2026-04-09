@@ -31,13 +31,14 @@ type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
 type Obra   = { id: string; nombre: string; status: string };
 
 const CATEGORIAS: Record<string, { label: string; color: string }> = {
-    LUBRICANTE:  { label: 'Lubricante',  color: 'bg-yellow-100 text-yellow-700' },
-    FILTRO:      { label: 'Filtro',      color: 'bg-orange-100 text-orange-700' },
-    HERRAMIENTA: { label: 'Herramienta', color: 'bg-blue-100 text-blue-700' },
-    COMBUSTIBLE: { label: 'Combustible', color: 'bg-red-100 text-red-700' },
-    PERSONAL:    { label: 'Personal',    color: 'bg-purple-100 text-purple-700' },
-    VEHICULO:    { label: 'Vehículo',    color: 'bg-indigo-100 text-indigo-700' },
-    OTRO:        { label: 'Otro',        color: 'bg-gray-100 text-gray-600' },
+    LUBRICANTE:   { label: 'Lubricante',   color: 'bg-yellow-100 text-yellow-700' },
+    FILTRO:       { label: 'Filtro',       color: 'bg-orange-100 text-orange-700' },
+    HERRAMIENTA:  { label: 'Herramienta',  color: 'bg-blue-100 text-blue-700'    },
+    COMBUSTIBLE:  { label: 'Combustible',  color: 'bg-red-100 text-red-700'      },
+    PERSONAL:     { label: 'Personal',     color: 'bg-purple-100 text-purple-700' },
+    VEHICULO:     { label: 'Vehículo',     color: 'bg-indigo-100 text-indigo-700' },
+    RENTA_EQUIPO: { label: 'Renta equipo', color: 'bg-orange-100 text-orange-800' }, // Mejora 9
+    OTRO:         { label: 'Otro',         color: 'bg-gray-100 text-gray-600'    },
 };
 
 // ─── Modal nuevo gasto ────────────────────────────────────────────────────────
