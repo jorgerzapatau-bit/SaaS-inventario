@@ -285,11 +285,11 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
     // Auto-fill H. Inicio from previous H. Fin
     const updateRow = useCallback((ri: number, key: keyof GridRow, val: string) => {
         setRows(prev => {
-            const next = prev.map((r,i) => i === ri ? {...r, [key]: val, _status: 'idle', _error: ''} : r);
+            const next = prev.map((r,i) => i === ri ? {...r, [key]: val, _status: 'idle' as const, _error: ''} : r);
             // Propagate horometroInicio to next row if editing horometroFin
             if (key === 'horometroFin' && ri + 1 < next.length) {
                 if (!next[ri+1].horometroInicio || next[ri+1].horometroInicio === prev[ri].horometroFin) {
-                    next[ri+1] = {...next[ri+1], horometroInicio: val, _status: 'idle', _error: ''};
+                    next[ri+1] = {...next[ri+1], horometroInicio: val, _status: 'idle' as const, _error: ''};
                 }
             }
             return next;
@@ -335,7 +335,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
                         (next[ri] as any)[col.key] = val;
                     }
                 });
-                next[ri] = {...next[ri], _status: 'idle', _error: ''};
+                next[ri] = {...next[ri], _status: 'idle' as const, _error: ''};
             });
             // Re-propagate horometroInicio after paste
             for (let i = 1; i < next.length; i++) {
@@ -358,10 +358,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
             if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue; // skip empty
             const errMsg = validateGridRow(r);
             if (errMsg) {
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error', _error: errMsg} : x));
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error' as const, _error: errMsg} : x));
                 continue;
             }
-            setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saving'} : x));
+            setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saving' as const} : x));
             try {
                 const body: Record<string,unknown> = {
                     equipoId,
@@ -378,9 +378,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
                     peones:             r.peones              ? Number(r.peones)             : 0,
                 };
                 await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify(body) });
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved', _error:''} : x));
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved' as const, _error:''} : x));
             } catch (err: any) {
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error', _error: err.message || 'Error'} : x));
+                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error' as const, _error: err.message || 'Error'} : x));
             }
             await new Promise(res => setTimeout(res, 180));
         }
