@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Save, HardHat, Drill } from 'lucide-react';
+import { ArrowLeft, Save, HardHat, Drill, ChevronDown, ChevronUp, Lock, Pencil, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
@@ -273,11 +273,30 @@ function NuevoRegistroDiarioInner() {
 
     const equipoSeleccionado = equipos.find(e => e.id === form.equipoId);
 
+    // Métricas derivadas
+    const metrosPorBarreno = form.barrenos && form.metrosLineales && Number(form.barrenos) > 0
+        ? (Number(form.metrosLineales) / Number(form.barrenos)).toFixed(2) : null;
+    const costoDiesel = form.litrosDiesel && form.precioDiesel
+        ? Number(form.litrosDiesel) * Number(form.precioDiesel) : 0;
+    const costoTotal = costoDiesel + (form.rentaEquipoDiaria ? Number(form.rentaEquipoDiaria) : 0);
+
+    // Validación progresiva
+    const camposFaltantes: string[] = [];
+    if (!form.obraId)          camposFaltantes.push('Obra');
+    if (!form.equipoId)        camposFaltantes.push('Equipo');
+    if (!form.horometroInicio) camposFaltantes.push('H. Inicial');
+    if (!form.horometroFin)    camposFaltantes.push('H. Final');
+    const formularioListo = camposFaltantes.length === 0;
+
     // Equipos filtrados según la obra seleccionada
     const obraSeleccionada = obras.find(o => o.id === form.obraId);
     const equiposDeObra = obraSeleccionada?.obraEquipos?.length
         ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
         : equipos; // Si la obra no tiene obraEquipos cargados, mostrar todos
+
+    // UI state
+    const [perforacionExpanded, setPerforacionExpanded] = useState(false);
+    const [horometroLocked, setHorometroLocked] = useState(true);
 
     return (
         <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in duration-500">
@@ -294,7 +313,29 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </div>
 
-            {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg border border-red-100 text-sm">{error}</div>}
+            {/* Resumen sticky — contexto siempre visible */}
+            {(form.obraId || form.equipoId) && (
+                <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border border-gray-200 rounded-xl px-4 py-3 shadow-sm flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                    {obraSeleccionada && (
+                        <span className="flex items-center gap-1.5 text-gray-700">
+                            <HardHat size={12} className="text-orange-500"/>
+                            <span className="font-semibold">{obraSeleccionada.nombre}</span>
+                        </span>
+                    )}
+                    {equipoSeleccionado && (
+                        <span className="flex items-center gap-1.5 text-gray-700">
+                            <Drill size={12} className="text-blue-500"/>
+                            <span className="font-semibold">{equipoSeleccionado.nombre}</span>
+                            {equipoSeleccionado.numeroEconomico && <span className="text-gray-400">({equipoSeleccionado.numeroEconomico})</span>}
+                        </span>
+                    )}
+                    {form.fecha && (
+                        <span className="text-gray-400 ml-auto">{new Date(form.fecha + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                    )}
+                </div>
+            )}
+
+            {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg border border-red-100 text-sm flex items-center gap-2"><AlertCircle size={15}/>{error}</div>}
 
             {/* ── 1. Obra (primero) ── */}
             <Card>
@@ -322,7 +363,7 @@ function NuevoRegistroDiarioInner() {
                             )}
                         </select>
                     </div>
-                    {/* Mejora 5: banner de avance vs plantilla activa */}
+                    {/* Banner de avance vs plantilla activa */}
                     {avancePlantilla && (
                         <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs space-y-1">
                             <p className="font-semibold text-blue-700">
@@ -352,7 +393,6 @@ function NuevoRegistroDiarioInner() {
                                     </span>
                                 )}
                             </div>
-                            {/* Barra de progreso */}
                             <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden mt-1">
                                 <div className="h-full bg-blue-500 rounded-full transition-all"
                                     style={{ width: `${Math.min(100, avancePlantilla.plantilla.metrosContratados > 0
@@ -365,7 +405,7 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* ── 2. Equipo y fecha (filtrado por obra) ── */}
+            {/* ── 2. Equipo y fecha ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Equipo y fecha</p>
@@ -385,10 +425,10 @@ function NuevoRegistroDiarioInner() {
                                 ))}
                             </select>
                             {!form.obraId && (
-                                <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero para ver los equipos disponibles</p>
+                                <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero</p>
                             )}
                             {form.obraId && equiposDeObra.length === 0 && (
-                                <p className="text-xs text-amber-600 mt-1">Esta obra no tiene equipos asignados. <a href="/dashboard/obras" className="underline">Asignar equipo →</a></p>
+                                <p className="text-xs text-amber-600 mt-1">Sin equipos asignados. <a href="/dashboard/obras" className="underline">Asignar →</a></p>
                             )}
                             {equipoSeleccionado && (
                                 <p className="text-xs text-blue-600 mt-1">
@@ -401,27 +441,39 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* Horómetro */}
+            {/* ── 3. Horómetro ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Horómetro</p>
                     <div className="grid grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">H. Inicial (h i) *</label>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="text-xs font-medium text-gray-600">H. Inicial (h i) *</label>
+                                <button type="button" onClick={() => setHorometroLocked(l => !l)}
+                                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors">
+                                    {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
+                                    {horometroLocked ? 'Editar' : 'Bloquear'}
+                                </button>
+                            </div>
                             <input
                                 type="number"
                                 value={form.horometroInicio}
+                                readOnly={horometroLocked}
                                 onChange={e => { set('horometroInicio', e.target.value); setHorometroFuente(null); }}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                                    horometroLocked
+                                        ? 'bg-gray-50 border-gray-200 text-gray-500 cursor-not-allowed'
+                                        : 'border-blue-300 focus:ring-blue-500/20 focus:border-blue-500'
+                                }`}
                             />
                             {horometroFuente === 'obra' && (
                                 <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                                    ✓ Precargado desde la asignación — verifica antes de guardar
+                                    <CheckCircle2 size={11}/> Precargado desde asignación
                                 </p>
                             )}
                             {horometroFuente === 'equipo' && (
-                                <p className="text-xs text-amber-600 mt-1">
-                                    ⚠ Sin asignación en esta obra — valor del equipo
+                                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                    <AlertCircle size={11}/> Valor del equipo — verifica
                                 </p>
                             )}
                         </div>
@@ -439,181 +491,220 @@ function NuevoRegistroDiarioInner() {
                                 }`}
                             />
                             {form.horometroFin && Number(form.horometroFin) < Number(form.horometroInicio) && (
-                                <p className="text-xs text-red-600 mt-1">No puede ser menor al inicial ({form.horometroInicio})</p>
+                                <p className="text-xs text-red-600 mt-1">Menor al inicial ({form.horometroInicio})</p>
                             )}
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Horas trabajadas</label>
-                            <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm font-bold text-blue-700">
+                            <div className={`px-3 py-2 rounded-lg text-sm font-bold border ${
+                                horas !== null && horas > 0
+                                    ? 'bg-green-50 border-green-200 text-green-700'
+                                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                            }`}>
                                 {horas !== null ? `${horas} hrs` : '—'}
                             </div>
+                            {horas !== null && horas > 14 && (
+                                <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                                    <AlertCircle size={11}/> Más de 14 hrs — ¿correcto?
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
             </Card>
 
-            {/* Producción + Costos */}
+            {/* ── 4. Producción + Costos ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Producción</p>
                     <div className="grid grid-cols-2 gap-4">
-                        {inp('Barrenos (BARRNS)', 'barrenos',       'number', '13')}
+                        {inp('Barrenos (BARRNS)', 'barrenos', 'number', '13')}
                         {inp('Metros lineales (MTS)', 'metrosLineales', 'number', '134.7')}
                     </div>
-                    {/* Mejora 6: Renta de equipo junto a los costos principales */}
-                    <div className="border-t border-gray-100 pt-3">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Costos del día</p>
-                        <div className="grid grid-cols-1 gap-4">
+                    {/* Métrica derivada: metros/barreno */}
+                    {metrosPorBarreno && (
+                        <div className="bg-gray-50 border border-gray-100 rounded-lg px-4 py-2 text-xs flex gap-4">
+                            <span className="text-gray-500">m/barreno: <span className="font-bold text-gray-700">{metrosPorBarreno} m</span></span>
+                            {horas && Number(form.metrosLineales) > 0 && (
+                                <span className="text-gray-500">Avance/hr: <span className="font-bold text-gray-700">
+                                    {(Number(form.metrosLineales) / horas).toFixed(1)} m/hr
+                                </span></span>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Costos del día — renta + diesel juntos */}
+                    <div className="border-t border-gray-100 pt-4 space-y-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Costos del día</p>
+                        <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Renta de equipo/día ($)</label>
                                 <input type="number" step="0.01" value={form.rentaEquipoDiaria}
                                     onChange={e => set('rentaEquipoDiaria', e.target.value)}
                                     placeholder="Ej: 4950"
                                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"/>
-                                <p className="text-xs text-gray-400 mt-1">Costo más importante del día — registra aquí antes de continuar</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Litros diésel cargados</label>
+                                <input type="number" step="0.1" value={form.litrosDiesel}
+                                    onChange={e => set('litrosDiesel', e.target.value)}
+                                    placeholder="235"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"/>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Precio diésel ($/lt)</label>
+                                <input type="number" step="0.01" value={form.precioDiesel}
+                                    onChange={e => set('precioDiesel', e.target.value)}
+                                    placeholder="21.95"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"/>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </Card>
-
-            {/* ── PERFORACIÓN (Track Drill) ── */}
-            <Card>
-                <div className="p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-                            <Drill size={13}/> Perforación
-                        </p>
-                        <span className="text-xs text-gray-300">Track Drill — opcional</span>
-                    </div>
-
-                    {/* Bordo / Espaciamiento / Profundidad */}
-                    <div className="grid grid-cols-3 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Bordo / Burden (m)</label>
-                            <input type="number" step="0.01" value={form.bordo}
-                                onChange={e => set('bordo', e.target.value)}
-                                placeholder="Ej: 3.5"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Espaciamiento (m)</label>
-                            <input type="number" step="0.01" value={form.espaciamiento}
-                                onChange={e => set('espaciamiento', e.target.value)}
-                                placeholder="Ej: 4.0"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Profundidad prom. (m)</label>
-                            <input type="number" step="0.01" value={form.profundidadPromedio}
-                                onChange={e => set('profundidadPromedio', e.target.value)}
-                                placeholder="Ej: 9.6"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                    </div>
-
-                    {/* Volumen roca */}
-                    <div className="grid grid-cols-3 gap-4 items-start">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Volumen roca (m³)
-                                {volumenCalculado && !form.volumenRoca && (
-                                    <span className="ml-1 text-indigo-500 font-normal">— calculado</span>
-                                )}
+                        <div className="flex items-center gap-2">
+                            <input type="checkbox" id="kardex"
+                                checked={form.registrarDieselEnKardex}
+                                onChange={e => set('registrarDieselEnKardex', e.target.checked)}
+                                className="w-4 h-4 accent-blue-600 cursor-pointer"/>
+                            <label htmlFor="kardex" className="text-xs text-gray-600 cursor-pointer">
+                                Descontar litros del inventario de Diésel automáticamente
                             </label>
-                            <input type="number" step="0.001" value={form.volumenRoca}
-                                onChange={e => set('volumenRoca', e.target.value)}
-                                placeholder={volumenCalculado ?? 'Bordo × Esp. × Prof. × Barrenos'}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
                         </div>
-                        {volumenCalculado && (
-                            <div className="col-span-2 mt-5">
-                                <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2 text-sm">
-                                    <span className="text-indigo-400 text-xs">Auto:</span>
-                                    <span className="font-semibold text-indigo-700">
-                                        {volumenLabel} = <strong>{volumenCalculado} m³</strong>
-                                    </span>
-                                    {!form.volumenRoca && (
-                                        <button type="button"
-                                            onClick={() => set('volumenRoca', volumenCalculado)}
-                                            className="ml-auto text-xs text-indigo-600 hover:underline">
-                                            Usar
-                                        </button>
-                                    )}
-                                </div>
+                        {/* Resumen de costos */}
+                        {(form.rentaEquipoDiaria || costoDiesel > 0) && (
+                            <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 space-y-1.5 text-xs">
+                                {form.rentaEquipoDiaria && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Renta equipo</span>
+                                        <span className="font-semibold">${Number(form.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                )}
+                                {costoDiesel > 0 && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Diésel ({form.litrosDiesel} lt × ${form.precioDiesel})</span>
+                                        <span className="font-semibold">${costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                )}
+                                {form.rentaEquipoDiaria && costoDiesel > 0 && (
+                                    <div className="flex justify-between text-gray-800 font-bold border-t border-gray-200 pt-1.5 mt-1">
+                                        <span>Total del día</span>
+                                        <span>${costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
-
-                    {/* % Pérdida / % Avance (renta ya está en Producción/Costos) */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">% Pérdida</label>
-                            <input type="number" step="0.1" min="0" max="100" value={form.porcentajePerdida}
-                                onChange={e => set('porcentajePerdida', e.target.value)}
-                                placeholder="Ej: 10"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">% Avance</label>
-                            <input type="number" step="0.1" min="0" max="100" value={form.porcentajeAvance}
-                                onChange={e => set('porcentajeAvance', e.target.value)}
-                                placeholder="Ej: 75"
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
-                        </div>
-                    </div>
-
-                    {/* Resumen inline si hay datos */}
-                    {(form.bordo || form.espaciamiento || form.profundidadPromedio || form.porcentajePerdida || form.porcentajeAvance) && (
-                        <div className="bg-indigo-50/70 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs border border-indigo-100">
-                            {form.bordo && (
-                                <div><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{form.bordo} m</p></div>
-                            )}
-                            {form.espaciamiento && (
-                                <div><p className="text-indigo-400 mb-0.5">Esp.</p><p className="font-bold text-indigo-700">{form.espaciamiento} m</p></div>
-                            )}
-                            {form.profundidadPromedio && (
-                                <div><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{form.profundidadPromedio} m</p></div>
-                            )}
-                            {(form.volumenRoca || volumenCalculado) && (
-                                <div><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{form.volumenRoca || volumenCalculado} m³</p></div>
-                            )}
-                            {form.porcentajePerdida && (
-                                <div><p className="text-indigo-400 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{form.porcentajePerdida}%</p></div>
-                            )}
-                        </div>
-                    )}
                 </div>
             </Card>
 
-            {/* Diésel */}
+            {/* ── 5. Perforación (colapsable) ── */}
             <Card>
-                <div className="p-5 space-y-4">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Diésel</p>
-                    <div className="grid grid-cols-2 gap-4">
-                        {inp('Litros cargados', 'litrosDiesel', 'number', '235')}
-                        {inp('Precio unitario ($/lt)', 'precioDiesel', 'number', '21.95')}
-                    </div>
-                    {form.litrosDiesel && form.precioDiesel && (
-                        <div className="bg-blue-50 rounded-lg px-4 py-2 text-sm">
-                            Costo: <span className="font-bold text-blue-700">
-                                ${(Number(form.litrosDiesel) * Number(form.precioDiesel)).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                            </span>
-                        </div>
-                    )}
+                <button type="button"
+                    onClick={() => setPerforacionExpanded(e => !e)}
+                    className="w-full p-5 flex items-center justify-between text-left hover:bg-gray-50/50 rounded-2xl transition-colors">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Drill size={13}/> Perforación
+                        <span className="font-normal text-gray-300 normal-case ml-1">Track Drill — opcional</span>
+                    </p>
                     <div className="flex items-center gap-2">
-                        <input type="checkbox" id="kardex"
-                            checked={form.registrarDieselEnKardex}
-                            onChange={e => set('registrarDieselEnKardex', e.target.checked)}
-                            className="w-4 h-4 accent-blue-600 cursor-pointer"/>
-                        <label htmlFor="kardex" className="text-xs text-gray-600 cursor-pointer">
-                            Descontar litros del inventario de Diésel automáticamente
-                        </label>
+                        {(form.bordo || form.profundidadPromedio) && !perforacionExpanded && (
+                            <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Con datos</span>
+                        )}
+                        {perforacionExpanded ? <ChevronUp size={16} className="text-gray-400"/> : <ChevronDown size={16} className="text-gray-400"/>}
                     </div>
-                </div>
+                </button>
+
+                {perforacionExpanded && (
+                    <div className="px-5 pb-5 space-y-4 border-t border-gray-50 pt-4">
+                        {/* Bordo / Espaciamiento / Profundidad */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Bordo / Burden (m)</label>
+                                <input type="number" step="0.01" value={form.bordo}
+                                    onChange={e => set('bordo', e.target.value)}
+                                    placeholder="2.7"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Espaciamiento (m)</label>
+                                <input type="number" step="0.01" value={form.espaciamiento}
+                                    onChange={e => set('espaciamiento', e.target.value)}
+                                    placeholder="3.0"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Profundidad prom. (m)</label>
+                                <input type="number" step="0.01" value={form.profundidadPromedio}
+                                    onChange={e => set('profundidadPromedio', e.target.value)}
+                                    placeholder="Ej: 9.6"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                        </div>
+
+                        {/* Volumen roca */}
+                        <div className="grid grid-cols-3 gap-4 items-start">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                    Volumen roca (m³)
+                                    {volumenCalculado && !form.volumenRoca && (
+                                        <span className="ml-1 text-indigo-500 font-normal">— calculado</span>
+                                    )}
+                                </label>
+                                <input type="number" step="0.001" value={form.volumenRoca}
+                                    onChange={e => set('volumenRoca', e.target.value)}
+                                    placeholder={volumenCalculado ?? 'Bordo × Esp. × Prof. × Barrenos'}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                            {volumenCalculado && (
+                                <div className="col-span-2 mt-5">
+                                    <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2 text-sm">
+                                        <span className="text-indigo-400 text-xs">Auto:</span>
+                                        <span className="font-semibold text-indigo-700">
+                                            {volumenLabel} = <strong>{volumenCalculado} m³</strong>
+                                        </span>
+                                        {!form.volumenRoca && (
+                                            <button type="button"
+                                                onClick={() => set('volumenRoca', volumenCalculado)}
+                                                className="ml-auto text-xs text-indigo-600 hover:underline">
+                                                Usar
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* % Pérdida / % Avance */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">% Pérdida</label>
+                                <input type="number" step="0.1" min="0" max="100" value={form.porcentajePerdida}
+                                    onChange={e => set('porcentajePerdida', e.target.value)}
+                                    placeholder="Ej: 10"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">% Avance</label>
+                                <input type="number" step="0.1" min="0" max="100" value={form.porcentajeAvance}
+                                    onChange={e => set('porcentajeAvance', e.target.value)}
+                                    placeholder="Ej: 75"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"/>
+                            </div>
+                        </div>
+
+                        {/* Resumen perforación */}
+                        {(form.bordo || form.espaciamiento || form.profundidadPromedio || form.porcentajePerdida || form.porcentajeAvance) && (
+                            <div className="bg-indigo-50/70 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs border border-indigo-100">
+                                {form.bordo && <div><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{form.bordo} m</p></div>}
+                                {form.espaciamiento && <div><p className="text-indigo-400 mb-0.5">Esp.</p><p className="font-bold text-indigo-700">{form.espaciamiento} m</p></div>}
+                                {form.profundidadPromedio && <div><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{form.profundidadPromedio} m</p></div>}
+                                {(form.volumenRoca || volumenCalculado) && <div><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{form.volumenRoca || volumenCalculado} m³</p></div>}
+                                {form.porcentajePerdida && <div><p className="text-indigo-400 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{form.porcentajePerdida}%</p></div>}
+                            </div>
+                        )}
+                    </div>
+                )}
             </Card>
 
-            {/* Tanque interno */}
+            {/* ── 6. Tanque interno ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -628,7 +719,7 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* Personal */}
+            {/* ── 7. Personal ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Personal (Op / Pn)</p>
@@ -639,15 +730,18 @@ function NuevoRegistroDiarioInner() {
                 </div>
             </Card>
 
-            {/* Acciones */}
+            {/* ── Acciones ── */}
             <div className="flex gap-3 pb-8">
                 <button onClick={() => router.back()}
                     className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
                     Cancelar
                 </button>
-                <button onClick={handleSave} disabled={saving}
+                <button onClick={handleSave} disabled={saving || !formularioListo}
                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm">
-                    {saving ? 'Guardando...' : <><Save size={16}/> Guardar registro</>}
+                    {saving ? 'Guardando...' : formularioListo
+                        ? <><Save size={16}/> Guardar registro</>
+                        : <span className="text-sm">Falta: {camposFaltantes.join(', ')}</span>
+                    }
                 </button>
             </div>
         </div>
