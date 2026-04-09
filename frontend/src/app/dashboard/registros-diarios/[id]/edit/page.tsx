@@ -16,8 +16,8 @@ function EditRegistroInner() {
         fetchApi(`/registros-diarios/${id}`)
             .then((r: any) => {
                 setInitialValues({
-                    equipoId:            r.equipo?.id             ?? '',
-                    obraId:              r.obra?.id               ?? '',
+                    equipoId:            r.equipo?.id  ?? r.equipoId  ?? '',
+                    obraId:              r.obra?.id    ?? r.obraId    ?? '',
                     fecha:               r.fecha?.slice(0, 10)    ?? '',
                     horometroInicio:     String(r.horometroInicio  ?? ''),
                     horometroFin:        String(r.horometroFin     ?? ''),

@@ -13,7 +13,8 @@ export async function GET(req: NextRequest, { params }: Params) {
         const registro = await prisma.registroDiario.findFirst({
             where: { id, empresaId: user.empresaId },
             include: {
-                equipo:  { select: { nombre: true, numeroEconomico: true, hodometroInicial: true } },
+                equipo:  { select: { id: true, nombre: true, numeroEconomico: true, hodometroInicial: true } },
+                obra:    { select: { id: true, nombre: true } },
                 usuario: { select: { nombre: true } },
                 cliente: { select: { nombre: true, telefono: true } },
                 movimientosInventario: {
