@@ -10,33 +10,6 @@ import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
-type PlantillaObra = {
-    id?: string;
-    numero: number;
-    metrosContratados: string;
-    barrenos: string;
-    fechaInicio: string;
-    fechaFin: string;
-    notas: string;
-};
-
-// Tipo extendido de Obra con plantillas
-type PlantillaObraDB = {
-    id: string;
-    numero: number;
-    metrosContratados: number;
-    barrenos: number;
-    fechaInicio: string | null;
-    fechaFin: string | null;
-    notas: string | null;
-};
-
-type EquipoSeleccionado = {
-    equipoId: string;
-    fechaInicio: string;
-    horometroInicial: string;   // C3-A
-};
-
 type Obra = {
     id: string;
     nombre: string;
@@ -47,11 +20,8 @@ type Obra = {
     moneda: 'MXN' | 'USD';
     fechaInicio: string | null;
     fechaFin: string | null;
-    bordo: number | null;
-    espaciamiento: number | null;
     status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
     notas: string | null;
-    plantillas: PlantillaObraDB[];
     _count: { registrosDiarios: number; cortesFacturacion: number };
     obraEquipos: { equipo: { nombre: string; numeroEconomico: string | null } }[];
     metricas: {
@@ -130,25 +100,32 @@ function ObraModal({
 }) {
     const isEdit = !!obra;
 
-    // C3-A: equipos con horómetro inicial
-    const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
-        [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
-    );
+    // En edición: cargamos los equipos actuales de la obra desde la API
+    const [equiposActuales, setEquiposActuales] = useState<
+        { id: string; equipoId: string; nombre: string; numeroEconomico: string | null; fechaInicio: string; fechaFin: string | null }[]
+    >([]);
+    const [loadingEquipos, setLoadingEquipos] = useState(isEdit);
 
-    // C1-B: plantillas — precargar desde la obra en modo edición
-    const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
-        obra?.plantillas && obra.plantillas.length > 0
-            ? obra.plantillas.map(p => ({
-                id:                p.id,
-                numero:            p.numero,
-                metrosContratados: String(p.metrosContratados),
-                barrenos:          String(p.barrenos ?? ''),
-                fechaInicio:       p.fechaInicio ? p.fechaInicio.slice(0, 10) : '',
-                fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
-                notas:             p.notas ?? '',
-            }))
-            : [{ numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' }]
-    );
+    useEffect(() => {
+        if (!isEdit || !obra) return;
+        fetchApi(`/obras/${obra.id}/equipos`)
+            .then((data: any[]) => {
+                setEquiposActuales(data.map((oe: any) => ({
+                    id:              oe.id,
+                    equipoId:        oe.equipoId,
+                    nombre:          oe.equipo.nombre,
+                    numeroEconomico: oe.equipo.numeroEconomico,
+                    fechaInicio:     oe.fechaInicio?.slice(0, 10) ?? '',
+                    fechaFin:        oe.fechaFin?.slice(0, 10) ?? null,
+                })));
+            })
+            .catch(() => {})
+            .finally(() => setLoadingEquipos(false));
+    }, []);
+
+    const [equiposSeleccionados, setEquiposSeleccionados] = useState<
+        { equipoId: string; fechaInicio: string; horometroInicial: string }[]
+    >([{ equipoId: '', fechaInicio: '', horometroInicial: '' }]);
 
     const [form, setForm] = useState({
         nombre:            obra?.nombre            ?? '',
@@ -162,11 +139,8 @@ function ObraModal({
         fechaInicio:       obra?.fechaInicio?.slice(0, 10)     ?? '',
         fechaFin:          obra?.fechaFin?.slice(0, 10)        ?? '',
         status:            obra?.status            ?? 'ACTIVA',
-        bordo:             obra?.bordo?.toString()         ?? '',   // C1-A
-        espaciamiento:     obra?.espaciamiento?.toString() ?? '',   // C1-A
         notas:             obra?.notas             ?? '',
     });
-
     const [dirty,  setDirty]  = useState(false);
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
@@ -186,13 +160,6 @@ function ObraModal({
         form.metrosContratados && form.precioUnitario
             ? Number(form.metrosContratados) * Number(form.precioUnitario)
             : null;
-
-    // C1-A: área calculada
-    const areaCalculada =
-        form.bordo && form.espaciamiento
-            ? (Number(form.bordo) * Number(form.espaciamiento)).toFixed(2)
-            : null;
-
     const fmtMoney = (n: number) =>
         n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -201,14 +168,13 @@ function ObraModal({
         onClose();
     };
 
-    // ── Equipos ──────────────────────────────────────────────────────────────
     const addEquipo = () =>
-        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
+        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '' }]);
 
     const removeEquipo = (idx: number) =>
         setEquiposSeleccionados(prev => prev.filter((_, i) => i !== idx));
 
-    const updateEquipo = (idx: number, field: keyof EquipoSeleccionado, value: string) => {
+    const updateEquipo = (idx: number, field: 'equipoId' | 'fechaInicio' | 'horometroInicial', value: string) => {
         setEquiposSeleccionados(prev =>
             prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e))
         );
@@ -217,26 +183,6 @@ function ObraModal({
 
     const equiposUsados = new Set(equiposSeleccionados.map(e => e.equipoId).filter(Boolean));
 
-    // ── Plantillas (C1-B) ─────────────────────────────────────────────────────
-    const addPlantilla = () =>
-        setPlantillas(prev => [
-            ...prev,
-            { numero: prev.length + 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' },
-        ]);
-
-    const removePlantilla = (idx: number) =>
-        setPlantillas(prev =>
-            prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, numero: i + 1 }))
-        );
-
-    const updatePlantilla = (idx: number, field: keyof PlantillaObra, value: string) => {
-        setPlantillas(prev =>
-            prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
-        );
-        setDirty(true);
-    };
-
-    // ── Guardar ───────────────────────────────────────────────────────────────
     const handleSave = async () => {
         if (!form.nombre.trim()) { setError('El nombre de la obra es requerido'); return; }
         if (!form.clienteId)     { setError('Debes seleccionar un cliente del catálogo'); return; }
@@ -245,12 +191,6 @@ function ObraModal({
         const equiposValidos = equiposSeleccionados.filter(e => e.equipoId);
         if (!isEdit && equiposValidos.length === 0) {
             setError('Debes asignar al menos un equipo a la obra');
-            return;
-        }
-
-        const plantillasValidas = plantillas.filter(p => p.metrosContratados);
-        if (!isEdit && plantillasValidas.length === 0) {
-            setError('Debes agregar al menos una plantilla con metros contratados');
             return;
         }
 
@@ -266,40 +206,28 @@ function ObraModal({
                 fechaInicio:       form.fechaInicio       || null,
                 fechaFin:          form.fechaFin          || null,
                 status:            form.status,
-                bordo:             form.bordo         ? Number(form.bordo)         : null,   // C1-A
-                espaciamiento:     form.espaciamiento ? Number(form.espaciamiento) : null,   // C1-A
-                notas:             form.notas         || null,
+                notas:             form.notas             || null,
             };
-
             if (!isEdit) {
-                // C3-A: equipos con horometroInicial
                 body.equipos = equiposValidos.map(e => ({
                     equipoId:         e.equipoId,
                     fechaInicio:      e.fechaInicio || form.fechaInicio || undefined,
                     horometroInicial: e.horometroInicial ? Number(e.horometroInicial) : null,
                 }));
-                // C1-B: plantillas
-                body.plantillas = plantillasValidas.map(p => ({
-                    numero:            p.numero,
-                    metrosContratados: Number(p.metrosContratados),
-                    barrenos:          p.barrenos ? Number(p.barrenos) : 0,
-                    fechaInicio:       p.fechaInicio || null,
-                    fechaFin:          p.fechaFin   || null,
-                    notas:             p.notas      || null,
-                }));
             }
-
             if (isEdit) {
-                body.plantillas = plantillasValidas.map(p => ({
-                    id:                p.id || undefined,
-                    numero:            p.numero,
-                    metrosContratados: Number(p.metrosContratados),
-                    barrenos:          p.barrenos ? Number(p.barrenos) : 0,
-                    fechaInicio:       p.fechaInicio || null,
-                    fechaFin:          p.fechaFin   || null,
-                    notas:             p.notas      || null,
-                }));
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
+                // Agregar equipos nuevos seleccionados en modo edición
+                for (const eq of equiposValidos) {
+                    await fetchApi(`/obras/${obra!.id}/equipos`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            equipoId:         eq.equipoId,
+                            fechaInicio:      eq.fechaInicio || form.fechaInicio || undefined,
+                            horometroInicial: eq.horometroInicial ? Number(eq.horometroInicial) : null,
+                        }),
+                    });
+                }
             } else {
                 await fetchApi('/obras', { method: 'POST', body: JSON.stringify(body) });
             }
@@ -332,7 +260,7 @@ function ObraModal({
 
                     {/* Nombre y status */}
                     <div className="grid grid-cols-2 gap-3">
-                        {inp('Nombre de la obra *', 'nombre', 'text', 'Ej: JOVERO')}
+                        {inp('Nombre de la obra *', 'nombre', 'text', 'Ej: Mina El Toro – Frente 3')}
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
                             <select value={form.status} onChange={handleFieldChange('status')}
@@ -344,7 +272,7 @@ function ObraModal({
                         </div>
                     </div>
 
-                    {/* Cliente */}
+                    {/* Cliente — solo catálogo */}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Cliente <span className="text-red-500">*</span>
@@ -370,8 +298,8 @@ function ObraModal({
                     <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Contrato</p>
                         <div className="grid grid-cols-2 gap-3">
-                            {inp('Metros contratados totales (m)', 'metrosContratados', 'number', '2000')}
-                            {inp('Precio unitario ($/m)', 'precioUnitario', 'number', '24.50')}
+                            {inp('Metros contratados (mt ln)', 'metrosContratados', 'number', '2000')}
+                            {inp('Precio unitario ($/m³ o mt)', 'precioUnitario', 'number', '24.50')}
                         </div>
                         <div className="mt-3">
                             <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
@@ -391,22 +319,7 @@ function ObraModal({
                         )}
                     </div>
 
-                    {/* C1-A: Malla de perforación — bordo + espaciamiento + área calculada */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Malla de perforación</p>
-                        <div className="grid grid-cols-3 gap-3">
-                            {inp('Bordo (m)', 'bordo', 'number', '2.7')}
-                            {inp('Espaciamiento (m)', 'espaciamiento', 'number', '3.0')}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Área (m²)</label>
-                                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-                                    {areaCalculada ? areaCalculada : '—'}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Fechas */}
+                    {/* Fechas con validación cruzada */}
                     <div className="grid grid-cols-2 gap-3">
                         {inp('Fecha inicio', 'fechaInicio', 'date')}
                         <div>
@@ -422,144 +335,120 @@ function ObraModal({
                     </div>
                     {fechaError && <p className="text-xs text-red-500 -mt-3">{fechaError}</p>}
 
-                    {/* C1-B: Plantillas (creación y edición) */}
+                    {/* Equipos asignados */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                Plantillas {!isEdit && <span className="text-red-500">*</span>}
-                            </p>
-                            <button type="button" onClick={addPlantilla}
-                                className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                <Plus size={12} /> Agregar plantilla
-                            </button>
-                        </div>
-                        <div className="space-y-3">
-                            {plantillas.map((plt, idx) => {
-                                // Mejora 1: área y volumen estimado heredados de la malla de la obra
-                                const bordoN         = Number(form.bordo);
-                                const espacN         = Number(form.espaciamiento);
-                                const metros         = Number(plt.metrosContratados);
-                                const areaPlantilla  = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
-                                const volEstimado    = areaPlantilla && metros
-                                    ? (Number(areaPlantilla) * metros).toFixed(1) : null;
-                                return (
-                                    <div key={idx} className="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-semibold text-gray-600">Plantilla {plt.numero}</span>
-                                            {plantillas.length > 1 && (
-                                                <button type="button" onClick={() => removePlantilla(idx)}
-                                                    className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
-                                                    <X size={13} />
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                            Equipos asignados{!isEdit && <span className="text-red-500"> *</span>}
+                        </p>
+
+                        {/* En edición: mostrar equipos actuales con opción de cerrar asignación */}
+                        {isEdit && (
+                            <div className="space-y-2 mb-3">
+                                {loadingEquipos ? (
+                                    <p className="text-xs text-gray-400">Cargando equipos...</p>
+                                ) : equiposActuales.length === 0 ? (
+                                    <p className="text-xs text-gray-400 italic">Sin equipos asignados aún.</p>
+                                ) : (
+                                    equiposActuales.map(oe => (
+                                        <div key={oe.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+                                            oe.fechaFin
+                                                ? 'border-gray-100 bg-gray-50 text-gray-400'
+                                                : 'border-green-200 bg-green-50 text-green-800'
+                                        }`}>
+                                            <span className="flex-1 font-medium">
+                                                {oe.nombre}{oe.numeroEconomico ? ` (${oe.numeroEconomico})` : ''}
+                                            </span>
+                                            <span className="text-xs">
+                                                Desde {oe.fechaInicio}
+                                                {oe.fechaFin ? ` → ${oe.fechaFin}` : ' — activo'}
+                                            </span>
+                                            {!oe.fechaFin && (
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        if (!confirm(`¿Cerrar la asignación de "${oe.nombre}" hoy?`)) return;
+                                                        try {
+                                                            await fetchApi(`/obras/${obra!.id}/equipos`, {
+                                                                method: 'PATCH',
+                                                                body: JSON.stringify({ obraEquipoId: oe.id }),
+                                                            });
+                                                            setEquiposActuales(prev =>
+                                                                prev.map(x => x.id === oe.id
+                                                                    ? { ...x, fechaFin: new Date().toISOString().slice(0, 10) }
+                                                                    : x
+                                                                )
+                                                            );
+                                                            setDirty(true);
+                                                        } catch (e: any) {
+                                                            setError(e.message || 'Error al cerrar asignación');
+                                                        }
+                                                    }}
+                                                    className="text-xs text-red-500 hover:text-red-700 hover:underline flex-shrink-0"
+                                                >
+                                                    Cerrar asignación
                                                 </button>
                                             )}
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Metros contratados *</label>
-                                                <input type="number" placeholder="841.50" value={plt.metrosContratados}
-                                                    onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Barrenos</label>
-                                                <input type="number" placeholder="89" value={plt.barrenos}
-                                                    onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
-                                                <input type="date" value={plt.fechaInicio}
-                                                    onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Fecha fin</label>
-                                                <input type="date" value={plt.fechaFin}
-                                                    onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                            </div>
-                                        </div>
-                                        {/* Mejora 1: área y volumen estimado */}
-                                        {(areaPlantilla || volEstimado) && (
-                                            <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
-                                                {areaPlantilla && (
-                                                    <span className="text-blue-600">
-                                                        Área: <strong>{areaPlantilla} m²</strong>
-                                                        <span className="text-blue-400 ml-1">({form.bordo} × {form.espaciamiento})</span>
-                                                    </span>
-                                                )}
-                                                {volEstimado && (
-                                                    <span className="text-blue-700 font-medium">
-                                                        Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m³</strong>
-                                                        <span className="text-blue-400 ml-1">({plt.metrosContratados} m × {areaPlantilla} m²)</span>
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
 
-                    {/* C3-A: Equipos con horómetro inicial (solo en creación) */}
-                    {!isEdit && (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                    Equipos asignados <span className="text-red-500">*</span>
-                                </p>
-                                <button type="button" onClick={addEquipo}
-                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                    <Plus size={12} /> Agregar equipo
-                                </button>
-                            </div>
-                            <div className="space-y-2">
-                                {equiposSeleccionados.map((eq, idx) => (
-                                    <div key={idx} className="flex gap-2 items-end flex-wrap">
-                                        <div className="flex-1 min-w-[160px]">
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Equipo</label>}
-                                            <select value={eq.equipoId}
-                                                onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
-                                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                                <option value="">— Selecciona —</option>
-                                                {equipos.map(e => (
-                                                    <option key={e.id} value={e.id}
-                                                        disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
-                                                        {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>}
-                                            <input type="date" value={eq.fechaInicio}
-                                                onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
-                                                className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                        </div>
-                                        <div>
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Horómetro inicial (hrs)</label>}
-                                            <input type="number" placeholder="7662" value={eq.horometroInicial}
-                                                onChange={e => updateEquipo(idx, 'horometroInicial', e.target.value)}
-                                                className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                        </div>
-                                        {equiposSeleccionados.length > 1 && (
-                                            <button type="button" onClick={() => removeEquipo(idx)}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mb-0.5">
-                                                <X size={14} />
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                            {equipos.length === 0 && (
-                                <p className="text-xs text-amber-600 mt-1">
-                                    No hay equipos registrados.{' '}
-                                    <a href="/dashboard/equipos" className="underline">Crear equipo →</a>
-                                </p>
-                            )}
+                        {/* Agregar nuevo equipo (siempre visible) */}
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-gray-500">
+                                {isEdit ? 'Asignar equipo adicional:' : ''}
+                            </p>
+                            <button type="button" onClick={addEquipo}
+                                className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                <Plus size={12} /> Agregar equipo
+                            </button>
                         </div>
-                    )}
+                        <div className="space-y-2">
+                            {equiposSeleccionados.map((eq, idx) => (
+                                <div key={idx} className="flex gap-2 items-end flex-wrap">
+                                    <div className="flex-1 min-w-[160px]">
+                                        {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Equipo</label>}
+                                        <select value={eq.equipoId}
+                                            onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                            <option value="">— Selecciona —</option>
+                                            {equipos.map(e => (
+                                                <option key={e.id} value={e.id}
+                                                    disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
+                                                    {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>}
+                                        <input type="date" value={eq.fechaInicio}
+                                            onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
+                                            className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                    </div>
+                                    <div>
+                                        {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Horómetro inicial</label>}
+                                        <input type="number" placeholder="Ej: 7662" value={eq.horometroInicial}
+                                            onChange={e => updateEquipo(idx, 'horometroInicial', e.target.value)}
+                                            className="w-32 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                    </div>
+                                    {equiposSeleccionados.length > 1 && (
+                                        <button type="button" onClick={() => removeEquipo(idx)}
+                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mb-0.5">
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        {equipos.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                                No hay equipos registrados.{' '}
+                                <a href="/dashboard/equipos" className="underline">Crear equipo →</a>
+                            </p>
+                        )}
+                    </div>
 
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
@@ -679,8 +568,8 @@ export default function ObrasPage() {
                         { label: 'Activas',    value: activas,    color: 'text-green-600' },
                         { label: 'Pausadas',   value: pausadas,   color: 'text-yellow-600' },
                         { label: 'Terminadas', value: terminadas, color: 'text-gray-500' },
-                        { label: 'Total facturado',             value: `$${fmt(totalFacturado)}`, color: 'text-blue-600' },
-                        { label: 'Metros perforados (activas)', value: `${fmt(metrosTotales)} m`, color: 'text-purple-600' },
+                        { label: 'Total facturado',              value: `$${fmt(totalFacturado)}`, color: 'text-blue-600' },
+                        { label: 'Metros perforados (activas)',  value: `${fmt(metrosTotales)} m`, color: 'text-purple-600' },
                     ].map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                             <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -773,6 +662,7 @@ export default function ObrasPage() {
                                             <td className="p-3 text-sm text-gray-500">
                                                 {obra.cliente?.nombre ?? '—'}
                                             </td>
+                                            {/* Todos los equipos activos */}
                                             <td className="p-3">
                                                 {equiposActivos.length === 0 ? (
                                                     <span className="text-xs text-gray-300">—</span>
