@@ -353,7 +353,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
 
     const saveAll = async () => {
         setSaving(true);
-        const filledRows = rows.filter(r => r.fecha || r.horometroFin);
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue; // skip empty
