@@ -37,6 +37,16 @@ type EquipoSeleccionado = {
     horometroInicial: string;   // C3-A
 };
 
+type EquipoAsignado = {
+    id: string;          // id del registro ObraEquipo
+    equipoId: string;
+    nombre: string;
+    numeroEconomico: string | null;
+    fechaInicio: string;
+    fechaFin: string | null;
+    _eliminar?: boolean;
+};
+
 type Obra = {
     id: string;
     nombre: string;
@@ -130,10 +140,33 @@ function ObraModal({
 }) {
     const isEdit = !!obra;
 
-    // C3-A: equipos con horómetro inicial
+    // C3-A: equipos con horómetro inicial (solo creación)
     const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
         [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
     );
+
+    // Equipos actuales en modo edición
+    const [equiposAsignados, setEquiposAsignados] = useState<EquipoAsignado[]>([]);
+    const [loadingEquipos, setLoadingEquipos] = useState(isEdit);
+    // Equipos nuevos a agregar en modo edición
+    const [equiposNuevos, setEquiposNuevos] = useState<EquipoSeleccionado[]>([]);
+
+    useEffect(() => {
+        if (!isEdit || !obra) return;
+        fetchApi(`/obras/${obra.id}/equipos`)
+            .then((data: any[]) => {
+                setEquiposAsignados(data.map((oe: any) => ({
+                    id:              oe.id,
+                    equipoId:        oe.equipoId,
+                    nombre:          oe.equipo.nombre,
+                    numeroEconomico: oe.equipo.numeroEconomico,
+                    fechaInicio:     oe.fechaInicio?.slice(0, 10) ?? '',
+                    fechaFin:        oe.fechaFin?.slice(0, 10) ?? null,
+                })));
+            })
+            .catch(() => {})
+            .finally(() => setLoadingEquipos(false));
+    }, []);
 
     // C1-B: plantillas — precargar desde la obra en modo edición
     const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
@@ -201,7 +234,7 @@ function ObraModal({
         onClose();
     };
 
-    // ── Equipos ──────────────────────────────────────────────────────────────
+    // ── Equipos (creación) ────────────────────────────────────────────────────
     const addEquipo = () =>
         setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
 
@@ -216,6 +249,39 @@ function ObraModal({
     };
 
     const equiposUsados = new Set(equiposSeleccionados.map(e => e.equipoId).filter(Boolean));
+
+    // ── Equipos (edición) ─────────────────────────────────────────────────────
+    const updateEquipoAsignado = (id: string, field: 'equipoId' | 'fechaInicio' | 'fechaFin', value: string) => {
+        setEquiposAsignados(prev =>
+            prev.map(e => e.id === id ? { ...e, [field]: value } : e)
+        );
+        setDirty(true);
+    };
+
+    const toggleEliminarEquipo = (id: string) => {
+        setEquiposAsignados(prev =>
+            prev.map(e => e.id === id ? { ...e, _eliminar: !e._eliminar } : e)
+        );
+        setDirty(true);
+    };
+
+    const addEquipoNuevo = () =>
+        setEquiposNuevos(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
+
+    const removeEquipoNuevo = (idx: number) =>
+        setEquiposNuevos(prev => prev.filter((_, i) => i !== idx));
+
+    const updateEquipoNuevo = (idx: number, field: keyof EquipoSeleccionado, value: string) => {
+        setEquiposNuevos(prev =>
+            prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e))
+        );
+        setDirty(true);
+    };
+
+    const equiposUsadosEdit = new Set([
+        ...equiposAsignados.filter(e => !e._eliminar).map(e => e.equipoId),
+        ...equiposNuevos.map(e => e.equipoId).filter(Boolean),
+    ]);
 
     // ── Plantillas (C1-B) ─────────────────────────────────────────────────────
     const addPlantilla = () =>
@@ -299,6 +365,26 @@ function ObraModal({
                     fechaFin:          p.fechaFin   || null,
                     notas:             p.notas      || null,
                 }));
+                // Equipos: actualizaciones + eliminaciones + nuevos
+                body.equiposActualizados = equiposAsignados
+                    .filter(e => !e._eliminar)
+                    .map(e => ({
+                        id:          e.id,
+                        equipoId:    e.equipoId,
+                        fechaInicio: e.fechaInicio || null,
+                        fechaFin:    e.fechaFin    || null,
+                    }));
+                body.equiposEliminados = equiposAsignados
+                    .filter(e => e._eliminar)
+                    .map(e => e.id);
+                const nuevosValidos = equiposNuevos.filter(e => e.equipoId);
+                if (nuevosValidos.length > 0) {
+                    body.equiposNuevos = nuevosValidos.map(e => ({
+                        equipoId:         e.equipoId,
+                        fechaInicio:      e.fechaInicio || null,
+                        horometroInicial: e.horometroInicial ? Number(e.horometroInicial) : null,
+                    }));
+                }
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             } else {
                 await fetchApi('/obras', { method: 'POST', body: JSON.stringify(body) });
@@ -501,6 +587,120 @@ function ObraModal({
                             })}
                         </div>
                     </div>
+
+                    {/* Equipos asignados (modo edición) */}
+                    {isEdit && (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    Equipos asignados
+                                </p>
+                                <button type="button" onClick={addEquipoNuevo}
+                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                    <Plus size={12} /> Agregar equipo
+                                </button>
+                            </div>
+
+                            {loadingEquipos ? (
+                                <p className="text-xs text-gray-400 py-2">Cargando equipos...</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {/* Equipos ya asignados */}
+                                    {equiposAsignados.map(eq => (
+                                        <div key={eq.id}
+                                            className={`border rounded-xl p-3 space-y-2 transition-colors ${eq._eliminar ? 'bg-red-50 border-red-200 opacity-60' : 'bg-gray-50/50 border-gray-100'}`}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <label className="block text-xs text-gray-500 mb-1">Equipo</label>
+                                                    <select
+                                                        value={eq.equipoId}
+                                                        disabled={eq._eliminar}
+                                                        onChange={e => updateEquipoAsignado(eq.id, 'equipoId', e.target.value)}
+                                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-100 disabled:text-gray-400">
+                                                        {equipos.map(e => (
+                                                            <option key={e.id} value={e.id}
+                                                                disabled={equiposUsadosEdit.has(e.id) && eq.equipoId !== e.id}>
+                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <button type="button"
+                                                    onClick={() => toggleEliminarEquipo(eq.id)}
+                                                    className={`mt-5 px-2 py-1.5 rounded-lg transition-colors text-xs font-medium flex items-center gap-1 ${eq._eliminar
+                                                        ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                                        : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
+                                                    title={eq._eliminar ? 'Deshacer eliminación' : 'Quitar equipo'}>
+                                                    {eq._eliminar ? 'Deshacer' : <Trash2 size={14} />}
+                                                </button>
+                                            </div>
+                                            {!eq._eliminar && (
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
+                                                        <input type="date" value={eq.fechaInicio}
+                                                            onChange={e => updateEquipoAsignado(eq.id, 'fechaInicio', e.target.value)}
+                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 mb-1">Fecha fin</label>
+                                                        <input type="date" value={eq.fechaFin ?? ''}
+                                                            onChange={e => updateEquipoAsignado(eq.id, 'fechaFin', e.target.value)}
+                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+
+                                    {/* Equipos nuevos a agregar */}
+                                    {equiposNuevos.map((eq, idx) => (
+                                        <div key={idx} className="border border-blue-200 rounded-xl p-3 bg-blue-50/30 space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold text-blue-600">Nuevo equipo</span>
+                                                <button type="button" onClick={() => removeEquipoNuevo(idx)}
+                                                    className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
+                                                    <X size={13} />
+                                                </button>
+                                            </div>
+                                            <div className="flex gap-2 flex-wrap items-end">
+                                                <div className="flex-1 min-w-[160px]">
+                                                    <label className="block text-xs text-gray-500 mb-1">Equipo</label>
+                                                    <select value={eq.equipoId}
+                                                        onChange={e => updateEquipoNuevo(idx, 'equipoId', e.target.value)}
+                                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                                        <option value="">— Selecciona —</option>
+                                                        {equipos.map(e => (
+                                                            <option key={e.id} value={e.id}
+                                                                disabled={equiposUsadosEdit.has(e.id) && eq.equipoId !== e.id}>
+                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>
+                                                    <input type="date" value={eq.fechaInicio}
+                                                        onChange={e => updateEquipoNuevo(idx, 'fechaInicio', e.target.value)}
+                                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Horómetro inicial (hrs)</label>
+                                                    <input type="number" placeholder="7662" value={eq.horometroInicial}
+                                                        onChange={e => updateEquipoNuevo(idx, 'horometroInicial', e.target.value)}
+                                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {equiposAsignados.length === 0 && equiposNuevos.length === 0 && (
+                                        <p className="text-xs text-gray-400 py-1">Sin equipos asignados.</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* C3-A: Equipos con horómetro inicial (solo en creación) */}
                     {!isEdit && (
