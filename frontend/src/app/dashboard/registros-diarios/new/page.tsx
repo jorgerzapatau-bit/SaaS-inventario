@@ -11,6 +11,7 @@ type ObraSimple = {
     id: string; nombre: string; status: string;
     bordo?: number | null; espaciamiento?: number | null;
     plantillas?: { id: string; numero: number; metrosContratados: number; barrenos: number; fechaInicio: string | null; fechaFin: string | null }[];
+    obraEquipos?: { equipoId: string }[];
 };
 type ObraEquipo = { equipoId: string; obraId: string; horometroInicial: number | null };
 
@@ -172,15 +173,26 @@ function NuevoRegistroDiarioInner() {
 
     const handleObraChange = (obraId: string) => {
         const ob = obras.find(o => o.id === obraId);
+        // Si el equipo actual no pertenece a la nueva obra, limpiarlo
+        const equiposNuevosIds = ob?.obraEquipos?.map(oe => oe.equipoId) ?? [];
+        const equipoSigueValido = !ob?.obraEquipos?.length || equiposNuevosIds.includes(form.equipoId);
+        const nuevoEquipoId = equipoSigueValido ? form.equipoId : '';
+
         setForm(f => ({
             ...f,
             obraId,
+            equipoId:      nuevoEquipoId,
             bordo:         ob?.bordo        != null ? String(ob.bordo)         : f.bordo,
             espaciamiento: ob?.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
         }));
-        // Mejora 3: si ya hay equipo seleccionado, buscar horómetro de la asignación
-        if (obraId && form.equipoId) {
-            fetchHorometroObraEquipo(obraId, form.equipoId);
+        // Si el equipo cambió, limpiar horómetro
+        if (!equipoSigueValido) {
+            setHorometroFuente(null);
+            setForm(f => ({ ...f, horometroInicio: '' }));
+        }
+        // Mejora 3: si hay equipo válido, buscar horómetro de la asignación
+        if (obraId && nuevoEquipoId) {
+            fetchHorometroObraEquipo(obraId, nuevoEquipoId);
         }
         // Mejora 5: cargar avance vs plantilla activa
         fetchAvancePlantilla(obraId);
@@ -261,6 +273,12 @@ function NuevoRegistroDiarioInner() {
 
     const equipoSeleccionado = equipos.find(e => e.id === form.equipoId);
 
+    // Equipos filtrados según la obra seleccionada
+    const obraSeleccionada = obras.find(o => o.id === form.obraId);
+    const equiposDeObra = obraSeleccionada?.obraEquipos?.length
+        ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
+        : equipos; // Si la obra no tiene obraEquipos cargados, mostrar todos
+
     return (
         <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in duration-500">
 
@@ -278,49 +296,30 @@ function NuevoRegistroDiarioInner() {
 
             {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg border border-red-100 text-sm">{error}</div>}
 
-            {/* Equipo y fecha */}
-            <Card>
-                <div className="p-5 space-y-4">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Equipo y fecha</p>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Equipo *</label>
-                            <select value={form.equipoId} onChange={e => handleEquipoChange(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="">-- Selecciona --</option>
-                                {equipos.map(eq => (
-                                    <option key={eq.id} value={eq.id}>
-                                        {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {equipoSeleccionado && (
-                                <p className="text-xs text-blue-600 mt-1">
-                                    Horómetro actual: <span className="font-bold">{Number(equipoSeleccionado.hodometroInicial).toLocaleString('es-MX')} hrs</span>
-                                </p>
-                            )}
-                        </div>
-                        {inp('Fecha *', 'fecha', 'date')}
-                    </div>
-                </div>
-            </Card>
-
-            {/* Obra */}
+            {/* ── 1. Obra (primero) ── */}
             <Card>
                 <div className="p-5 space-y-4">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                         <HardHat size={13}/> Obra / Notas
                     </p>
                     <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Obra del catálogo</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Obra del catálogo <span className="text-red-500">*</span>
+                        </label>
                         <select value={form.obraId} onChange={e => handleObraChange(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                            <option value="">— Sin vincular a obra —</option>
-                            {obras.map(o => (
-                                <option key={o.id} value={o.id}>
-                                    {o.nombre} {o.status !== 'ACTIVA' ? `(${o.status})` : ''}
-                                </option>
+                            <option value="">— Selecciona una obra —</option>
+                            {obras.filter(o => o.status === 'ACTIVA').map(o => (
+                                <option key={o.id} value={o.id}>{o.nombre}</option>
                             ))}
+                            {obras.some(o => o.status !== 'ACTIVA') && (
+                                <>
+                                    <option disabled>── Inactivas ──</option>
+                                    {obras.filter(o => o.status !== 'ACTIVA').map(o => (
+                                        <option key={o.id} value={o.id}>{o.nombre} ({o.status})</option>
+                                    ))}
+                                </>
+                            )}
                         </select>
                     </div>
                     {/* Mejora 5: banner de avance vs plantilla activa */}
@@ -363,6 +362,42 @@ function NuevoRegistroDiarioInner() {
                     )}
                     {!form.obraId && inp('Nombre de obra / sitio (texto libre)', 'obraNombre', 'text', 'Ej: Mina El Toro — Frente 3')}
                     {inp('Notas', 'notas')}
+                </div>
+            </Card>
+
+            {/* ── 2. Equipo y fecha (filtrado por obra) ── */}
+            <Card>
+                <div className="p-5 space-y-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Equipo y fecha</p>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">Equipo *</label>
+                            <select value={form.equipoId} onChange={e => handleEquipoChange(e.target.value)}
+                                disabled={!form.obraId}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed">
+                                <option value="">
+                                    {form.obraId ? '— Selecciona un equipo —' : '— Primero selecciona una obra —'}
+                                </option>
+                                {equiposDeObra.map(eq => (
+                                    <option key={eq.id} value={eq.id}>
+                                        {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            {!form.obraId && (
+                                <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero para ver los equipos disponibles</p>
+                            )}
+                            {form.obraId && equiposDeObra.length === 0 && (
+                                <p className="text-xs text-amber-600 mt-1">Esta obra no tiene equipos asignados. <a href="/dashboard/obras" className="underline">Asignar equipo →</a></p>
+                            )}
+                            {equipoSeleccionado && (
+                                <p className="text-xs text-blue-600 mt-1">
+                                    Horómetro actual: <span className="font-bold">{Number(equipoSeleccionado.hodometroInicial).toLocaleString('es-MX')} hrs</span>
+                                </p>
+                            )}
+                        </div>
+                        {inp('Fecha *', 'fecha', 'date')}
+                    </div>
                 </div>
             </Card>
 
