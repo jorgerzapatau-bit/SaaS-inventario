@@ -169,7 +169,7 @@ function ObraModal({
     };
 
     const addEquipo = () =>
-        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '' }]);
+        setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
 
     const removeEquipo = (idx: number) =>
         setEquiposSeleccionados(prev => prev.filter((_, i) => i !== idx));
