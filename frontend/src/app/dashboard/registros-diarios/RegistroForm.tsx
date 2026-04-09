@@ -172,9 +172,16 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
             if (mode === 'new') {
                 const targetId = equipoIdParam || eqs[0]?.id;
                 const eq = eqs.find((e: Equipo) => e.id === targetId);
+                // Solo precargar horometroInicio desde equipo/obra si NO viene un valor de "copia"
+                const tieneHorometroDesCopia = !!(initialValues?.horometroInicio);
                 if (eq) {
-                    setForm(f => ({ ...f, equipoId: eq.id, horometroInicio: String(eq.hodometroInicial) }));
-                    setHorometroFuente('equipo');
+                    setForm(f => ({
+                        ...f,
+                        equipoId: eq.id,
+                        // Si viene de copia, respetar ese valor; si no, usar el del equipo
+                        horometroInicio: tieneHorometroDesCopia ? f.horometroInicio : String(eq.hodometroInicial),
+                    }));
+                    setHorometroFuente(tieneHorometroDesCopia ? null : 'equipo');
                 }
                 if (obraIdParam) {
                     const ob = obs.find((o: ObraSimple) => o.id === obraIdParam);
@@ -185,7 +192,8 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                             bordo: ob.bordo != null ? String(ob.bordo) : f.bordo,
                             espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
                         }));
-                        if (targetId) fetchHorometroObraEquipo(obraIdParam, targetId);
+                        // Solo buscar horómetro de la obra/equipo si no viene de copia
+                        if (targetId && !tieneHorometroDesCopia) fetchHorometroObraEquipo(obraIdParam, targetId);
                         fetchAvancePlantilla(obraIdParam);
                     }
                 }
@@ -513,6 +521,11 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                             {horometroFuente === 'equipo' && (
                                 <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
                                     <AlertCircle size={11} /> Valor del equipo — verifica
+                                </p>
+                            )}
+                            {horometroFuente === null && initialValues?.horometroInicio && mode === 'new' && (
+                                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                                    <CheckCircle2 size={11} /> Precargado desde registro anterior
                                 </p>
                             )}
                         </div>
