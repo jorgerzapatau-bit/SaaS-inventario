@@ -7,7 +7,7 @@ import {
     Droplets, ChevronDown, ChevronUp,
     Search, X, Filter, Drill, Pencil, Copy,
     ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
-    AlertTriangle, LayoutList, Table2, CheckCircle2, Loader2,
+    AlertTriangle, CheckCircle2, Loader2, Table2,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -272,13 +272,31 @@ function validateGridRow(r: GridRow) {
     return '';
 }
 
-function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple[] }) {
+// Extendemos ObraSimple para incluir obraEquipos
+type ObraConEquipos = ObraSimple & { obraEquipos?: { equipoId: string }[] };
+
+function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
     const INITIAL_ROWS = 8;
-    const [equipoId, setEquipoId] = useState(equipos[0]?.id ?? '');
-    const [obraId,   setObraId]   = useState('');
+    const [obraId,   setObraId]   = useState(obras[0]?.id ?? '');
+    const [equipoId, setEquipoId] = useState('');
     const [rows,     setRows]     = useState<GridRow[]>(() => Array.from({length: INITIAL_ROWS}, emptyRow));
     const [active,   setActive]   = useState<{r:number;c:number}|null>(null);
     const [saving,   setSaving]   = useState(false);
+    // Equipos filtrados según la obra seleccionada (igual que en RegistroForm)
+    const obraSeleccionada = obras.find(o => o.id === obraId);
+    const equiposDeObra = obraSeleccionada?.obraEquipos?.length
+        ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
+        : equipos;
+
+    // Cuando cambia la obra, resetear el equipo si ya no pertenece
+    const handleObraChange = (newObraId: string) => {
+        setObraId(newObraId);
+        const ob = obras.find(o => o.id === newObraId);
+        const equiposIds = ob?.obraEquipos?.map(oe => oe.equipoId) ?? [];
+        const sigueValido = !ob?.obraEquipos?.length || equiposIds.includes(equipoId);
+        if (!sigueValido) setEquipoId('');
+    };
+
     const gridRef = useRef<HTMLDivElement>(null);
     const inputRefs = useRef<(HTMLInputElement|null)[][]>([]);
 
@@ -352,6 +370,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
     const clearRow = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
 
     const saveAll = async () => {
+        if (!equipoId) { alert('Selecciona un equipo antes de guardar'); return; }
         setSaving(true);
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
@@ -393,26 +412,42 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
-            {/* ── Selectores equipo / obra ── */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            {/* ── Selectores obra / equipo ── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
+                    {/* 1. Obra primero */}
                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Equipo *</label>
-                        <select value={equipoId} onChange={e => setEquipoId(e.target.value)}
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                            Obra <span className="text-red-500">*</span>
+                        </label>
+                        <select value={obraId} onChange={e => handleObraChange(e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
-                            {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre} ({eq.numeroEconomico})</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">Obra</label>
-                        <select value={obraId} onChange={e => setObraId(e.target.value)}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
-                            <option value="">— Sin obra —</option>
+                            <option value="">— Selecciona una obra —</option>
                             {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                     </div>
+                    {/* 2. Equipo filtrado por obra */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                            Equipo <span className="text-red-500">*</span>
+                        </label>
+                        <select value={equipoId} onChange={e => setEquipoId(e.target.value)}
+                            disabled={!obraId}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed">
+                            <option value="">{obraId ? '— Selecciona un equipo —' : '— Primero selecciona una obra —'}</option>
+                            {equiposDeObra.map(eq => (
+                                <option key={eq.id} value={eq.id}>
+                                    {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {!obraId && <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero</p>}
+                        {obraId && equiposDeObra.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">Sin equipos asignados a esta obra.</p>
+                        )}
+                    </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-2.5">
+                <p className="text-xs text-gray-400">
                     💡 Pega datos directamente desde Excel/Google Sheets con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd> en cualquier celda. El H. Inicial se autocompleta con el H. Final del día anterior.
                 </p>
             </div>
@@ -534,6 +569,65 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraSimple
                     {saving ? <><Loader2 size={15} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''}</>}
                 </button>
             </div>
+        </div>
+    );
+}
+
+// ── Dropdown "Nuevo Registro" ─────────────────────────────────────────────────
+function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
+    onIndividual: () => void;
+    onPlanilla: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="relative">
+            <div className="flex items-stretch rounded-lg shadow-sm overflow-hidden">
+                {/* Botón principal */}
+                <button
+                    onClick={onIndividual}
+                    className="flex items-center gap-2 pl-4 pr-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-colors">
+                    <Plus size={16}/> Nuevo Registro
+                </button>
+                {/* Separador */}
+                <div className="w-px bg-blue-500"/>
+                {/* Flecha dropdown */}
+                <button
+                    onClick={() => setOpen(o => !o)}
+                    className="px-2 py-2 bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                    <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`}/>
+                </button>
+            </div>
+
+            {open && (
+                <>
+                    {/* Overlay para cerrar al hacer clic afuera */}
+                    <div className="fixed inset-0 z-10" onClick={() => setOpen(false)}/>
+                    <div className="absolute right-0 top-full mt-1.5 z-20 bg-white rounded-xl shadow-lg border border-gray-100 w-56 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                        <button
+                            onClick={() => { setOpen(false); onIndividual(); }}
+                            className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left">
+                            <div className="mt-0.5 p-1.5 bg-blue-50 rounded-md flex-shrink-0">
+                                <Plus size={13} className="text-blue-600"/>
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-gray-800">Registro individual</p>
+                                <p className="text-xs text-gray-400">Formulario completo, un día</p>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => { setOpen(false); onPlanilla(); }}
+                            className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left">
+                            <div className="mt-0.5 p-1.5 bg-indigo-50 rounded-md flex-shrink-0">
+                                <Table2 size={13} className="text-indigo-600"/>
+                            </div>
+                            <div>
+                                <p className="text-sm font-medium text-gray-800">Carga en planilla</p>
+                                <p className="text-xs text-gray-400">Varios días, estilo Excel</p>
+                            </div>
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
@@ -693,28 +787,17 @@ function RegistrosDiariosInner() {
                         <p className="text-sm text-gray-500 mt-1">Control diario de operación — equivalente a la hoja Rpte del Excel.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* Toggle vista */}
-                        <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
-                            <button onClick={() => setVista('lista')}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${vista==='lista' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-                                <LayoutList size={14}/> Lista
-                            </button>
-                            <button onClick={() => setVista('planilla')}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${vista==='planilla' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                                <Table2 size={14}/> Planilla
-                            </button>
-                        </div>
-                        {vista === 'lista' && (
-                            <button onClick={() => {
+                        {/* Botón Nuevo Registro con dropdown */}
+                        <NuevoRegistroDropdown
+                            onIndividual={() => {
                                 const params = new URLSearchParams();
                                 if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
                                 if (filtroObra   !== 'todas') params.set('obraId',   filtroObra);
                                 const qs = params.toString();
                                 router.push(`/dashboard/registros-diarios/new${qs ? `?${qs}` : ''}`);
-                            }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                                <Plus size={16}/> Nuevo Registro
-                            </button>
-                        )}
+                            }}
+                            onPlanilla={() => setVista('planilla')}
+                        />
                     </div>
                 </div>
 
@@ -722,7 +805,19 @@ function RegistrosDiariosInner() {
 
                 {/* Vista Planilla */}
                 {vista === 'planilla' && (
-                    <PlanillaGrid equipos={equipos} obras={obras} />
+                    <>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setVista('lista')}
+                                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+                                <ChevronUp size={14} className="-rotate-90"/> Volver a la lista
+                            </button>
+                            <span className="text-gray-200">|</span>
+                            <p className="text-sm text-gray-400 flex items-center gap-1.5">
+                                <Table2 size={14} className="text-indigo-500"/> Carga masiva en planilla
+                            </p>
+                        </div>
+                        <PlanillaGrid equipos={equipos} obras={obras as any} />
+                    </>
                 )}
 
                 {/* Vista Lista — Filtros */}
