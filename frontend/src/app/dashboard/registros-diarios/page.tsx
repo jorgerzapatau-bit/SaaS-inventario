@@ -104,7 +104,7 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
     );
 }
 
-// ── Fila de tabla ─────────────────────────────────────────────────────────
+// ── Fila de tabla ──────────────────────────────────────────────────────────────
 function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     r: Registro;
     onDelete: (r: Registro) => void;
@@ -215,7 +215,7 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                                     {r.volumenRoca != null && <div><p className="text-indigo-300 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
                                     {r.porcentajePerdida != null && <div><p className="text-indigo-300 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p></div>}
                                     {r.porcentajeAvance != null && <div><p className="text-indigo-300 mb-0.5">% Avance</p><p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p></div>}
-                                    {r.rentaEquipoDiaria != null && <div><p className="text-indigo-300 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toFixed(2)}</p></div>}
+                                    {r.rentaEquipoDiaria != null && <div><p className="text-indigo-300 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p></div>}
                                 </div>
                             </div>
                         )}
@@ -226,7 +226,7 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     );
 }
 
-// ── Encabezado ordenable ──────────────────────────────────────────────────────
+// ── Encabezado ordenable ───────────────────────────────────────────────────────
 function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     label: string; sortKey: SortKey; current: SortKey; dir: SortDir;
     onSort: (k: SortKey) => void; className?: string;
@@ -335,13 +335,19 @@ type RegistroExistente = {
     horometroFin: number;
     metrosLineales: number;
     barrenos: number;
+    profundidadPromedio: number | null;
+    litrosDiesel: number | null;
+    precioDiesel: number | null;
+    rentaEquipoDiaria: number | null;
+    operadores: number | null;
+    peones: number | null;
 };
 
 
 // RegistrosExistentesPanel removed — integrated into unified grid
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
-    const INITIAL_ROWS = 0; // CAMBIO 1: Iniciar con 0 filas, no agregar automáticamente
+    const INITIAL_ROWS = 0;
 
     // ── Selección obra / equipo ──
     const [obraId,   setObraId]   = useState('');
@@ -383,7 +389,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         setEquipoId('');
         setRegistrosExistentes([]);
         setPlantillaAvance(null);
-        setRows(Array.from({length: INITIAL_ROWS}, emptyRow));
+        setRows(Array.from({length: 0}, emptyRow));
     };
 
     // ── Cuando cambia el equipo: cargar contexto (último horómetro + registros existentes + avance plantilla) ──
@@ -406,16 +412,22 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     horometroFin: r.horometroFin,
                     metrosLineales: r.metrosLineales,
                     barrenos: r.barrenos,
+                    profundidadPromedio: r.profundidadPromedio ?? null,
+                    litrosDiesel: r.litrosDiesel ?? null,
+                    precioDiesel: r.precioDiesel ?? null,
+                    rentaEquipoDiaria: r.rentaEquipoDiaria ?? null,
+                    operadores: r.operadores ?? null,
+                    peones: r.peones ?? null,
                 }));
 
             setRegistrosExistentes(existentes);
 
-            // 2. Precarga horómetro inicial en fila 0 + sugerencias desde último registro
+            // 2. Precarga horómetro inicial en fila 0 SOLO si ya hay filas abiertas
             const ultimoHFin = existentes.length > 0 ? String(existentes[0].horometroFin) : '';
             setRows(prev => {
+                if (prev.length === 0) return prev; // sin filas nuevas, no tocar nada
                 const next = [...prev];
                 if (existentes.length > 0) {
-                    // Construir una fila ficticia del último registro para calcular sugerencias
                     const ult = existentes[0];
                     const ultRow: GridRow = {
                         ...emptyRow(),
@@ -426,14 +438,12 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                         metrosLineales: String(ult.metrosLineales || ''),
                     };
                     const sug = buildSuggestedRow(ultRow);
-                    if (next.length === 0) next.push(emptyRow());
                     next[0] = {
                         ...next[0],
                         ...sug,
                         _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
                     };
                 } else {
-                    if (next.length === 0) next.push(emptyRow());
                     next[0] = { ...next[0], horometroInicio: ultimoHFin };
                 }
                 return next;
@@ -556,13 +566,28 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         });
     };
 
-    const addRows   = (n=1) => setRows(prev => {
-        // Find the last row that has at least fecha + H.Fin filled (to generate suggestions)
-        const lastFilled = [...prev].reverse().find(r => r.fecha && r.horometroFin);
+    const addRows = (n=1) => setRows(prev => {
+        // Primero busca la última fila nueva con datos; si no hay, usa el último registro guardado
+        const lastFilledNew = [...prev].reverse().find(r => r.fecha && r.horometroFin);
+        const lastExistente = registrosExistentes.length > 0
+            ? registrosExistentes.slice().sort((a,b) => b.horometroFin - a.horometroFin)[0]
+            : null;
+        const lastFilled: GridRow | null = lastFilledNew ?? (lastExistente ? {
+            ...emptyRow(),
+            fecha: (lastExistente.fecha || '').slice(0, 10),
+            horometroInicio: String(lastExistente.horometroInicio ?? ''),
+            horometroFin: String(lastExistente.horometroFin),
+            barrenos: String(lastExistente.barrenos || ''),
+            metrosLineales: String(lastExistente.metrosLineales || ''),
+            litrosDiesel: lastExistente.litrosDiesel != null ? String(lastExistente.litrosDiesel) : '',
+            precioDiesel: lastExistente.precioDiesel != null ? String(lastExistente.precioDiesel) : '21.95',
+            operadores: lastExistente.operadores != null ? String(lastExistente.operadores) : '1',
+            peones: lastExistente.peones != null ? String(lastExistente.peones) : '0',
+        } : null);
+
         const newRows = Array.from({length: n}, (_, i) => {
             const base = emptyRow();
             if (lastFilled) {
-                // Build a chain: each new row suggests from the previous one
                 const chainBase = i === 0 ? lastFilled : { ...emptyRow(), ...buildSuggestedRow(lastFilled) };
                 const sug = buildSuggestedRow(i === 0 ? lastFilled : chainBase);
                 return {
@@ -651,10 +676,16 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             // Update local state
             setRegistrosExistentes(prev => prev.map(r => r.id === editingRow.id ? {
                 ...r,
-                barrenos:      Number(editingRow.barrenos)       || r.barrenos,
-                metrosLineales: Number(editingRow.metrosLineales) || r.metrosLineales,
-                horometroInicio: Number(editingRow.horometroInicio),
-                horometroFin:    Number(editingRow.horometroFin),
+                barrenos:            Number(editingRow.barrenos)            || r.barrenos,
+                metrosLineales:      Number(editingRow.metrosLineales)       || r.metrosLineales,
+                horometroInicio:     Number(editingRow.horometroInicio),
+                horometroFin:        Number(editingRow.horometroFin),
+                profundidadPromedio: editingRow.profundidadPromedio ? Number(editingRow.profundidadPromedio) : r.profundidadPromedio,
+                litrosDiesel:        editingRow.litrosDiesel        ? Number(editingRow.litrosDiesel)        : r.litrosDiesel,
+                precioDiesel:        editingRow.precioDiesel         ? Number(editingRow.precioDiesel)        : r.precioDiesel,
+                rentaEquipoDiaria:   editingRow.rentaEquipoDiaria    ? Number(editingRow.rentaEquipoDiaria)   : r.rentaEquipoDiaria,
+                operadores:          editingRow.operadores           ? Number(editingRow.operadores)           : r.operadores,
+                peones:              editingRow.peones               ? Number(editingRow.peones)               : r.peones,
             } : r));
             setEditingRow(null);
         } catch (e: any) {
@@ -669,12 +700,12 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             id: r.id,
             barrenos:            String(r.barrenos        ?? ''),
             metrosLineales:      String(r.metrosLineales  ?? ''),
-            profundidadPromedio: '',
-            litrosDiesel:        '',
-            precioDiesel:        '21.95',
-            rentaEquipoDiaria:   '',
-            operadores:          '1',
-            peones:              '0',
+            profundidadPromedio: r.profundidadPromedio != null ? String(r.profundidadPromedio) : '',
+            litrosDiesel:        r.litrosDiesel        != null ? String(r.litrosDiesel)        : '',
+            precioDiesel:        r.precioDiesel         != null ? String(r.precioDiesel)        : '21.95',
+            rentaEquipoDiaria:   r.rentaEquipoDiaria    != null ? String(r.rentaEquipoDiaria)   : '',
+            operadores:          r.operadores           != null ? String(r.operadores)           : '1',
+            peones:              r.peones               != null ? String(r.peones)               : '0',
             horometroInicio:     String(r.horometroInicio ?? ''),
             horometroFin:        String(r.horometroFin    ?? ''),
         });
@@ -696,7 +727,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
 
-            {/* ── Selectores obra / equipo ─�� */}
+            {/* ── Selectores obra / equipo ── */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -715,7 +746,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                         </label>
                         <select value={equipoId} onChange={e => handleEquipoChange(e.target.value)}
                             disabled={!obraId || loadingCtx}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white disabled:bg-gray-50 disabled:text-gray-400">
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed">
                             <option value="">{obraId ? (loadingCtx ? 'Cargando…' : '— Selecciona un equipo —') : '— Primero selecciona una obra —'}</option>
                             {equiposDeObra.map(eq => (
                                 <option key={eq.id} value={eq.id}>
@@ -769,8 +800,8 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 )}
 
                 <p className="text-xs text-gray-400">
-                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior.
-                    {' '}<span className="text-indigo-500 font-medium">✏️ Haz clic en "Editar" para modificar registros guardados. Usa "+ Agregar 1 fila" para nuevas entradas.</span>
+                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada. Las celdas en <span className="text-blue-500 font-medium italic">azul itálica</span> son sugerencias del día anterior — presiona <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para confirmar o escribe para cambiar.
+                    {' '}<span className="text-amber-600 font-medium">✏️ Usa el botón <strong>Editar</strong> en cualquier fila guardada para corregir sus valores.</span>
                 </p>
             </div>
 
@@ -813,10 +844,31 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 )}
 
                 <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm" style={{minWidth: 1200}}>
+                    {/* ── Banner de edición inline ── */}
+                    {editingRow && (
+                        <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border-b-2 border-amber-300">
+                            <div className="flex items-center gap-2 text-sm text-amber-800">
+                                <Pencil size={14} className="text-amber-500 flex-shrink-0"/>
+                                <span className="font-semibold">Modo edición</span>
+                                <span className="text-amber-600">— Modifica los campos de la fila resaltada y guarda los cambios.</span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                {inlineError && <span className="text-xs text-red-600 font-medium">{inlineError}</span>}
+                                <button onClick={() => { setEditingRow(null); setInlineError(''); }}
+                                    className="px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 text-xs font-medium rounded-lg transition-colors">
+                                    Cancelar
+                                </button>
+                                <button onClick={saveInlineEdit} disabled={savingInline}
+                                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+                                    {savingInline ? <><Loader2 size={12} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={12}/> Guardar cambios</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    <table className="w-full border-collapse text-sm" style={{minWidth: 980}}>
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100 sticky left-0 bg-gray-50 z-10">#</th>
+                                <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100">#</th>
                                 {COLS.map((col) => (
                                     <th key={col.key}
                                         className={`p-2 text-xs font-semibold uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap
@@ -835,10 +887,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                         </span>
                                     </th>
                                 ))}
-                                <th className="p-2 text-xs font-semibold text-green-600 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap sticky right-[110px] bg-gray-50 z-10" style={{minWidth:64}}>
+                                <th className="p-2 text-xs font-semibold text-green-600 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:64}}>
                                     Hrs ⚡
                                 </th>
-                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center sticky right-0 bg-gray-50 z-10" style={{minWidth:110}}>Estado</th>
+                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:110}}>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -866,7 +918,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                         );
                                         return (
                                             <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
-                                                <td className="text-xs text-amber-400 text-center border-r border-amber-100 select-none p-1 w-8 sticky left-0 bg-amber-50/60 z-10">{i+1}</td>
+                                                <td className="text-xs text-amber-400 text-center border-r border-amber-100 select-none p-1 w-8">{i+1}</td>
                                                 {/* Fecha — no editable */}
                                                 <td className="border-r border-amber-100 px-2.5 h-9 text-xs font-medium text-amber-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
                                                 {/* H. Ini */}
@@ -890,26 +942,16 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                                 {/* Pn */}
                                                 <td className="border-r border-amber-100 p-1" style={{minWidth:55}}>{editInp('peones', '0')}</td>
                                                 {/* Hrs */}
-                                                <td className="border-r border-amber-100 text-center px-1 sticky right-[110px] bg-amber-50/60 z-10">
+                                                <td className="border-r border-amber-100 text-center px-1">
                                                     {hrsEdit !== null
                                                         ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
                                                         : <span className="text-gray-200 text-xs">—</span>}
                                                 </td>
-                                                {/* Acciones — CAMBIO 3: Botones en la misma fila */}
-                                                <td className="text-center px-2 sticky right-0 bg-amber-50/60 z-10 min-w-[110px]">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <button onClick={saveInlineEdit} disabled={savingInline}
-                                                            className="px-2 py-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xs font-semibold rounded transition-colors flex items-center gap-1"
-                                                            title="Guardar cambios">
-                                                            {savingInline ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
-                                                        </button>
-                                                        <button onClick={() => { setEditingRow(null); setInlineError(''); }}
-                                                            className="px-2 py-1 border border-gray-200 hover:bg-gray-100 text-gray-600 text-xs rounded transition-colors"
-                                                            title="Cancelar edición">
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                    {inlineError && <span className="text-xs text-red-500 leading-tight block mt-1">{inlineError}</span>}
+                                                {/* Estado — indicador de edición activa */}
+                                                <td className="text-center px-2 min-w-[110px]">
+                                                    <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-semibold">
+                                                        <Pencil size={10}/> Editando…
+                                                    </span>
                                                 </td>
                                             </tr>
                                         );
@@ -918,8 +960,8 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                     const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
                                     return (
                                         <tr key={`ex-${r.id}`}
-                                            className={`border-b border-blue-100/60 transition-colors group ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}>
-                                            <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8 sticky left-0 z-10 bg-inherit">{i+1}</td>
+                                            className={`border-b border-blue-100/60 transition-colors ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}>
+                                            <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8">{i+1}</td>
                                             {/* Fecha */}
                                             <td className="border-r border-blue-100 px-2.5 h-9 text-xs font-medium text-blue-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
                                             {/* H. Ini */}
@@ -929,33 +971,32 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             {/* Barrenos */}
                                             <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:85}}>{r.barrenos || '—'}</td>
                                             {/* Metros */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'} m</td>
-                                            {/* Prof — empty */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:85}}>—</td>
-                                            {/* Litros — empty */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:95}}>—</td>
-                                            {/* P.U. — empty */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:90}}>—</td>
-                                            {/* Renta — empty */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:95}}>—</td>
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'}</td>
+                                            {/* Prof */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:85}}>{r.profundidadPromedio != null ? `${r.profundidadPromedio} m` : '—'}</td>
+                                            {/* Litros */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.litrosDiesel != null ? `${r.litrosDiesel} lt` : '—'}</td>
+                                            {/* P.U. */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:90}}>{r.precioDiesel != null ? `$${r.precioDiesel}` : '—'}</td>
+                                            {/* Renta */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', {maximumFractionDigits:0})}` : '—'}</td>
                                             {/* Op */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:55}}>—</td>
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:55}}>{r.operadores ?? '—'}</td>
                                             {/* Pn */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:55}}>—</td>
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:55}}>{r.peones ?? '—'}</td>
                                             {/* Hrs */}
-                                            <td className="border-r border-blue-100 text-center px-1 sticky right-[110px] bg-inherit z-10">
+                                            <td className="border-r border-blue-100 text-center px-1">
                                                 {hrs !== null
                                                     ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
                                                     : <span className="text-gray-200 text-xs">—</span>}
                                             </td>
-                                            {/* Estado — Botón Editar Explícito */}
-                                            <td className="text-center px-2 sticky right-0 bg-inherit z-10 min-w-[110px]">
-                                                <button 
+                                            {/* Estado — botón Editar siempre visible */}
+                                            <td className="text-center px-2 min-w-[110px]">
+                                                <button
                                                     onClick={() => startEditingRow(r)}
-                                                    title="Editar registro"
-                                                    className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 hover:text-blue-700 text-xs font-medium rounded-md transition-colors border border-blue-200 hover:border-blue-300 mx-auto">
-                                                    <Pencil size={13}/>
-                                                    Editar
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 hover:border-amber-400 text-amber-700 hover:text-amber-800 text-xs font-semibold rounded-md transition-colors cursor-pointer"
+                                                    title="Editar este registro">
+                                                    <Pencil size={10}/> Editar
                                                 </button>
                                             </td>
                                         </tr>
@@ -964,7 +1005,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             })()}
 
                             {/* ── Separador visual entre guardados y nuevos ── */}
-                            {registrosExistentes.length > 0 && (
+                            {registrosExistentes.length > 0 && rows.length > 0 && (
                                 <tr className="border-b-2 border-blue-200">
                                     <td colSpan={COLS.length + 3} className="px-3 py-1 bg-blue-100/40 text-xs text-blue-500 font-semibold tracking-wide">
                                         ↓ Nuevos registros
@@ -989,7 +1030,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                 if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
                                 return (
                                     <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8 sticky left-0 z-10 bg-inherit">{globalIdx}</td>
+                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{globalIdx}</td>
 
                                         {COLS.map((col, ci) => {
                                             const isActive     = active?.r === ri && active?.c === ci;
@@ -1035,13 +1076,13 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             );
                                         })}
 
-                                        <td className="border-r border-gray-100 text-center px-1 sticky right-[110px] bg-inherit z-10">
+                                        <td className="border-r border-gray-100 text-center px-1">
                                             {hrs !== null
-                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 24 ? 'text-red-700 bg-red-100' : hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-300 bg-gray-100'}`}>{hrs}h</span>
+                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 24 ? 'text-red-700 bg-red-100' : hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
                                                 : <span className="text-gray-200 text-xs">—</span>}
                                         </td>
 
-                                        <td className="text-center px-2 sticky right-0 bg-inherit z-10 min-w-[110px]">
+                                        <td className="text-center px-2 min-w-[110px]">
                                             {isDupe && row._status === 'idle' && !isEmpty && (
                                                 <span className="text-xs text-amber-600 font-medium flex items-center justify-center gap-1">
                                                     ⚠ Ya registrada
@@ -1078,14 +1119,18 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
                     <button onClick={() => addRows(1)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                        + Agregar 1 fila
+                        className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${
+                            rows.length === 0
+                                ? 'px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm'
+                                : 'text-blue-600 hover:text-blue-700 hover:underline'
+                        }`}>
+                        <Plus size={12}/> Agregar 1 fila
                     </button>
                     <div className="flex items-center gap-3 text-xs text-gray-400">
                         {registrosExistentes.length > 0 && (
                             <span className="text-blue-500">{registrosExistentes.length} guardados anteriores</span>
                         )}
-                        <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>
+                        {rows.length > 0 && <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>}
                         {savedCount  > 0 && <span className="text-green-600 font-medium">✓ {savedCount} guardados</span>}
                         {errorCount  > 0 && <span className="text-red-500 font-medium">✗ {errorCount} con error</span>}
                     </div>
@@ -1093,17 +1138,19 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             </div>
 
             {/* ── Botón guardar ── */}
+            {rows.length > 0 && (
             <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-400">
                     Se guardan solo las filas con Fecha, H.Ini y H.Fin válidos. Las filas amarillas tienen fecha ya registrada y serán omitidas.
                 </p>
                 <button onClick={saveAll} disabled={saving || filledCount === 0 || !listoParaEditar}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-md transition-all">
+                    className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
                     {saving
                         ? <><Loader2 size={15} className="animate-spin"/> Guardando…</>
                         : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''} nuevo{filledCount!==1?'s':''}</>}
                 </button>
             </div>
+            )}
         </div>
     );
 }
@@ -1167,7 +1214,7 @@ function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     );
 }
 
-// ── Página principal ───────────────────────────────────────────────────────
+// ── Página principal ───────────────────────────────────────────────────────────
 function RegistrosDiariosInner() {
     const searchParams  = useSearchParams();
     const router        = useRouter();
@@ -1374,17 +1421,17 @@ function RegistrosDiariosInner() {
                                 className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"/>
                         </div>
                         <select value={filtroEquipo} onChange={e => setFiltroEquipo(e.target.value)}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroEquipo !== 'todos' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroEquipo !== 'todos' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
                             <option value="todos">Todos los equipos</option>
                             {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
                         </select>
                         <select value={filtroObra} onChange={e => setFiltroObra(e.target.value)}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroObra !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroObra !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
                             <option value="todas">Todas las obras</option>
                             {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                         <select value={filtroSemana} onChange={e => { setFiltroSemana(e.target.value); setFiltroDesde(''); setFiltroHasta(''); }}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroSemana !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroSemana !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
                             <option value="todas">Todas las semanas</option>
                             {semanas.map(s => { const [ano, sem] = s.split('-'); return <option key={s} value={s}>Sem. {parseInt(sem)} / {ano}</option>; })}
                         </select>
@@ -1442,8 +1489,7 @@ function RegistrosDiariosInner() {
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-600 transition-colors"
                                                 onClick={() => handleSort('fecha')}>
                                                 <span className="flex items-center gap-1">Fecha
-                                                    {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={11} className="text-blue-500"/> : <ArrowDown size={11} className="text-blue-500"/>)
-                                                        : <ArrowUpDown size={11} className="opacity-30"/>}
+                                                    {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={11} className="text-blue-500"/> : <ArrowDown size={11} className="text-blue-500"/>) : <ArrowUpDown size={11} className="opacity-30"/>}
                                                 </span>
                                             </th>
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo</th>
@@ -1490,7 +1536,7 @@ function RegistrosDiariosInner() {
                                             .map((n, i) => n === '...'
                                                 ? <span key={`e${i}`} className="px-1.5 text-xs text-gray-400">…</span>
                                                 : <button key={n} onClick={() => setPage(n as number)}
-                                                    className={`min-w-[28px] h-7 rounded-lg text-xs font-medium transition-colors ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 hover:bg-gray-50'}`}>
+                                                    className={`min-w-[28px] h-7 rounded-lg text-xs font-medium transition-colors ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                                                     {n}
                                                   </button>
                                             )}
