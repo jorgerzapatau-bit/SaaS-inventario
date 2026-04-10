@@ -244,7 +244,36 @@ type GridRow = {
     peones: string;
     _status: 'idle' | 'saving' | 'saved' | 'error';
     _error: string;
+    // Sugerencias pre-llenadas desde la fila anterior (se confirman con Tab o se sobreescriben)
+    _suggested: Record<string, boolean>;
 };
+
+// Helper: dado el registro anterior, genera los valores sugeridos para la siguiente fila
+function buildSuggestedRow(prev: GridRow): Partial<GridRow> {
+    // Fecha: 1 día después
+    let nextFecha = '';
+    if (prev.fecha) {
+        const d = new Date(prev.fecha + 'T12:00:00');
+        d.setDate(d.getDate() + 1);
+        nextFecha = d.toISOString().slice(0, 10);
+    }
+    // H. Ini = H. Fin anterior (ya lo hace el sistema), H. Fin = H. Ini + 8
+    const hIni = prev.horometroFin || '';
+    const hFin = hIni && !isNaN(Number(hIni)) ? String(Number(hIni) + 8) : '';
+    return {
+        fecha: nextFecha,
+        horometroInicio: hIni,
+        horometroFin: hFin,
+        barrenos: prev.barrenos,
+        metrosLineales: prev.metrosLineales,
+        profundidadPromedio: prev.profundidadPromedio,
+        litrosDiesel: prev.litrosDiesel,
+        precioDiesel: prev.precioDiesel,
+        rentaEquipoDiaria: prev.rentaEquipoDiaria,
+        operadores: prev.operadores,
+        peones: prev.peones,
+    };
+}
 
 // Índice de la columna horometroInicio — usada para tratar lectura/bloqueo
 const COL_H_INI = 1;
@@ -267,14 +296,15 @@ function emptyRow(): GridRow {
     return { fecha:'', horometroInicio:'', horometroFin:'', barrenos:'', metrosLineales:'',
         profundidadPromedio:'', litrosDiesel:'', precioDiesel:'21.95',
         rentaEquipoDiaria:'', operadores:'1', peones:'1',
-        _status:'idle', _error:'' };
+        _status:'idle', _error:'', _suggested:{} };
 }
 
 function validateGridRow(r: GridRow) {
     if (!r.fecha) return 'Fecha requerida';
     if (!r.horometroInicio || isNaN(Number(r.horometroInicio))) return 'H. Ini requerido';
     if (!r.horometroFin   || isNaN(Number(r.horometroFin)))   return 'H. Fin requerido';
-    if (Number(r.horometroFin) < Number(r.horometroInicio))   return 'H. Fin < H. Ini';
+    if (Number(r.horometroFin) <= Number(r.horometroInicio))  return 'H. Fin debe ser mayor al H. Ini';
+    if (Number(r.horometroFin) - Number(r.horometroInicio) > 24) return 'Diferencia mayor a 24 hrs';
     return '';
 }
 
@@ -350,11 +380,30 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
             setRegistrosExistentes(existentes);
 
-            // 2. Precarga horómetro inicial en fila 0
+            // 2. Precarga horómetro inicial en fila 0 + sugerencias desde último registro
             const ultimoHFin = existentes.length > 0 ? String(existentes[0].horometroFin) : '';
             setRows(prev => {
                 const next = [...prev];
-                next[0] = { ...next[0], horometroInicio: ultimoHFin };
+                if (existentes.length > 0) {
+                    // Construir una fila ficticia del último registro para calcular sugerencias
+                    const ult = existentes[0];
+                    const ultRow: GridRow = {
+                        ...emptyRow(),
+                        fecha: (ult.fecha || '').slice(0, 10),
+                        horometroInicio: '',
+                        horometroFin: ultimoHFin,
+                        barrenos: String(ult.barrenos || ''),
+                        metrosLineales: String(ult.metrosLineales || ''),
+                    };
+                    const sug = buildSuggestedRow(ultRow);
+                    next[0] = {
+                        ...next[0],
+                        ...sug,
+                        _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
+                    };
+                } else {
+                    next[0] = { ...next[0], horometroInicio: ultimoHFin };
+                }
                 return next;
             });
 
@@ -375,17 +424,56 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         finally { setLoadingCtx(false); }
     }, [obraId, equipos, obras]);
 
-    // ── Auto-fill H.Ini de la fila siguiente al editar H.Fin ──
+    // ── Auto-fill H.Ini de la fila siguiente al editar H.Fin + sugerencias para siguiente fila ──
     const updateRow = useCallback((ri: number, key: keyof GridRow, val: string) => {
         setRows(prev => {
-            const next = prev.map((r,i) => i === ri ? {...r, [key]: val, _status: 'idle' as const, _error: ''} : r);
+            const next = prev.map((r,i) => i === ri
+                ? {...r, [key]: val, _status: 'idle' as const, _error: '',
+                    // Si el usuario escribe en una celda con sugerencia, marcarla como confirmada
+                    _suggested: {...r._suggested, [key]: false}}
+                : r);
+
+            // Al cambiar H.Fin: propagar al H.Ini de la siguiente fila
             if (key === 'horometroFin' && ri + 1 < next.length) {
-                if (!next[ri+1].horometroInicio || next[ri+1].horometroInicio === prev[ri].horometroFin) {
-                    next[ri+1] = {...next[ri+1], horometroInicio: val, _status: 'idle' as const, _error: ''};
+                if (!next[ri+1].horometroInicio || next[ri+1]._suggested?.horometroInicio) {
+                    next[ri+1] = {...next[ri+1], horometroInicio: val,
+                        _status: 'idle' as const, _error: '',
+                        _suggested: {...next[ri+1]._suggested, horometroInicio: true}};
                 }
             }
+
+            // Cuando la fila tiene fecha + H.Ini + H.Fin, generar sugerencias para la siguiente
+            const row = next[ri];
+            const rowIsUsable = row.fecha && row.horometroInicio && row.horometroFin;
+            if (rowIsUsable && ri + 1 < next.length) {
+                const nextRow = next[ri + 1];
+                // Solo sugerir si la siguiente fila está vacía o tiene sugerencias sin confirmar
+                const nextIsEmpty = !nextRow.fecha && !nextRow.horometroFin;
+                const nextHasSuggestions = Object.values(nextRow._suggested || {}).some(Boolean);
+                if (nextIsEmpty || nextHasSuggestions) {
+                    const suggested = buildSuggestedRow(row);
+                    const updatedNext = { ...nextRow };
+                    for (const [k, v] of Object.entries(suggested)) {
+                        const fieldKey = k as keyof typeof suggested;
+                        // Solo sobreescribir si el campo está vacío o era una sugerencia previa
+                        if (!nextRow[fieldKey] || nextRow._suggested?.[fieldKey as keyof GridRow]) {
+                            (updatedNext as any)[fieldKey] = v;
+                            updatedNext._suggested = {...(updatedNext._suggested || {}), [fieldKey]: true};
+                        }
+                    }
+                    next[ri + 1] = updatedNext;
+                }
+            }
+
             return next;
         });
+    }, []);
+
+    // ── Confirmar sugerencia de celda (Tab acepta el valor sugerido) ──
+    const confirmSuggestion = useCallback((ri: number, key: keyof GridRow) => {
+        setRows(prev => prev.map((r, i) => i === ri && r._suggested?.[key]
+            ? {...r, _suggested: {...r._suggested, [key]: false}}
+            : r));
     }, []);
 
     // ── Navegación teclado ──
@@ -394,6 +482,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         const rowCount = rows.length;
         if (e.key === 'Tab' || e.key === 'Enter') {
             e.preventDefault();
+            // Al presionar Tab, confirmar la sugerencia de la celda actual
+            const col = COLS[ci];
+            if (col) confirmSuggestion(ri, col.key as keyof GridRow);
             const nextCi = e.shiftKey ? ci - 1 : ci + 1;
             if (nextCi >= 0 && nextCi < colCount) {
                 inputRefs.current[ri]?.[nextCi]?.focus();
@@ -422,7 +513,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     const ci = startCol + dC;
                     if (ci < COLS.length) (next[ri] as any)[COLS[ci].key] = val;
                 });
-                next[ri] = {...next[ri], _status: 'idle' as const, _error: ''};
+                next[ri] = {...next[ri], _status: 'idle' as const, _error: '', _suggested: {}};
             });
             for (let i = 1; i < next.length; i++) {
                 if (!next[i].horometroInicio && next[i-1].horometroFin) {
@@ -541,7 +632,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             <CheckCircle2 size={12}/> {registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''} ya cargados para esta obra/equipo
                         </p>
                         <p className="text-blue-600">
-                            Último: <strong>{new Date(registrosExistentes[0].fecha + 'T12:00:00').toLocaleDateString('es-MX', {weekday:'short', day:'2-digit', month:'short'})}</strong>
+                            Último: <strong>{(() => { const f = registrosExistentes[0].fecha; const iso = (f || '').slice(0,10); return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', {weekday:'short', day:'2-digit', month:'short'}) : '—'; })()}</strong>
                             {' · '}H. Fin: <strong>{registrosExistentes[0].horometroFin}</strong>
                             {' · '}
                             <span className="text-blue-400">H. Inicial de la planilla precargado ↓</span>
@@ -577,7 +668,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 )}
 
                 <p className="text-xs text-gray-400">
-                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada.
+                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada. Las celdas en <span className="text-blue-500 font-medium italic">azul itálica</span> son sugerencias del día anterior — presiona <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para confirmar o escribe para cambiar.
                 </p>
             </div>
 
@@ -670,12 +761,18 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             const isActive     = active?.r === ri && active?.c === ci;
                                             const val          = row[col.key] as string;
                                             const isHIniLocked = col.key === 'horometroInicio' && ri === 0 && hIniLocked;
+                                            const isSuggested  = !!(row._suggested?.[col.key as keyof GridRow]);
+                                            // Inline H.Fin validation
+                                            const isHFinError  = col.key === 'horometroFin' && val && row.horometroInicio
+                                                && (Number(val) <= Number(row.horometroInicio) || Number(val) - Number(row.horometroInicio) > 24);
                                             return (
                                                 <td key={col.key}
                                                     className={`border-r border-gray-100 p-0
                                                         ${isActive && !isHIniLocked ? 'ring-2 ring-inset ring-blue-500' : ''}
                                                         ${isHIniLocked ? 'bg-gray-50' : ''}
-                                                        ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''}`}
+                                                        ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''}
+                                                        ${isSuggested && !isActive ? 'bg-blue-50/60' : ''}
+                                                        ${isHFinError ? 'bg-red-50' : ''}`}
                                                     onClick={() => !isHIniLocked && setActive({r:ri,c:ci})}>
                                                     <input
                                                         ref={el => { inputRefs.current[ri][ci] = el; }}
@@ -689,9 +786,12 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                                         onPaste={e => handlePaste(e, ri, ci)}
                                                         onFocus={() => !isHIniLocked && setActive({r:ri,c:ci})}
                                                         onBlur={() => setActive(null)}
+                                                        title={isSuggested ? '💡 Sugerido — Tab para confirmar, o escribe para cambiar' : undefined}
                                                         className={`w-full h-9 px-2.5 bg-transparent text-sm focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed
                                                             ${isHIniLocked ? 'text-gray-400 cursor-not-allowed' : col.key === 'horometroInicio' ? 'text-gray-500' : 'text-gray-800'}
                                                             ${col.key === 'fecha' ? 'font-medium' : ''}
+                                                            ${isSuggested ? 'italic text-blue-600' : ''}
+                                                            ${isHFinError ? 'text-red-600' : ''}
                                                         `}
                                                         style={{minWidth: col.width - 8}}
                                                         placeholder={col.type === 'date' ? 'YYYY-MM-DD' : '—'}
@@ -703,7 +803,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
                                         <td className="border-r border-gray-100 text-center px-1">
                                             {hrs !== null
-                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h</span>
+                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 24 ? 'text-red-700 bg-red-100' : hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
                                                 : <span className="text-gray-200 text-xs">—</span>}
                                         </td>
 
