@@ -7,7 +7,7 @@ import {
     Droplets, ChevronDown, ChevronUp,
     Search, X, Filter, Drill, Pencil, Copy,
     ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
-    AlertTriangle, CheckCircle2, Loader2, Table2,
+    AlertTriangle, CheckCircle2, Loader2, Table2, Lock,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -236,6 +236,7 @@ type GridRow = {
     horometroFin: string;
     barrenos: string;
     metrosLineales: string;
+    profundidadPromedio: string;
     litrosDiesel: string;
     precioDiesel: string;
     rentaEquipoDiaria: string;
@@ -245,22 +246,27 @@ type GridRow = {
     _error: string;
 };
 
-const COLS: { key: keyof Omit<GridRow,'_status'|'_error'>; label: string; width: number; type: string; readOnly?: boolean }[] = [
-    { key: 'fecha',             label: 'Fecha',       width: 130, type: 'date' },
-    { key: 'horometroInicio',   label: 'H. Ini',      width: 88,  type: 'number' },
-    { key: 'horometroFin',      label: 'H. Fin',      width: 88,  type: 'number' },
-    { key: 'barrenos',          label: 'Barrenos',    width: 88,  type: 'number' },
-    { key: 'metrosLineales',    label: 'Metros Lin.', width: 100, type: 'number' },
-    { key: 'litrosDiesel',      label: 'Litros Diés.', width: 100, type: 'number' },
-    { key: 'precioDiesel',      label: 'P.U. Diés.',  width: 96,  type: 'number' },
-    { key: 'rentaEquipoDiaria', label: 'Renta/Día',   width: 100, type: 'number' },
-    { key: 'operadores',        label: 'Op.',         width: 60,  type: 'number' },
-    { key: 'peones',            label: 'Pn.',         width: 60,  type: 'number' },
+// Índice de la columna horometroInicio — usada para tratar lectura/bloqueo
+const COL_H_INI = 1;
+
+const COLS: { key: keyof Omit<GridRow,'_status'|'_error'>; label: string; width: number; type: string }[] = [
+    { key: 'fecha',               label: 'Fecha',        width: 130, type: 'date'   },
+    { key: 'horometroInicio',     label: 'H. Ini',       width: 90,  type: 'number' },
+    { key: 'horometroFin',        label: 'H. Fin',       width: 90,  type: 'number' },
+    { key: 'barrenos',            label: 'Barrenos',     width: 85,  type: 'number' },
+    { key: 'metrosLineales',      label: 'Metros Lin.',  width: 95,  type: 'number' },
+    { key: 'profundidadPromedio', label: 'Prof. (m)',    width: 85,  type: 'number' },
+    { key: 'litrosDiesel',        label: 'Litros Diés.', width: 95,  type: 'number' },
+    { key: 'precioDiesel',        label: 'P.U. Diés.',   width: 90,  type: 'number' },
+    { key: 'rentaEquipoDiaria',   label: 'Renta/Día',    width: 95,  type: 'number' },
+    { key: 'operadores',          label: 'Op.',          width: 55,  type: 'number' },
+    { key: 'peones',              label: 'Pn.',          width: 55,  type: 'number' },
 ];
 
 function emptyRow(): GridRow {
     return { fecha:'', horometroInicio:'', horometroFin:'', barrenos:'', metrosLineales:'',
-        litrosDiesel:'', precioDiesel:'21.95', rentaEquipoDiaria:'', operadores:'1', peones:'1',
+        profundidadPromedio:'', litrosDiesel:'', precioDiesel:'21.95',
+        rentaEquipoDiaria:'', operadores:'1', peones:'1',
         _status:'idle', _error:'' };
 }
 
@@ -282,6 +288,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
     const [rows,     setRows]     = useState<GridRow[]>(() => Array.from({length: INITIAL_ROWS}, emptyRow));
     const [active,   setActive]   = useState<{r:number;c:number}|null>(null);
     const [saving,   setSaving]   = useState(false);
+    // H. Inicial de la fila 0 bloqueado hasta que el usuario lo desbloquee explícitamente
+    const [hIniLocked,        setHIniLocked]        = useState(true);
+    // Fila pendiente de limpiar — muestra confirmación antes de proceder
+    const [rowToConfirmClear, setRowToConfirmClear] = useState<number|null>(null);
     // Equipos filtrados según la obra seleccionada (igual que en RegistroForm)
     const obraSeleccionada = obras.find(o => o.id === obraId);
     const equiposDeObra = obraSeleccionada?.obraEquipos?.length
@@ -385,16 +395,17 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 const body: Record<string,unknown> = {
                     equipoId,
                     obraId: obraId || null,
-                    fecha:              r.fecha,
-                    horometroInicio:    Number(r.horometroInicio),
-                    horometroFin:       Number(r.horometroFin),
-                    barrenos:           r.barrenos           ? Number(r.barrenos)           : 0,
-                    metrosLineales:     r.metrosLineales      ? Number(r.metrosLineales)     : 0,
-                    litrosDiesel:       r.litrosDiesel        ? Number(r.litrosDiesel)       : 0,
-                    precioDiesel:       r.precioDiesel        ? Number(r.precioDiesel)       : 0,
-                    rentaEquipoDiaria:  r.rentaEquipoDiaria   ? Number(r.rentaEquipoDiaria)  : null,
-                    operadores:         r.operadores          ? Number(r.operadores)         : 1,
-                    peones:             r.peones              ? Number(r.peones)             : 0,
+                    fecha:               r.fecha,
+                    horometroInicio:     Number(r.horometroInicio),
+                    horometroFin:        Number(r.horometroFin),
+                    barrenos:            r.barrenos            ? Number(r.barrenos)            : 0,
+                    metrosLineales:      r.metrosLineales       ? Number(r.metrosLineales)      : 0,
+                    profundidadPromedio: r.profundidadPromedio  ? Number(r.profundidadPromedio) : null,
+                    litrosDiesel:        r.litrosDiesel         ? Number(r.litrosDiesel)        : 0,
+                    precioDiesel:        r.precioDiesel         ? Number(r.precioDiesel)        : 0,
+                    rentaEquipoDiaria:   r.rentaEquipoDiaria    ? Number(r.rentaEquipoDiaria)   : null,
+                    operadores:          r.operadores           ? Number(r.operadores)          : 1,
+                    peones:              r.peones               ? Number(r.peones)              : 0,
                 };
                 await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify(body) });
                 setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved' as const, _error:''} : x));
@@ -453,24 +464,60 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             </div>
 
             {/* ── Grid ── */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" ref={gridRef}>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden relative" ref={gridRef}>
+
+                {/* Modal confirmación limpiar fila */}
+                {rowToConfirmClear !== null && (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/20 rounded-xl">
+                        <div className="bg-white rounded-xl shadow-xl p-5 max-w-xs w-full mx-4 space-y-3 border border-gray-100">
+                            <p className="text-sm font-semibold text-gray-800">¿Limpiar fila {rowToConfirmClear + 1}?</p>
+                            <p className="text-xs text-gray-500">Se borrarán todos los datos de esta fila. No se puede deshacer.</p>
+                            <div className="flex gap-2 pt-1">
+                                <button onClick={() => setRowToConfirmClear(null)}
+                                    className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                                    Cancelar
+                                </button>
+                                <button onClick={() => { clearRow(rowToConfirmClear); setRowToConfirmClear(null); }}
+                                    className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors">
+                                    Limpiar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm" style={{minWidth: 860}}>
+                    <table className="w-full border-collapse text-sm" style={{minWidth: 980}}>
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
                                 <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100">#</th>
-                                {COLS.map(col => (
-                                    <th key={col.key} className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap"
+                                {COLS.map((col, ci) => (
+                                    <th key={col.key}
+                                        className={`p-2 text-xs font-semibold uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap
+                                            ${col.key === 'horometroInicio' ? 'text-gray-400' : 'text-gray-500'}`}
                                         style={{minWidth: col.width}}>
-                                        {col.label}
+                                        <span className="flex items-center gap-1">
+                                            {col.label}
+                                            {/* Candado en encabezado H.Ini solo fila 0 */}
+                                            {col.key === 'horometroInicio' && (
+                                                <button type="button"
+                                                    onClick={() => setHIniLocked(l => !l)}
+                                                    title={hIniLocked ? 'Clic para editar H. Inicial de la primera fila' : 'Bloquear H. Inicial'}
+                                                    className="ml-0.5 text-gray-400 hover:text-blue-500 transition-colors">
+                                                    {hIniLocked
+                                                        ? <Lock size={10}/>
+                                                        : <Pencil size={10} className="text-blue-500"/>}
+                                                </button>
+                                            )}
+                                        </span>
                                     </th>
                                 ))}
-                                {/* Horas (calculado) */}
-                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:70}}>
+                                {/* Hrs — columna calculada, justo después de H.Fin */}
+                                <th className="p-2 text-xs font-semibold text-green-600 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:64}}>
                                     Hrs ⚡
                                 </th>
                                 {/* Estado */}
-                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:90}}>Estado</th>
+                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:100}}>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -480,34 +527,41 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                     : null;
                                 const isEmpty = !row.fecha && !row.horometroFin && !row.horometroInicio;
                                 const rowBg = row._status === 'saved'  ? 'bg-green-50'
-                                            : row._status === 'error'  ? 'bg-red-50'
+                                            : row._status === 'error'  ? 'bg-red-50/60'
                                             : row._status === 'saving' ? 'bg-blue-50'
-                                            : isEmpty ? 'bg-white' : 'bg-white hover:bg-gray-50/60';
+                                            : isEmpty ? 'bg-white' : 'bg-white hover:bg-gray-50/50';
                                 if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
                                 return (
                                     <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                                        {/* Row number */}
-                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1">{ri+1}</td>
+                                        {/* Número de fila */}
+                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{ri+1}</td>
 
                                         {COLS.map((col, ci) => {
                                             const isActive = active?.r === ri && active?.c === ci;
                                             const val = row[col.key] as string;
+                                            // H. Ini de fila 0 está bloqueado cuando hIniLocked=true
+                                            const isHIniLocked = col.key === 'horometroInicio' && ri === 0 && hIniLocked;
+                                            const isDisabled   = row._status === 'saved' || row._status === 'saving' || isHIniLocked;
                                             return (
-                                                <td key={col.key} className={`border-r border-gray-100 p-0 ${isActive ? 'ring-2 ring-inset ring-blue-500' : ''}`}
-                                                    onClick={() => setActive({r:ri,c:ci})}>
+                                                <td key={col.key}
+                                                    className={`border-r border-gray-100 p-0
+                                                        ${isActive && !isHIniLocked ? 'ring-2 ring-inset ring-blue-500' : ''}
+                                                        ${isHIniLocked ? 'bg-gray-50' : ''}`}
+                                                    onClick={() => !isHIniLocked && setActive({r:ri,c:ci})}>
                                                     <input
                                                         ref={el => { inputRefs.current[ri][ci] = el; }}
                                                         type={col.type === 'date' ? 'date' : 'text'}
                                                         inputMode={col.type === 'number' ? 'decimal' : undefined}
                                                         value={val}
+                                                        readOnly={isHIniLocked}
                                                         disabled={row._status === 'saved' || row._status === 'saving'}
-                                                        onChange={e => updateRow(ri, col.key, e.target.value)}
+                                                        onChange={e => !isHIniLocked && updateRow(ri, col.key, e.target.value)}
                                                         onKeyDown={e => handleKeyDown(e, ri, ci)}
                                                         onPaste={e => handlePaste(e, ri, ci)}
-                                                        onFocus={() => setActive({r:ri,c:ci})}
+                                                        onFocus={() => !isHIniLocked && setActive({r:ri,c:ci})}
                                                         onBlur={() => setActive(null)}
                                                         className={`w-full h-9 px-2.5 bg-transparent text-sm focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed
-                                                            ${col.key === 'horometroInicio' ? 'text-gray-500' : 'text-gray-800'}
+                                                            ${isHIniLocked ? 'text-gray-400 cursor-not-allowed' : col.key === 'horometroInicio' ? 'text-gray-500' : 'text-gray-800'}
                                                             ${col.key === 'fecha' ? 'font-medium' : ''}
                                                         `}
                                                         style={{minWidth: col.width - 8}}
@@ -518,24 +572,37 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             );
                                         })}
 
-                                        {/* Horas calculadas */}
-                                        <td className="border-r border-gray-100 text-center">
+                                        {/* Hrs calculadas — justo después de H.Fin, antes de Barrenos */}
+                                        <td className="border-r border-gray-100 text-center px-1">
                                             {hrs !== null
-                                                ? <span className={`text-sm font-bold px-2 py-0.5 rounded-md ${hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs} h</span>
+                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h</span>
                                                 : <span className="text-gray-200 text-xs">—</span>}
                                         </td>
 
-                                        {/* Estado */}
-                                        <td className="text-center px-1">
-                                            {row._status === 'saved'  && <span className="flex items-center justify-center gap-1 text-xs text-green-600"><CheckCircle2 size={13}/> Guardado</span>}
-                                            {row._status === 'saving' && <span className="flex items-center justify-center gap-1 text-xs text-blue-500"><Loader2 size={13} className="animate-spin"/> Guardando</span>}
-                                            {row._status === 'error'  && (
-                                                <span className="text-xs text-red-500 px-1 leading-tight block" title={row._error}>
-                                                    ⚠ {row._error.length > 18 ? row._error.slice(0,18)+'…' : row._error}
+                                        {/* Estado con confirmación para limpiar */}
+                                        <td className="text-center px-2 min-w-[100px]">
+                                            {row._status === 'saved' && (
+                                                <span className="flex items-center justify-center gap-1 text-xs text-green-600 font-medium">
+                                                    <CheckCircle2 size={13}/> Guardado
+                                                </span>
+                                            )}
+                                            {row._status === 'saving' && (
+                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500">
+                                                    <Loader2 size={13} className="animate-spin"/> Guardando…
+                                                </span>
+                                            )}
+                                            {row._status === 'error' && (
+                                                <span className="text-xs text-red-500 px-1 leading-tight block text-center" title={row._error}>
+                                                    ⚠ {row._error.length > 20 ? row._error.slice(0,20)+'…' : row._error}
                                                 </span>
                                             )}
                                             {row._status === 'idle' && !isEmpty && (
-                                                <button onClick={() => clearRow(ri)} className="text-gray-300 hover:text-red-400 transition-colors text-xs p-1 rounded">✕</button>
+                                                <button
+                                                    onClick={() => setRowToConfirmClear(ri)}
+                                                    title="Limpiar esta fila"
+                                                    className="flex items-center gap-1 mx-auto text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
+                                                    <Trash2 size={11}/> Limpiar
+                                                </button>
                                             )}
                                         </td>
                                     </tr>
