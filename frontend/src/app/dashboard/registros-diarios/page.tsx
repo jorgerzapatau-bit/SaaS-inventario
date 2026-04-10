@@ -279,42 +279,106 @@ function validateGridRow(r: GridRow) {
 }
 
 // Extendemos ObraSimple para incluir obraEquipos
-type ObraConEquipos = ObraSimple & { obraEquipos?: { equipoId: string }[] };
+type ObraConEquipos = ObraSimple & {
+    obraEquipos?: { equipoId: string }[];
+    plantillas?:  { metrosContratados: number; barrenos: number }[];
+};
+
+type RegistroExistente = {
+    id: string; fecha: string;
+    horometroFin: number;
+    metrosLineales: number;
+    barrenos: number;
+};
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
     const INITIAL_ROWS = 8;
-    const [obraId,   setObraId]   = useState(obras[0]?.id ?? '');
+
+    // ── Selección obra / equipo ──
+    const [obraId,   setObraId]   = useState('');
     const [equipoId, setEquipoId] = useState('');
+
+    // ── Datos cargados desde el servidor ──
+    const [registrosExistentes, setRegistrosExistentes] = useState<RegistroExistente[]>([]);
+    const [loadingCtx,          setLoadingCtx]          = useState(false);
+    const [plantillaAvance,     setPlantillaAvance]      = useState<{metros: number; barrenos: number; metrosTotal: number; barrenosTotal: number} | null>(null);
+
+    // ── Estado de la planilla ──
     const [rows,     setRows]     = useState<GridRow[]>(() => Array.from({length: INITIAL_ROWS}, emptyRow));
     const [active,   setActive]   = useState<{r:number;c:number}|null>(null);
     const [saving,   setSaving]   = useState(false);
-    // H. Inicial de la fila 0 bloqueado hasta que el usuario lo desbloquee explícitamente
     const [hIniLocked,        setHIniLocked]        = useState(true);
-    // Fila pendiente de limpiar — muestra confirmación antes de proceder
     const [rowToConfirmClear, setRowToConfirmClear] = useState<number|null>(null);
-    // Equipos filtrados según la obra seleccionada (igual que en RegistroForm)
+
+    const gridRef    = useRef<HTMLDivElement>(null);
+    const inputRefs  = useRef<(HTMLInputElement|null)[][]>([]);
+
+    // ── Equipos filtrados por obra ──
     const obraSeleccionada = obras.find(o => o.id === obraId);
-    const equiposDeObra = obraSeleccionada?.obraEquipos?.length
+    const equiposDeObra    = obraSeleccionada?.obraEquipos?.length
         ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
         : equipos;
 
-    // Cuando cambia la obra, resetear el equipo si ya no pertenece
+    // ── Fechas ya registradas para detectar duplicados en tiempo real ──
+    const fechasExistentes = useMemo(
+        () => new Set(registrosExistentes.map(r => r.fecha.slice(0, 10))),
+        [registrosExistentes]
+    );
+
+    // ── Cuando cambia la obra: resetear equipo si ya no pertenece ──
     const handleObraChange = (newObraId: string) => {
         setObraId(newObraId);
-        const ob = obras.find(o => o.id === newObraId);
-        const equiposIds = ob?.obraEquipos?.map(oe => oe.equipoId) ?? [];
-        const sigueValido = !ob?.obraEquipos?.length || equiposIds.includes(equipoId);
-        if (!sigueValido) setEquipoId('');
+        setEquipoId('');
+        setRegistrosExistentes([]);
+        setPlantillaAvance(null);
+        setRows(Array.from({length: INITIAL_ROWS}, emptyRow));
     };
 
-    const gridRef = useRef<HTMLDivElement>(null);
-    const inputRefs = useRef<(HTMLInputElement|null)[][]>([]);
+    // ── Cuando cambia el equipo: cargar contexto (último horómetro + registros existentes + avance plantilla) ──
+    const handleEquipoChange = useCallback(async (newEquipoId: string) => {
+        setEquipoId(newEquipoId);
+        if (!newEquipoId || !obraId) return;
 
-    // Auto-fill H. Inicio from previous H. Fin
+        setLoadingCtx(true);
+        try {
+            // 1. Registros existentes para esta obra+equipo (para detectar duplicados y obtener último horómetro)
+            const todos: any[] = await fetchApi('/registros-diarios');
+            const eq = equipos.find(e => e.id === newEquipoId);
+            const existentes: RegistroExistente[] = todos
+                .filter((r: any) => r.obra?.id === obraId && r.equipo?.nombre === eq?.nombre)
+                .sort((a: any, b: any) => b.horometroFin - a.horometroFin);
+
+            setRegistrosExistentes(existentes);
+
+            // 2. Precarga horómetro inicial en fila 0
+            const ultimoHFin = existentes.length > 0 ? String(existentes[0].horometroFin) : '';
+            setRows(prev => {
+                const next = [...prev];
+                next[0] = { ...next[0], horometroInicio: ultimoHFin };
+                return next;
+            });
+
+            // 3. Avance de plantilla
+            const obra = obras.find(o => o.id === obraId);
+            if (obra?.plantillas?.length) {
+                const plt = obra.plantillas[0];
+                const metrosAcum   = existentes.reduce((s, r) => s + r.metrosLineales, 0);
+                const barrenosAcum = existentes.reduce((s, r) => s + r.barrenos, 0);
+                setPlantillaAvance({
+                    metros:        metrosAcum,
+                    barrenos:      barrenosAcum,
+                    metrosTotal:   plt.metrosContratados,
+                    barrenosTotal: plt.barrenos,
+                });
+            }
+        } catch { /* silencioso */ }
+        finally { setLoadingCtx(false); }
+    }, [obraId, equipos, obras]);
+
+    // ── Auto-fill H.Ini de la fila siguiente al editar H.Fin ──
     const updateRow = useCallback((ri: number, key: keyof GridRow, val: string) => {
         setRows(prev => {
             const next = prev.map((r,i) => i === ri ? {...r, [key]: val, _status: 'idle' as const, _error: ''} : r);
-            // Propagate horometroInicio to next row if editing horometroFin
             if (key === 'horometroFin' && ri + 1 < next.length) {
                 if (!next[ri+1].horometroInicio || next[ri+1].horometroInicio === prev[ri].horometroFin) {
                     next[ri+1] = {...next[ri+1], horometroInicio: val, _status: 'idle' as const, _error: ''};
@@ -324,7 +388,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         });
     }, []);
 
-    // Navigate with Tab / Enter / Arrow keys
+    // ── Navegación teclado ──
     const handleKeyDown = (e: React.KeyboardEvent, ri: number, ci: number) => {
         const colCount = COLS.length;
         const rowCount = rows.length;
@@ -337,18 +401,16 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 inputRefs.current[ri+1]?.[0]?.focus();
             }
         } else if (e.key === 'ArrowDown' && ri + 1 < rowCount) {
-            e.preventDefault();
-            inputRefs.current[ri+1]?.[ci]?.focus();
+            e.preventDefault(); inputRefs.current[ri+1]?.[ci]?.focus();
         } else if (e.key === 'ArrowUp' && ri > 0) {
-            e.preventDefault();
-            inputRefs.current[ri-1]?.[ci]?.focus();
+            e.preventDefault(); inputRefs.current[ri-1]?.[ci]?.focus();
         }
     };
 
-    // Paste from Excel (tab-separated)
+    // ── Pegar desde Excel ──
     const handlePaste = (e: React.ClipboardEvent, startRow: number, startCol: number) => {
         const text = e.clipboardData.getData('text');
-        if (!text.includes('\t') && !text.includes('\n')) return; // single cell, let native paste handle
+        if (!text.includes('\t') && !text.includes('\n')) return;
         e.preventDefault();
         const pastedRows = text.trim().split('\n').map(line => line.split('\t').map(v => v.trim()));
         setRows(prev => {
@@ -358,14 +420,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 if (ri >= next.length) next.push(emptyRow());
                 pastedCols.forEach((val, dC) => {
                     const ci = startCol + dC;
-                    if (ci < COLS.length) {
-                        const col = COLS[ci];
-                        (next[ri] as any)[col.key] = val;
-                    }
+                    if (ci < COLS.length) (next[ri] as any)[COLS[ci].key] = val;
                 });
                 next[ri] = {...next[ri], _status: 'idle' as const, _error: ''};
             });
-            // Re-propagate horometroInicio after paste
             for (let i = 1; i < next.length; i++) {
                 if (!next[i].horometroInicio && next[i-1].horometroFin) {
                     next[i] = {...next[i], horometroInicio: next[i-1].horometroFin};
@@ -375,16 +433,16 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         });
     };
 
-    const addRows = (n=5) => setRows(prev => [...prev, ...Array.from({length:n}, emptyRow)]);
+    const addRows   = (n=5) => setRows(prev => [...prev, ...Array.from({length:n}, emptyRow)]);
+    const clearRow  = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
 
-    const clearRow = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
-
+    // ── Guardar todas las filas válidas ──
     const saveAll = async () => {
         if (!equipoId) { alert('Selecciona un equipo antes de guardar'); return; }
         setSaving(true);
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
-            if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue; // skip empty
+            if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue;
             const errMsg = validateGridRow(r);
             if (errMsg) {
                 setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error' as const, _error: errMsg} : x));
@@ -392,9 +450,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             }
             setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saving' as const} : x));
             try {
-                const body: Record<string,unknown> = {
+                await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify({
                     equipoId,
-                    obraId: obraId || null,
+                    obraId:              obraId || null,
                     fecha:               r.fecha,
                     horometroInicio:     Number(r.horometroInicio),
                     horometroFin:        Number(r.horometroFin),
@@ -406,27 +464,45 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     rentaEquipoDiaria:   r.rentaEquipoDiaria    ? Number(r.rentaEquipoDiaria)   : null,
                     operadores:          r.operadores           ? Number(r.operadores)          : 1,
                     peones:              r.peones               ? Number(r.peones)              : 0,
-                };
-                await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify(body) });
+                })});
                 setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved' as const, _error:''} : x));
+                // Actualizar avance de plantilla en tiempo real
+                if (plantillaAvance) {
+                    setPlantillaAvance(prev => prev ? {
+                        ...prev,
+                        metros:   prev.metros   + (r.metrosLineales  ? Number(r.metrosLineales)  : 0),
+                        barrenos: prev.barrenos + (r.barrenos        ? Number(r.barrenos)        : 0),
+                    } : null);
+                }
             } catch (err: any) {
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error' as const, _error: err.message || 'Error'} : x));
+                const msg = err.message || 'Error';
+                const isDupe = msg.toLowerCase().includes('ya existe') || msg.includes('P2002');
+                setRows(prev => prev.map((x,j) => j===i
+                    ? {...x, _status:'error' as const, _error: isDupe ? '⚠ Fecha ya registrada' : msg}
+                    : x));
             }
             await new Promise(res => setTimeout(res, 180));
         }
         setSaving(false);
     };
 
-    const filledCount = rows.filter(r => r.fecha || r.horometroFin).length;
-    const savedCount  = rows.filter(r => r._status === 'saved').length;
-    const errorCount  = rows.filter(r => r._status === 'error').length;
+    const filledCount  = rows.filter(r => r.fecha || r.horometroFin).length;
+    const savedCount   = rows.filter(r => r._status === 'saved').length;
+    const errorCount   = rows.filter(r => r._status === 'error').length;
+    const listoParaEditar = !!obraId && !!equipoId;
+
+    // ── Calcular avance acumulado incluyendo filas recién guardadas ──
+    const pctAvance = plantillaAvance && plantillaAvance.metrosTotal > 0
+        ? Math.min(100, (plantillaAvance.metros / plantillaAvance.metrosTotal) * 100)
+        : 0;
+    const plantillaCompleta = pctAvance >= 100;
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
+
             {/* ── Selectores obra / equipo ── */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
-                    {/* 1. Obra primero */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-500 mb-1.5">
                             Obra <span className="text-red-500">*</span>
@@ -437,15 +513,14 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                     </div>
-                    {/* 2. Equipo filtrado por obra */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-500 mb-1.5">
                             Equipo <span className="text-red-500">*</span>
                         </label>
-                        <select value={equipoId} onChange={e => setEquipoId(e.target.value)}
-                            disabled={!obraId}
+                        <select value={equipoId} onChange={e => handleEquipoChange(e.target.value)}
+                            disabled={!obraId || loadingCtx}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed">
-                            <option value="">{obraId ? '— Selecciona un equipo —' : '— Primero selecciona una obra —'}</option>
+                            <option value="">{obraId ? (loadingCtx ? 'Cargando…' : '— Selecciona un equipo —') : '— Primero selecciona una obra —'}</option>
                             {equiposDeObra.map(eq => (
                                 <option key={eq.id} value={eq.id}>
                                     {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
@@ -453,18 +528,76 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             ))}
                         </select>
                         {!obraId && <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero</p>}
-                        {obraId && equiposDeObra.length === 0 && (
+                        {obraId && !loadingCtx && equiposDeObra.length === 0 && (
                             <p className="text-xs text-amber-600 mt-1">Sin equipos asignados a esta obra.</p>
                         )}
                     </div>
                 </div>
+
+                {/* Banner: último registro cargado */}
+                {listoParaEditar && registrosExistentes.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs space-y-1">
+                        <p className="font-semibold text-blue-700 flex items-center gap-1.5">
+                            <CheckCircle2 size={12}/> {registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''} ya cargados para esta obra/equipo
+                        </p>
+                        <p className="text-blue-600">
+                            Último: <strong>{new Date(registrosExistentes[0].fecha + 'T12:00:00').toLocaleDateString('es-MX', {weekday:'short', day:'2-digit', month:'short'})}</strong>
+                            {' · '}H. Fin: <strong>{registrosExistentes[0].horometroFin}</strong>
+                            {' · '}
+                            <span className="text-blue-400">H. Inicial de la planilla precargado ↓</span>
+                        </p>
+                    </div>
+                )}
+                {listoParaEditar && registrosExistentes.length === 0 && !loadingCtx && (
+                    <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
+                        Sin registros previos para esta obra/equipo. Ingresa el H. Inicial manualmente.
+                    </div>
+                )}
+
+                {/* Banner progreso plantilla */}
+                {plantillaAvance && (
+                    <div className={`border rounded-xl px-4 py-3 text-xs space-y-2 ${plantillaCompleta ? 'bg-green-50 border-green-200' : 'bg-indigo-50 border-indigo-100'}`}>
+                        <div className="flex items-center justify-between">
+                            <p className={`font-semibold ${plantillaCompleta ? 'text-green-700' : 'text-indigo-700'}`}>
+                                {plantillaCompleta ? '🎉 Plantilla completada' : `Plantilla · ${pctAvance.toFixed(1)}%`}
+                            </p>
+                            <span className={`text-xs ${plantillaCompleta ? 'text-green-600' : 'text-indigo-500'}`}>
+                                {plantillaAvance.metros.toFixed(1)} / {plantillaAvance.metrosTotal} m
+                                {plantillaAvance.barrenosTotal > 0 && ` · ${plantillaAvance.barrenos} / ${plantillaAvance.barrenosTotal} bar.`}
+                            </span>
+                        </div>
+                        <div className="w-full h-2 bg-white/60 rounded-full overflow-hidden border border-white">
+                            <div className={`h-full rounded-full transition-all duration-500 ${plantillaCompleta ? 'bg-green-500' : 'bg-indigo-500'}`}
+                                style={{width: `${pctAvance}%`}}/>
+                        </div>
+                        {plantillaCompleta && (
+                            <p className="text-green-600 font-medium">✅ {plantillaAvance.metros.toFixed(1)} m · {plantillaAvance.barrenos} barrenos — todos los registros guardados.</p>
+                        )}
+                    </div>
+                )}
+
                 <p className="text-xs text-gray-400">
-                    💡 Pega datos directamente desde Excel/Google Sheets con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd> en cualquier celda. El H. Inicial se autocompleta con el H. Final del día anterior.
+                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada.
                 </p>
             </div>
 
             {/* ── Grid ── */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden relative" ref={gridRef}>
+
+                {/* Overlay bloqueante si no hay obra+equipo seleccionados */}
+                {!listoParaEditar && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-xl">
+                        <div className="text-center space-y-2 px-6">
+                            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
+                                <Lock size={20} className="text-gray-400"/>
+                            </div>
+                            <p className="text-sm font-semibold text-gray-600">
+                                {!obraId ? 'Selecciona una obra para continuar' : 'Selecciona un equipo para continuar'}
+                            </p>
+                            <p className="text-xs text-gray-400">La planilla se desbloqueará automáticamente</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Modal confirmación limpiar fila */}
                 {rowToConfirmClear !== null && (
@@ -491,33 +624,28 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
                                 <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100">#</th>
-                                {COLS.map((col, ci) => (
+                                {COLS.map((col) => (
                                     <th key={col.key}
                                         className={`p-2 text-xs font-semibold uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap
                                             ${col.key === 'horometroInicio' ? 'text-gray-400' : 'text-gray-500'}`}
                                         style={{minWidth: col.width}}>
                                         <span className="flex items-center gap-1">
                                             {col.label}
-                                            {/* Candado en encabezado H.Ini solo fila 0 */}
                                             {col.key === 'horometroInicio' && (
                                                 <button type="button"
                                                     onClick={() => setHIniLocked(l => !l)}
-                                                    title={hIniLocked ? 'Clic para editar H. Inicial de la primera fila' : 'Bloquear H. Inicial'}
+                                                    title={hIniLocked ? 'Editar H. Inicial fila 1' : 'Bloquear H. Inicial'}
                                                     className="ml-0.5 text-gray-400 hover:text-blue-500 transition-colors">
-                                                    {hIniLocked
-                                                        ? <Lock size={10}/>
-                                                        : <Pencil size={10} className="text-blue-500"/>}
+                                                    {hIniLocked ? <Lock size={10}/> : <Pencil size={10} className="text-blue-500"/>}
                                                 </button>
                                             )}
                                         </span>
                                     </th>
                                 ))}
-                                {/* Hrs — columna calculada, justo después de H.Fin */}
                                 <th className="p-2 text-xs font-semibold text-green-600 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:64}}>
                                     Hrs ⚡
                                 </th>
-                                {/* Estado */}
-                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:100}}>Estado</th>
+                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:110}}>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -525,28 +653,29 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                 const hrs = row.horometroFin && row.horometroInicio
                                     ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
                                     : null;
-                                const isEmpty = !row.fecha && !row.horometroFin && !row.horometroInicio;
-                                const rowBg = row._status === 'saved'  ? 'bg-green-50'
-                                            : row._status === 'error'  ? 'bg-red-50/60'
-                                            : row._status === 'saving' ? 'bg-blue-50'
-                                            : isEmpty ? 'bg-white' : 'bg-white hover:bg-gray-50/50';
+                                const isEmpty    = !row.fecha && !row.horometroFin && !row.horometroInicio;
+                                const isDupe     = !!row.fecha && fechasExistentes.has(row.fecha);
+                                const rowBg      = row._status === 'saved'  ? 'bg-green-50'
+                                                 : row._status === 'error'  ? 'bg-red-50/60'
+                                                 : row._status === 'saving' ? 'bg-blue-50'
+                                                 : isDupe                   ? 'bg-amber-50'
+                                                 : isEmpty                  ? 'bg-white'
+                                                 : 'bg-white hover:bg-gray-50/50';
                                 if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
                                 return (
                                     <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                                        {/* Número de fila */}
                                         <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{ri+1}</td>
 
                                         {COLS.map((col, ci) => {
-                                            const isActive = active?.r === ri && active?.c === ci;
-                                            const val = row[col.key] as string;
-                                            // H. Ini de fila 0 está bloqueado cuando hIniLocked=true
+                                            const isActive     = active?.r === ri && active?.c === ci;
+                                            const val          = row[col.key] as string;
                                             const isHIniLocked = col.key === 'horometroInicio' && ri === 0 && hIniLocked;
-                                            const isDisabled   = row._status === 'saved' || row._status === 'saving' || isHIniLocked;
                                             return (
                                                 <td key={col.key}
                                                     className={`border-r border-gray-100 p-0
                                                         ${isActive && !isHIniLocked ? 'ring-2 ring-inset ring-blue-500' : ''}
-                                                        ${isHIniLocked ? 'bg-gray-50' : ''}`}
+                                                        ${isHIniLocked ? 'bg-gray-50' : ''}
+                                                        ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''}`}
                                                     onClick={() => !isHIniLocked && setActive({r:ri,c:ci})}>
                                                     <input
                                                         ref={el => { inputRefs.current[ri][ci] = el; }}
@@ -572,15 +701,18 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             );
                                         })}
 
-                                        {/* Hrs calculadas — justo después de H.Fin, antes de Barrenos */}
                                         <td className="border-r border-gray-100 text-center px-1">
                                             {hrs !== null
                                                 ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h</span>
                                                 : <span className="text-gray-200 text-xs">—</span>}
                                         </td>
 
-                                        {/* Estado con confirmación para limpiar */}
-                                        <td className="text-center px-2 min-w-[100px]">
+                                        <td className="text-center px-2 min-w-[110px]">
+                                            {isDupe && row._status === 'idle' && !isEmpty && (
+                                                <span className="text-xs text-amber-600 font-medium flex items-center justify-center gap-1">
+                                                    ⚠ Ya registrada
+                                                </span>
+                                            )}
                                             {row._status === 'saved' && (
                                                 <span className="flex items-center justify-center gap-1 text-xs text-green-600 font-medium">
                                                     <CheckCircle2 size={13}/> Guardado
@@ -593,13 +725,11 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             )}
                                             {row._status === 'error' && (
                                                 <span className="text-xs text-red-500 px-1 leading-tight block text-center" title={row._error}>
-                                                    ⚠ {row._error.length > 20 ? row._error.slice(0,20)+'…' : row._error}
+                                                    ⚠ {row._error.length > 22 ? row._error.slice(0,22)+'…' : row._error}
                                                 </span>
                                             )}
-                                            {row._status === 'idle' && !isEmpty && (
-                                                <button
-                                                    onClick={() => setRowToConfirmClear(ri)}
-                                                    title="Limpiar esta fila"
+                                            {row._status === 'idle' && !isEmpty && !isDupe && (
+                                                <button onClick={() => setRowToConfirmClear(ri)}
                                                     className="flex items-center gap-1 mx-auto text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
                                                     <Trash2 size={11}/> Limpiar
                                                 </button>
@@ -612,7 +742,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     </table>
                 </div>
 
-                {/* Footer del grid */}
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
                     <button onClick={() => addRows(5)}
                         className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline">
@@ -629,11 +758,13 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             {/* ── Botón guardar ── */}
             <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-400">
-                    Se guardan solo las filas que tengan Fecha, H.Ini y H.Fin. Las filas en verde ya están guardadas.
+                    Se guardan solo las filas con Fecha, H.Ini y H.Fin válidos. Las filas amarillas tienen fecha ya registrada y serán omitidas.
                 </p>
-                <button onClick={saveAll} disabled={saving || filledCount === 0}
+                <button onClick={saveAll} disabled={saving || filledCount === 0 || !listoParaEditar}
                     className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
-                    {saving ? <><Loader2 size={15} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''}</>}
+                    {saving
+                        ? <><Loader2 size={15} className="animate-spin"/> Guardando…</>
+                        : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''}</>}
                 </button>
             </div>
         </div>
