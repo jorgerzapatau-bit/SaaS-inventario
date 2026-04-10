@@ -341,7 +341,7 @@ type RegistroExistente = {
 // RegistrosExistentesPanel removed — integrated into unified grid
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
-    const INITIAL_ROWS = 1;
+    const INITIAL_ROWS = 0;
 
     // ── Selección obra / equipo ──
     const [obraId,   setObraId]   = useState('');
@@ -383,7 +383,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         setEquipoId('');
         setRegistrosExistentes([]);
         setPlantillaAvance(null);
-        setRows(Array.from({length: INITIAL_ROWS}, emptyRow));
+        setRows(Array.from({length: 0}, emptyRow));
     };
 
     // ── Cuando cambia el equipo: cargar contexto (último horómetro + registros existentes + avance plantilla) ──
@@ -811,6 +811,27 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 )}
 
                 <div className="overflow-x-auto">
+                    {/* ── Banner de edición inline ── */}
+                    {editingRow && (
+                        <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border-b-2 border-amber-300">
+                            <div className="flex items-center gap-2 text-sm text-amber-800">
+                                <Pencil size={14} className="text-amber-500 flex-shrink-0"/>
+                                <span className="font-semibold">Modo edición</span>
+                                <span className="text-amber-600">— Modifica los campos de la fila resaltada y guarda los cambios.</span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                {inlineError && <span className="text-xs text-red-600 font-medium">{inlineError}</span>}
+                                <button onClick={() => { setEditingRow(null); setInlineError(''); }}
+                                    className="px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 text-xs font-medium rounded-lg transition-colors">
+                                    Cancelar
+                                </button>
+                                <button onClick={saveInlineEdit} disabled={savingInline}
+                                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+                                    {savingInline ? <><Loader2 size={12} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={12}/> Guardar cambios</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <table className="w-full border-collapse text-sm" style={{minWidth: 980}}>
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
@@ -893,22 +914,11 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                                         ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
                                                         : <span className="text-gray-200 text-xs">—</span>}
                                                 </td>
-                                                {/* Acciones */}
+                                                {/* Estado — indicador de edición activa */}
                                                 <td className="text-center px-2 min-w-[110px]">
-                                                    <div className="flex flex-col items-center gap-1">
-                                                        {inlineError && <span className="text-xs text-red-500 leading-tight">{inlineError}</span>}
-                                                        <div className="flex gap-1">
-                                                            <button onClick={saveInlineEdit} disabled={savingInline}
-                                                                className="px-2 py-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xs font-semibold rounded transition-colors flex items-center gap-1">
-                                                                {savingInline ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
-                                                                {savingInline ? '…' : 'OK'}
-                                                            </button>
-                                                            <button onClick={() => { setEditingRow(null); setInlineError(''); }}
-                                                                className="px-2 py-1 border border-gray-200 hover:bg-gray-100 text-gray-600 text-xs rounded transition-colors">
-                                                                ✕
-                                                            </button>
-                                                        </div>
-                                                    </div>
+                                                    <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-semibold">
+                                                        <Pencil size={10}/> Editando…
+                                                    </span>
                                                 </td>
                                             </tr>
                                         );
@@ -962,7 +972,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             })()}
 
                             {/* ── Separador visual entre guardados y nuevos ── */}
-                            {registrosExistentes.length > 0 && (
+                            {registrosExistentes.length > 0 && rows.length > 0 && (
                                 <tr className="border-b-2 border-blue-200">
                                     <td colSpan={COLS.length + 3} className="px-3 py-1 bg-blue-100/40 text-xs text-blue-500 font-semibold tracking-wide">
                                         ↓ Nuevos registros
@@ -1076,14 +1086,18 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
                     <button onClick={() => addRows(1)}
-                        className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                        + Agregar 1 fila
+                        className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${
+                            rows.length === 0
+                                ? 'px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm'
+                                : 'text-blue-600 hover:text-blue-700 hover:underline'
+                        }`}>
+                        <Plus size={12}/> Agregar 1 fila
                     </button>
                     <div className="flex items-center gap-3 text-xs text-gray-400">
                         {registrosExistentes.length > 0 && (
                             <span className="text-blue-500">{registrosExistentes.length} guardados anteriores</span>
                         )}
-                        <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>
+                        {rows.length > 0 && <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>}
                         {savedCount  > 0 && <span className="text-green-600 font-medium">✓ {savedCount} guardados</span>}
                         {errorCount  > 0 && <span className="text-red-500 font-medium">✗ {errorCount} con error</span>}
                     </div>
@@ -1091,6 +1105,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             </div>
 
             {/* ── Botón guardar ── */}
+            {rows.length > 0 && (
             <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-400">
                     Se guardan solo las filas con Fecha, H.Ini y H.Fin válidos. Las filas amarillas tienen fecha ya registrada y serán omitidas.
@@ -1102,6 +1117,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                         : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''} nuevo{filledCount!==1?'s':''}</>}
                 </button>
             </div>
+            )}
         </div>
     );
 }
