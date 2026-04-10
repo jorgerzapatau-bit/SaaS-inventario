@@ -38,7 +38,6 @@ type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
 
-// ── Tipo para edición inline de fila existente ────────────────────────────────
 type EditingRow = {
     id: string;
     barrenos: string;
@@ -53,7 +52,6 @@ type EditingRow = {
     horometroFin: string;
 };
 
-// ── Modal confirmación eliminar ────────────────────────────────────────────────
 function DeleteModal({ registro, onConfirm, onCancel }: {
     registro: Registro; onConfirm: () => void; onCancel: () => void;
 }) {
@@ -104,7 +102,6 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
     );
 }
 
-// ── Fila de tabla ──────────────────────────────────────────────────────────────
 function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     r: Registro;
     onDelete: (r: Registro) => void;
@@ -159,7 +156,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                                 <Copy size={13}/>
                             </button>
                         ) : (
-                            // Placeholder invisible para mantener alineación
                             <span className="p-1.5 w-[28px]"/>
                         )}
                         <button onClick={e => { e.stopPropagation(); onEdit(r.id); }}
@@ -226,7 +222,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     );
 }
 
-// ── Encabezado ordenable ───────────────────────────────────────────────────────
 function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     label: string; sortKey: SortKey; current: SortKey; dir: SortDir;
     onSort: (k: SortKey) => void; className?: string;
@@ -244,7 +239,6 @@ function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     );
 }
 
-// ── Planilla de carga masiva (vista grid tipo Excel) ──────────────────────────
 type GridRow = {
     fecha: string;
     horometroInicio: string;
@@ -259,20 +253,16 @@ type GridRow = {
     peones: string;
     _status: 'idle' | 'saving' | 'saved' | 'error';
     _error: string;
-    // Sugerencias pre-llenadas desde la fila anterior (se confirman con Tab o se sobreescriben)
     _suggested: Record<string, boolean>;
 };
 
-// Helper: dado el registro anterior, genera los valores sugeridos para la siguiente fila
 function buildSuggestedRow(prev: GridRow): Partial<GridRow> {
-    // Fecha: 1 día después
     let nextFecha = '';
     if (prev.fecha) {
         const d = new Date(prev.fecha + 'T12:00:00');
         d.setDate(d.getDate() + 1);
         nextFecha = d.toISOString().slice(0, 10);
     }
-    // H. Ini = H. Fin anterior (ya lo hace el sistema), H. Fin = H. Ini + 8
     const hIni = prev.horometroFin || '';
     const hFin = hIni && !isNaN(Number(hIni)) ? String(Number(hIni) + 8) : '';
     return {
@@ -289,9 +279,6 @@ function buildSuggestedRow(prev: GridRow): Partial<GridRow> {
         peones: prev.peones,
     };
 }
-
-// Índice de la columna horometroInicio — usada para tratar lectura/bloqueo
-const COL_H_INI = 1;
 
 const COLS: { key: keyof Omit<GridRow,'_status'|'_error'>; label: string; width: number; type: string }[] = [
     { key: 'fecha',               label: 'Fecha',        width: 130, type: 'date'   },
@@ -323,7 +310,6 @@ function validateGridRow(r: GridRow) {
     return '';
 }
 
-// Extendemos ObraSimple para incluir obraEquipos
 type ObraConEquipos = ObraSimple & {
     obraEquipos?: { equipoId: string }[];
     plantillas?:  { metrosContratados: number; barrenos: number }[];
@@ -343,63 +329,50 @@ type RegistroExistente = {
     peones: number | null;
 };
 
-
-// RegistrosExistentesPanel removed — integrated into unified grid
-
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
-    const INITIAL_ROWS = 0;
-
-    // ── Selección obra / equipo ──
     const [obraId,   setObraId]   = useState('');
     const [equipoId, setEquipoId] = useState('');
-
-    // ── Datos cargados desde el servidor ──
     const [registrosExistentes, setRegistrosExistentes] = useState<RegistroExistente[]>([]);
     const [loadingCtx,          setLoadingCtx]          = useState(false);
     const [plantillaAvance,     setPlantillaAvance]      = useState<{metros: number; barrenos: number; metrosTotal: number; barrenosTotal: number} | null>(null);
 
-    // ── Estado de la planilla ──
-    const [rows,     setRows]     = useState<GridRow[]>(() => Array.from({length: INITIAL_ROWS}, emptyRow));
-    const [active,   setActive]   = useState<{r:number;c:number}|null>(null);
-    const [saving,   setSaving]   = useState(false);
-    const [hIniLocked,        setHIniLocked]        = useState(true);
-    const [rowToConfirmClear, setRowToConfirmClear] = useState<number|null>(null);
-    const [editingRow,        setEditingRow]         = useState<EditingRow | null>(null);
-    const [savingInline,      setSavingInline]       = useState(false);
-    const [inlineError,       setInlineError]        = useState('');
+    // ✅ NUEVA FILA ÚNICA
+    const [nuevaFila, setNuevaFila]   = useState<GridRow>(emptyRow());
+    const [savingRow, setSavingRow]   = useState(false);
+    const [rowError,  setRowError]    = useState('');
+    const [editingRow, setEditingRow] = useState<EditingRow | null>(null);
+    const [savingInline, setSavingInline] = useState(false);
+    const [inlineError, setInlineError] = useState('');
 
-    const gridRef    = useRef<HTMLDivElement>(null);
-    const inputRefs  = useRef<(HTMLInputElement|null)[][]>([]);
+    const gridRef   = useRef<HTMLDivElement>(null);
+    const inputRefs = useRef<(HTMLInputElement|null)[]>([]);
 
-    // ── Equipos filtrados por obra ──
     const obraSeleccionada = obras.find(o => o.id === obraId);
     const equiposDeObra    = obraSeleccionada?.obraEquipos?.length
         ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
         : equipos;
 
-    // ── Fechas ya registradas para detectar duplicados en tiempo real ──
+    // ✅ FECHAS EXISTENTES SE ACTUALIZA CORRECTAMENTE
     const fechasExistentes = useMemo(
         () => new Set(registrosExistentes.map(r => r.fecha.slice(0, 10))),
         [registrosExistentes]
     );
 
-    // ── Cuando cambia la obra: resetear equipo si ya no pertenece ──
     const handleObraChange = (newObraId: string) => {
         setObraId(newObraId);
         setEquipoId('');
         setRegistrosExistentes([]);
         setPlantillaAvance(null);
-        setRows(Array.from({length: 0}, emptyRow));
+        setNuevaFila(emptyRow());
+        setRowError('');
     };
 
-    // ── Cuando cambia el equipo: cargar contexto (último horómetro + registros existentes + avance plantilla) ──
     const handleEquipoChange = useCallback(async (newEquipoId: string) => {
         setEquipoId(newEquipoId);
         if (!newEquipoId || !obraId) return;
 
         setLoadingCtx(true);
         try {
-            // 1. Registros existentes para esta obra+equipo (para detectar duplicados y obtener último horómetro)
             const todos: any[] = await fetchApi('/registros-diarios');
             const eq = equipos.find(e => e.id === newEquipoId);
             const existentes: RegistroExistente[] = todos
@@ -420,36 +393,31 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     peones: r.peones ?? null,
                 }));
 
+            // ✅ ACTUALIZA registrosExistentes CON TODOS LOS REGISTROS CARGADOS
             setRegistrosExistentes(existentes);
 
-            // 2. Precarga horómetro inicial en fila 0 SOLO si ya hay filas abiertas
+            // Precarga con sugerencias desde último registro
             const ultimoHFin = existentes.length > 0 ? String(existentes[0].horometroFin) : '';
-            setRows(prev => {
-                if (prev.length === 0) return prev; // sin filas nuevas, no tocar nada
-                const next = [...prev];
-                if (existentes.length > 0) {
-                    const ult = existentes[0];
-                    const ultRow: GridRow = {
-                        ...emptyRow(),
-                        fecha: (ult.fecha || '').slice(0, 10),
-                        horometroInicio: '',
-                        horometroFin: ultimoHFin,
-                        barrenos: String(ult.barrenos || ''),
-                        metrosLineales: String(ult.metrosLineales || ''),
-                    };
-                    const sug = buildSuggestedRow(ultRow);
-                    next[0] = {
-                        ...next[0],
-                        ...sug,
-                        _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
-                    };
-                } else {
-                    next[0] = { ...next[0], horometroInicio: ultimoHFin };
-                }
-                return next;
-            });
+            if (existentes.length > 0) {
+                const ult = existentes[0];
+                const ultRow: GridRow = {
+                    ...emptyRow(),
+                    fecha: (ult.fecha || '').slice(0, 10),
+                    horometroInicio: '',
+                    horometroFin: ultimoHFin,
+                    barrenos: String(ult.barrenos || ''),
+                    metrosLineales: String(ult.metrosLineales || ''),
+                };
+                const sug = buildSuggestedRow(ultRow);
+                setNuevaFila({
+                    ...emptyRow(),
+                    ...sug,
+                    _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
+                });
+            } else {
+                setNuevaFila(prev => ({ ...prev, horometroInicio: ultimoHFin }));
+            }
 
-            // 3. Avance de plantilla
             const obra = obras.find(o => o.id === obraId);
             if (obra?.plantillas?.length) {
                 const plt = obra.plantillas[0];
@@ -466,193 +434,118 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         finally { setLoadingCtx(false); }
     }, [obraId, equipos, obras]);
 
-    // ── Auto-fill H.Ini de la fila siguiente al editar H.Fin + sugerencias para siguiente fila ──
-    const updateRow = useCallback((ri: number, key: keyof GridRow, val: string) => {
-        setRows(prev => {
-            const next = prev.map((r,i) => i === ri
-                ? {...r, [key]: val, _status: 'idle' as const, _error: '',
-                    // Si el usuario escribe en una celda con sugerencia, marcarla como confirmada
-                    _suggested: {...r._suggested, [key]: false}}
-                : r);
+    const updateNuevaFila = (key: keyof GridRow, val: string) => {
+        setNuevaFila(prev => ({
+            ...prev,
+            [key]: val,
+            _status: 'idle' as const,
+            _error: '',
+            _suggested: { ...prev._suggested, [key]: false },
+        }));
+        setRowError('');
+    };
 
-            // Al cambiar H.Fin: propagar al H.Ini de la siguiente fila
-            if (key === 'horometroFin' && ri + 1 < next.length) {
-                if (!next[ri+1].horometroInicio || next[ri+1]._suggested?.horometroInicio) {
-                    next[ri+1] = {...next[ri+1], horometroInicio: val,
-                        _status: 'idle' as const, _error: '',
-                        _suggested: {...next[ri+1]._suggested, horometroInicio: true}};
-                }
-            }
-
-            // Cuando la fila tiene fecha + H.Ini + H.Fin, generar sugerencias para la siguiente
-            const row = next[ri];
-            const rowIsUsable = row.fecha && row.horometroInicio && row.horometroFin;
-            if (rowIsUsable && ri + 1 < next.length) {
-                const nextRow = next[ri + 1];
-                // Solo sugerir si la siguiente fila está vacía o tiene sugerencias sin confirmar
-                const nextIsEmpty = !nextRow.fecha && !nextRow.horometroFin;
-                const nextHasSuggestions = Object.values(nextRow._suggested || {}).some(Boolean);
-                if (nextIsEmpty || nextHasSuggestions) {
-                    const suggested = buildSuggestedRow(row);
-                    const updatedNext = { ...nextRow };
-                    for (const [k, v] of Object.entries(suggested)) {
-                        const fieldKey = k as keyof typeof suggested;
-                        // Solo sobreescribir si el campo está vacío o era una sugerencia previa
-                        if (!nextRow[fieldKey] || nextRow._suggested?.[fieldKey as keyof GridRow]) {
-                            (updatedNext as any)[fieldKey] = v;
-                            updatedNext._suggested = {...(updatedNext._suggested || {}), [fieldKey]: true};
-                        }
-                    }
-                    next[ri + 1] = updatedNext;
-                }
-            }
-
-            return next;
-        });
-    }, []);
-
-    // ── Confirmar sugerencia de celda (Tab acepta el valor sugerido) ──
-    const confirmSuggestion = useCallback((ri: number, key: keyof GridRow) => {
-        setRows(prev => prev.map((r, i) => i === ri && r._suggested?.[key]
-            ? {...r, _suggested: {...r._suggested, [key]: false}}
-            : r));
-    }, []);
-
-    // ── Navegación teclado ──
-    const handleKeyDown = (e: React.KeyboardEvent, ri: number, ci: number) => {
-        const colCount = COLS.length;
-        const rowCount = rows.length;
-        if (e.key === 'Tab' || e.key === 'Enter') {
-            e.preventDefault();
-            // Al presionar Tab, confirmar la sugerencia de la celda actual
-            const col = COLS[ci];
-            if (col) confirmSuggestion(ri, col.key as keyof GridRow);
-            const nextCi = e.shiftKey ? ci - 1 : ci + 1;
-            if (nextCi >= 0 && nextCi < colCount) {
-                inputRefs.current[ri]?.[nextCi]?.focus();
-            } else if (!e.shiftKey && ri + 1 < rowCount) {
-                inputRefs.current[ri+1]?.[0]?.focus();
-            }
-        } else if (e.key === 'ArrowDown' && ri + 1 < rowCount) {
-            e.preventDefault(); inputRefs.current[ri+1]?.[ci]?.focus();
-        } else if (e.key === 'ArrowUp' && ri > 0) {
-            e.preventDefault(); inputRefs.current[ri-1]?.[ci]?.focus();
+    // ✅ GUARDAR UNA FILA - CORRIGE EL BUG DE DUPLICADOS
+    const saveRowAndReset = async () => {
+        if (!equipoId) {
+            alert('Selecciona equipo antes de guardar');
+            return;
         }
-    };
 
-    // ── Pegar desde Excel ──
-    const handlePaste = (e: React.ClipboardEvent, startRow: number, startCol: number) => {
-        const text = e.clipboardData.getData('text');
-        if (!text.includes('\t') && !text.includes('\n')) return;
-        e.preventDefault();
-        const pastedRows = text.trim().split('\n').map(line => line.split('\t').map(v => v.trim()));
-        setRows(prev => {
-            const next = [...prev];
-            pastedRows.forEach((pastedCols, dR) => {
-                const ri = startRow + dR;
-                if (ri >= next.length) next.push(emptyRow());
-                pastedCols.forEach((val, dC) => {
-                    const ci = startCol + dC;
-                    if (ci < COLS.length) (next[ri] as any)[COLS[ci].key] = val;
-                });
-                next[ri] = {...next[ri], _status: 'idle' as const, _error: '', _suggested: {}};
-            });
-            for (let i = 1; i < next.length; i++) {
-                if (!next[i].horometroInicio && next[i-1].horometroFin) {
-                    next[i] = {...next[i], horometroInicio: next[i-1].horometroFin};
-                }
-            }
-            return next;
-        });
-    };
+        setRowError('');
+        setSavingRow(true);
 
-    const addRows = (n=1) => setRows(prev => {
-        // Primero busca la última fila nueva con datos; si no hay, usa el último registro guardado
-        const lastFilledNew = [...prev].reverse().find(r => r.fecha && r.horometroFin);
-        const lastExistente = registrosExistentes.length > 0
-            ? registrosExistentes.slice().sort((a,b) => b.horometroFin - a.horometroFin)[0]
-            : null;
-        const lastFilled: GridRow | null = lastFilledNew ?? (lastExistente ? {
-            ...emptyRow(),
-            fecha: (lastExistente.fecha || '').slice(0, 10),
-            horometroInicio: String(lastExistente.horometroInicio ?? ''),
-            horometroFin: String(lastExistente.horometroFin),
-            barrenos: String(lastExistente.barrenos || ''),
-            metrosLineales: String(lastExistente.metrosLineales || ''),
-            litrosDiesel: lastExistente.litrosDiesel != null ? String(lastExistente.litrosDiesel) : '',
-            precioDiesel: lastExistente.precioDiesel != null ? String(lastExistente.precioDiesel) : '21.95',
-            operadores: lastExistente.operadores != null ? String(lastExistente.operadores) : '1',
-            peones: lastExistente.peones != null ? String(lastExistente.peones) : '0',
-        } : null);
-
-        const newRows = Array.from({length: n}, (_, i) => {
-            const base = emptyRow();
-            if (lastFilled) {
-                const chainBase = i === 0 ? lastFilled : { ...emptyRow(), ...buildSuggestedRow(lastFilled) };
-                const sug = buildSuggestedRow(i === 0 ? lastFilled : chainBase);
-                return {
-                    ...base,
-                    ...sug,
-                    _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
-                };
-            }
-            return base;
-        });
-        return [...prev, ...newRows];
-    });
-    const clearRow  = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
-
-    // ── Guardar todas las filas válidas ──
-    const saveAll = async () => {
-        if (!equipoId) { alert('Selecciona un equipo antes de guardar'); return; }
-        setSaving(true);
-        for (let i = 0; i < rows.length; i++) {
-            const r = rows[i];
-            if (!r.fecha && !r.horometroFin && !r.horometroInicio) continue;
-            const errMsg = validateGridRow(r);
+        try {
+            const errMsg = validateGridRow(nuevaFila);
             if (errMsg) {
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'error' as const, _error: errMsg} : x));
-                continue;
+                setRowError(errMsg);
+                setSavingRow(false);
+                return;
             }
-            setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saving' as const} : x));
-            try {
-                await fetchApi('/registros-diarios', { method: 'POST', body: JSON.stringify({
+
+            // Validar duplicado
+            if (fechasExistentes.has(nuevaFila.fecha)) {
+                setRowError('⚠ Fecha ya registrada');
+                setSavingRow(false);
+                return;
+            }
+
+            // Guardar en BD
+            await fetchApi('/registros-diarios', {
+                method: 'POST',
+                body: JSON.stringify({
                     equipoId,
-                    obraId:              obraId || null,
-                    fecha:               r.fecha,
-                    horometroInicio:     Number(r.horometroInicio),
-                    horometroFin:        Number(r.horometroFin),
-                    barrenos:            r.barrenos            ? Number(r.barrenos)            : 0,
-                    metrosLineales:      r.metrosLineales       ? Number(r.metrosLineales)      : 0,
-                    profundidadPromedio: r.profundidadPromedio  ? Number(r.profundidadPromedio) : null,
-                    litrosDiesel:        r.litrosDiesel         ? Number(r.litrosDiesel)        : 0,
-                    precioDiesel:        r.precioDiesel         ? Number(r.precioDiesel)        : 0,
-                    rentaEquipoDiaria:   r.rentaEquipoDiaria    ? Number(r.rentaEquipoDiaria)   : null,
-                    operadores:          r.operadores           ? Number(r.operadores)          : 1,
-                    peones:              r.peones               ? Number(r.peones)              : 0,
-                })});
-                setRows(prev => prev.map((x,j) => j===i ? {...x, _status:'saved' as const, _error:''} : x));
-                // Actualizar avance de plantilla en tiempo real
-                if (plantillaAvance) {
-                    setPlantillaAvance(prev => prev ? {
-                        ...prev,
-                        metros:   prev.metros   + (r.metrosLineales  ? Number(r.metrosLineales)  : 0),
-                        barrenos: prev.barrenos + (r.barrenos        ? Number(r.barrenos)        : 0),
-                    } : null);
-                }
-            } catch (err: any) {
-                const msg = err.message || 'Error';
-                const isDupe = msg.toLowerCase().includes('ya existe') || msg.includes('P2002');
-                setRows(prev => prev.map((x,j) => j===i
-                    ? {...x, _status:'error' as const, _error: isDupe ? '⚠ Fecha ya registrada' : msg}
-                    : x));
+                    obraId: obraId || null,
+                    fecha: nuevaFila.fecha,
+                    horometroInicio: Number(nuevaFila.horometroInicio),
+                    horometroFin: Number(nuevaFila.horometroFin),
+                    barrenos: nuevaFila.barrenos ? Number(nuevaFila.barrenos) : 0,
+                    metrosLineales: nuevaFila.metrosLineales ? Number(nuevaFila.metrosLineales) : 0,
+                    profundidadPromedio: nuevaFila.profundidadPromedio ? Number(nuevaFila.profundidadPromedio) : null,
+                    litrosDiesel: nuevaFila.litrosDiesel ? Number(nuevaFila.litrosDiesel) : 0,
+                    precioDiesel: nuevaFila.precioDiesel ? Number(nuevaFila.precioDiesel) : 0,
+                    rentaEquipoDiaria: nuevaFila.rentaEquipoDiaria ? Number(nuevaFila.rentaEquipoDiaria) : null,
+                    operadores: nuevaFila.operadores ? Number(nuevaFila.operadores) : 1,
+                    peones: nuevaFila.peones ? Number(nuevaFila.peones) : 0,
+                }),
+            });
+
+            // ✅ AGREGAR A registrosExistentes PARA QUE fechasExistentes SE ACTUALICE
+            const nuevoRegistro: RegistroExistente = {
+                id: `temp-${Date.now()}`,
+                fecha: nuevaFila.fecha,
+                horometroInicio: Number(nuevaFila.horometroInicio),
+                horometroFin: Number(nuevaFila.horometroFin),
+                metrosLineales: Number(nuevaFila.metrosLineales),
+                barrenos: Number(nuevaFila.barrenos),
+                profundidadPromedio: nuevaFila.profundidadPromedio ? Number(nuevaFila.profundidadPromedio) : null,
+                litrosDiesel: nuevaFila.litrosDiesel ? Number(nuevaFila.litrosDiesel) : null,
+                precioDiesel: nuevaFila.precioDiesel ? Number(nuevaFila.precioDiesel) : null,
+                rentaEquipoDiaria: nuevaFila.rentaEquipoDiaria ? Number(nuevaFila.rentaEquipoDiaria) : null,
+                operadores: nuevaFila.operadores ? Number(nuevaFila.operadores) : null,
+                peones: nuevaFila.peones ? Number(nuevaFila.peones) : null,
+            };
+
+            setRegistrosExistentes(prev => [...prev, nuevoRegistro]);
+
+            // Actualizar plantilla avance
+            if (plantillaAvance) {
+                setPlantillaAvance(prev => prev ? {
+                    ...prev,
+                    metros:   prev.metros   + (nuevaFila.metrosLineales  ? Number(nuevaFila.metrosLineales)  : 0),
+                    barrenos: prev.barrenos + (nuevaFila.barrenos        ? Number(nuevaFila.barrenos)        : 0),
+                } : null);
             }
-            await new Promise(res => setTimeout(res, 180));
+
+            // Generar siguiente fila con sugerencias
+            const nextSuggestions = buildSuggestedRow(nuevaFila);
+            setNuevaFila({
+                ...emptyRow(),
+                ...nextSuggestions,
+                _suggested: Object.fromEntries(Object.keys(nextSuggestions).map(k => [k, true])) as any,
+            });
+
+            setRowError('');
+        } catch (err: any) {
+            const msg = err.message || 'Error';
+            const isDupe = msg.toLowerCase().includes('ya existe') || msg.includes('P2002');
+            setRowError(isDupe ? '⚠ Fecha ya registrada' : msg);
+        } finally {
+            setSavingRow(false);
         }
-        setSaving(false);
     };
 
-    // ── Guardar edición inline de fila existente ──
+    const handleKeyDown = (e: React.KeyboardEvent, ci: number) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveRowAndReset();
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            const nextInput = inputRefs.current[ci + 1];
+            if (nextInput) nextInput.focus();
+        }
+    };
+
     const saveInlineEdit = async () => {
         if (!editingRow) return;
         setSavingInline(true);
@@ -673,7 +566,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     horometroFin:        Number(editingRow.horometroFin),
                 }),
             });
-            // Update local state
             setRegistrosExistentes(prev => prev.map(r => r.id === editingRow.id ? {
                 ...r,
                 barrenos:            Number(editingRow.barrenos)            || r.barrenos,
@@ -712,13 +604,14 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         setInlineError('');
     };
 
-
-    const savedCount   = rows.filter(r => r._status === 'saved').length;
-    const errorCount   = rows.filter(r => r._status === 'error').length;
-    const filledCount  = rows.filter(r => r.fecha || r.horometroFin || r.horometroInicio).length;
     const listoParaEditar = !!obraId && !!equipoId;
+    const isDupe = !!nuevaFila.fecha && fechasExistentes.has(nuevaFila.fecha);
+    const isEmpty = !nuevaFila.fecha && !nuevaFila.horometroFin && !nuevaFila.horometroInicio;
+    const hrs = nuevaFila.horometroFin && nuevaFila.horometroInicio
+        ? Math.max(0, Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio))
+        : null;
+    const canSave = !isEmpty && !isDupe && !savingRow;
 
-    // ── Calcular avance acumulado incluyendo filas recién guardadas ──
     const pctAvance = plantillaAvance && plantillaAvance.metrosTotal > 0
         ? Math.min(100, (plantillaAvance.metros / plantillaAvance.metrosTotal) * 100)
         : 0;
@@ -726,8 +619,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
-
-            {/* ── Selectores obra / equipo ── */}
+            {/* SELECTORES */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -761,23 +653,17 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     </div>
                 </div>
 
-                {/* Hint: registros existentes se muestran en la tabla unificada debajo */}
                 {listoParaEditar && registrosExistentes.length > 0 && (
                     <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
                         <CheckCircle2 size={12} className="shrink-0"/>
                         <span>
-                            <strong>{registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''}</strong> ya cargados para esta obra/equipo — aparecen en la tabla de abajo.
-                            {' '}Último H. Fin: <strong>{registrosExistentes[0]?.horometroFin}</strong> · precargado como H. Inicial ↓
+                            <strong>{registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''}</strong> ya cargados.
+                            Último H. Fin: <strong>{registrosExistentes[0]?.horometroFin}</strong>
                         </span>
                     </div>
                 )}
-                {listoParaEditar && registrosExistentes.length === 0 && !loadingCtx && (
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
-                        Sin registros previos para esta obra/equipo. Ingresa el H. Inicial manualmente.
-                    </div>
-                )}
 
-                {/* Banner progreso plantilla */}
+                {/* PLANTILLA AVANCE */}
                 {plantillaAvance && (
                     <div className={`border rounded-xl px-4 py-3 text-xs space-y-2 ${plantillaCompleta ? 'bg-green-50 border-green-200' : 'bg-indigo-50 border-indigo-100'}`}>
                         <div className="flex items-center justify-between">
@@ -786,29 +672,24 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             </p>
                             <span className={`text-xs ${plantillaCompleta ? 'text-green-600' : 'text-indigo-500'}`}>
                                 {plantillaAvance.metros.toFixed(1)} / {plantillaAvance.metrosTotal} m
-                                {plantillaAvance.barrenosTotal > 0 && ` · ${plantillaAvance.barrenos} / ${plantillaAvance.barrenosTotal} bar.`}
                             </span>
                         </div>
                         <div className="w-full h-2 bg-white/60 rounded-full overflow-hidden border border-white">
                             <div className={`h-full rounded-full transition-all duration-500 ${plantillaCompleta ? 'bg-green-500' : 'bg-indigo-500'}`}
                                 style={{width: `${pctAvance}%`}}/>
                         </div>
-                        {plantillaCompleta && (
-                            <p className="text-green-600 font-medium">✅ {plantillaAvance.metros.toFixed(1)} m · {plantillaAvance.barrenos} barrenos — todos los registros guardados.</p>
-                        )}
                     </div>
                 )}
 
                 <p className="text-xs text-gray-400">
-                    💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada. Las celdas en <span className="text-blue-500 font-medium italic">azul itálica</span> son sugerencias del día anterior — presiona <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para confirmar o escribe para cambiar.
-                    {' '}<span className="text-amber-600 font-medium">✏️ Usa el botón <strong>Editar</strong> en cualquier fila guardada para corregir sus valores.</span>
+                    💡 Presiona <kbd className="px-1 bg-gray-100 rounded text-xs font-mono">Enter</kbd> para guardar una fila.
+                    <kbd className="px-1 mx-1 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para moverte entre campos.
+                    Cada fila se guarda automáticamente y la siguiente se precarga con sugerencias.
                 </p>
             </div>
 
-            {/* ── Grid ── */}
+            {/* TABLA */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden relative" ref={gridRef}>
-
-                {/* Overlay bloqueante si no hay obra+equipo seleccionados */}
                 {!listoParaEditar && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-xl">
                         <div className="text-center space-y-2 px-6">
@@ -818,49 +699,27 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             <p className="text-sm font-semibold text-gray-600">
                                 {!obraId ? 'Selecciona una obra para continuar' : 'Selecciona un equipo para continuar'}
                             </p>
-                            <p className="text-xs text-gray-400">La planilla se desbloqueará automáticamente</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Modal confirmación limpiar fila */}
-                {rowToConfirmClear !== null && (
-                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/20 rounded-xl">
-                        <div className="bg-white rounded-xl shadow-xl p-5 max-w-xs w-full mx-4 space-y-3 border border-gray-100">
-                            <p className="text-sm font-semibold text-gray-800">¿Limpiar fila {rowToConfirmClear + 1}?</p>
-                            <p className="text-xs text-gray-500">Se borrarán todos los datos de esta fila. No se puede deshacer.</p>
-                            <div className="flex gap-2 pt-1">
-                                <button onClick={() => setRowToConfirmClear(null)}
-                                    className="flex-1 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-                                    Cancelar
-                                </button>
-                                <button onClick={() => { clearRow(rowToConfirmClear); setRowToConfirmClear(null); }}
-                                    className="flex-1 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition-colors">
-                                    Limpiar
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
 
                 <div className="overflow-x-auto">
-                    {/* ── Banner de edición inline ── */}
                     {editingRow && (
                         <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border-b-2 border-amber-300">
                             <div className="flex items-center gap-2 text-sm text-amber-800">
-                                <Pencil size={14} className="text-amber-500 flex-shrink-0"/>
-                                <span className="font-semibold">Modo edición</span>
-                                <span className="text-amber-600">— Modifica los campos de la fila resaltada y guarda los cambios.</span>
+                                <Pencil size={14} className="text-amber-500"/>
+                                <span className="font-semibold">Editando registro</span>
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                                {inlineError && <span className="text-xs text-red-600 font-medium">{inlineError}</span>}
+                            <div className="flex items-center gap-2">
+                                {inlineError && <span className="text-xs text-red-600">{inlineError}</span>}
                                 <button onClick={() => { setEditingRow(null); setInlineError(''); }}
-                                    className="px-3 py-1.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 text-xs font-medium rounded-lg transition-colors">
+                                    className="px-3 py-1.5 border border-gray-300 bg-white text-gray-600 text-xs rounded-lg hover:bg-gray-50">
                                     Cancelar
                                 </button>
                                 <button onClick={saveInlineEdit} disabled={savingInline}
-                                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
-                                    {savingInline ? <><Loader2 size={12} className="animate-spin"/> Guardando…</> : <><CheckCircle2 size={12}/> Guardar cambios</>}
+                                    className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1">
+                                    {savingInline ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
+                                    Guardar
                                 </button>
                             </div>
                         </div>
@@ -868,294 +727,189 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     <table className="w-full border-collapse text-sm" style={{minWidth: 980}}>
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r border-gray-100">#</th>
-                                {COLS.map((col) => (
-                                    <th key={col.key}
-                                        className={`p-2 text-xs font-semibold uppercase tracking-wide text-left border-r border-gray-100 whitespace-nowrap
-                                            ${col.key === 'horometroInicio' ? 'text-gray-400' : 'text-gray-500'}`}
+                                <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r">#</th>
+                                {COLS.map(col => (
+                                    <th key={col.key} className="p-2 text-xs font-semibold uppercase text-left border-r text-gray-500 whitespace-nowrap"
                                         style={{minWidth: col.width}}>
-                                        <span className="flex items-center gap-1">
-                                            {col.label}
-                                            {col.key === 'horometroInicio' && (
-                                                <button type="button"
-                                                    onClick={() => setHIniLocked(l => !l)}
-                                                    title={hIniLocked ? 'Editar H. Inicial fila 1' : 'Bloquear H. Inicial'}
-                                                    className="ml-0.5 text-gray-400 hover:text-blue-500 transition-colors">
-                                                    {hIniLocked ? <Lock size={10}/> : <Pencil size={10} className="text-blue-500"/>}
-                                                </button>
-                                            )}
-                                        </span>
+                                        {col.label}
                                     </th>
                                 ))}
-                                <th className="p-2 text-xs font-semibold text-green-600 uppercase tracking-wide text-center border-r border-gray-100 whitespace-nowrap" style={{minWidth:64}}>
-                                    Hrs ⚡
-                                </th>
-                                <th className="p-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center" style={{minWidth:110}}>Estado</th>
+                                <th className="p-2 text-xs font-semibold text-center border-r text-green-600 whitespace-nowrap" style={{minWidth:64}}>Hrs</th>
+                                <th className="p-2 text-xs font-semibold text-center" style={{minWidth:120}}>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {/* ── Filas read-only / editables: registros ya guardados ── */}
-                            {(() => {
-                                const ordenados = [...registrosExistentes].sort((a,b) => a.fecha.localeCompare(b.fecha));
-                                return ordenados.map((r, i) => {
-                                    const iso = (r.fecha || '').slice(0, 10);
-                                    const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
-                                    const esUltimo  = i === ordenados.length - 1;
-                                    const isEditing = editingRow?.id === r.id;
+                            {/* REGISTROS GUARDADOS */}
+                            {registrosExistentes.map((r, i) => {
+                                const iso = (r.fecha || '').slice(0, 10);
+                                const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+                                const isEditing = editingRow?.id === r.id;
 
-                                    if (isEditing) {
-                                        const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
-                                            ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio))
-                                            : null;
-                                        const editInp = (key: keyof EditingRow, placeholder = '') => (
-                                            <input
-                                                type="text" inputMode="decimal"
-                                                value={editingRow[key] as string}
-                                                onChange={e => setEditingRow(prev => prev ? {...prev, [key]: e.target.value} : prev)}
-                                                placeholder={placeholder}
-                                                className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                                            />
-                                        );
-                                        return (
-                                            <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
-                                                <td className="text-xs text-amber-400 text-center border-r border-amber-100 select-none p-1 w-8">{i+1}</td>
-                                                {/* Fecha — no editable */}
-                                                <td className="border-r border-amber-100 px-2.5 h-9 text-xs font-medium text-amber-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
-                                                {/* H. Ini */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('horometroInicio', '—')}</td>
-                                                {/* H. Fin */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('horometroFin', '—')}</td>
-                                                {/* Barrenos */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:85}}>{editInp('barrenos', '—')}</td>
-                                                {/* Metros */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('metrosLineales', '—')}</td>
-                                                {/* Prof */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:85}}>{editInp('profundidadPromedio', '—')}</td>
-                                                {/* Litros */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('litrosDiesel', '—')}</td>
-                                                {/* P.U. */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('precioDiesel', '21.95')}</td>
-                                                {/* Renta */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('rentaEquipoDiaria', '—')}</td>
-                                                {/* Op */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:55}}>{editInp('operadores', '1')}</td>
-                                                {/* Pn */}
-                                                <td className="border-r border-amber-100 p-1" style={{minWidth:55}}>{editInp('peones', '0')}</td>
-                                                {/* Hrs */}
-                                                <td className="border-r border-amber-100 text-center px-1">
-                                                    {hrsEdit !== null
-                                                        ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
-                                                        : <span className="text-gray-200 text-xs">—</span>}
-                                                </td>
-                                                {/* Estado — indicador de edición activa */}
-                                                <td className="text-center px-2 min-w-[110px]">
-                                                    <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-semibold">
-                                                        <Pencil size={10}/> Editando…
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    }
-
-                                    const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
+                                if (isEditing) {
+                                    const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
+                                        ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio))
+                                        : null;
+                                    const editInp = (key: keyof EditingRow, placeholder = '') => (
+                                        <input
+                                            type="text" inputMode="decimal"
+                                            value={editingRow[key] as string}
+                                            onChange={e => setEditingRow(prev => prev ? {...prev, [key]: e.target.value} : prev)}
+                                            placeholder={placeholder}
+                                            className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                        />
+                                    );
                                     return (
-                                        <tr key={`ex-${r.id}`}
-                                            className={`border-b border-blue-100/60 transition-colors ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}>
-                                            <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8">{i+1}</td>
-                                            {/* Fecha */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs font-medium text-blue-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
-                                            {/* H. Ini */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-400" style={{minWidth:90}}>{r.horometroInicio ?? '—'}</td>
-                                            {/* H. Fin */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600 font-semibold" style={{minWidth:90}}>{r.horometroFin}</td>
-                                            {/* Barrenos */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:85}}>{r.barrenos || '—'}</td>
-                                            {/* Metros */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'}</td>
-                                            {/* Prof */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:85}}>{r.profundidadPromedio != null ? `${r.profundidadPromedio} m` : '—'}</td>
-                                            {/* Litros */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.litrosDiesel != null ? `${r.litrosDiesel} lt` : '—'}</td>
-                                            {/* P.U. */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:90}}>{r.precioDiesel != null ? `$${r.precioDiesel}` : '—'}</td>
-                                            {/* Renta */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', {maximumFractionDigits:0})}` : '—'}</td>
-                                            {/* Op */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:55}}>{r.operadores ?? '—'}</td>
-                                            {/* Pn */}
-                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:55}}>{r.peones ?? '—'}</td>
-                                            {/* Hrs */}
-                                            <td className="border-r border-blue-100 text-center px-1">
-                                                {hrs !== null
-                                                    ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
-                                                    : <span className="text-gray-200 text-xs">—</span>}
+                                        <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
+                                            <td className="p-2 text-xs text-amber-400 text-center border-r w-8">{i+1}</td>
+                                            <td className="border-r border-amber-100 px-2 h-9 text-xs font-medium text-amber-700 whitespace-nowrap">{fechaStr}</td>
+                                            {COLS.slice(1).map(col => (
+                                                <td key={col.key} className="border-r border-amber-100 p-1" style={{minWidth: col.width}}>
+                                                    {editInp(col.key as keyof EditingRow, '—')}
+                                                </td>
+                                            ))}
+                                            <td className="border-r border-amber-100 text-center px-1">
+                                                {hrsEdit !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
+                                                    : <span className="text-gray-200">—</span>}
                                             </td>
-                                            {/* Estado — botón Editar siempre visible */}
-                                            <td className="text-center px-2 min-w-[110px]">
-                                                <button
-                                                    onClick={() => startEditingRow(r)}
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 hover:border-amber-400 text-amber-700 hover:text-amber-800 text-xs font-semibold rounded-md transition-colors cursor-pointer"
-                                                    title="Editar este registro">
-                                                    <Pencil size={10}/> Editar
-                                                </button>
+                                            <td className="text-center px-2">
+                                                <span className="text-xs text-amber-600 font-semibold">Editando…</span>
                                             </td>
                                         </tr>
                                     );
-                                });
-                            })()}
+                                }
 
-                            {/* ── Separador visual entre guardados y nuevos ── */}
-                            {registrosExistentes.length > 0 && rows.length > 0 && (
-                                <tr className="border-b-2 border-blue-200">
-                                    <td colSpan={COLS.length + 3} className="px-3 py-1 bg-blue-100/40 text-xs text-blue-500 font-semibold tracking-wide">
-                                        ↓ Nuevos registros
-                                    </td>
-                                </tr>
-                            )}
-
-                            {/* ── Filas editables: nuevas entradas ── */}
-                            {rows.map((row, ri) => {
-                                const hrs = row.horometroFin && row.horometroInicio
-                                    ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
-                                    : null;
-                                const isEmpty    = !row.fecha && !row.horometroFin && !row.horometroInicio;
-                                const isDupe     = !!row.fecha && fechasExistentes.has(row.fecha);
-                                const rowBg      = row._status === 'saved'  ? 'bg-green-50'
-                                                 : row._status === 'error'  ? 'bg-red-50/60'
-                                                 : row._status === 'saving' ? 'bg-blue-50'
-                                                 : isDupe                   ? 'bg-amber-50'
-                                                 : isEmpty                  ? 'bg-white'
-                                                 : 'bg-white hover:bg-gray-50/50';
-                                const globalIdx  = registrosExistentes.length + ri + 1;
-                                if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
+                                const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
                                 return (
-                                    <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{globalIdx}</td>
-
-                                        {COLS.map((col, ci) => {
-                                            const isActive     = active?.r === ri && active?.c === ci;
-                                            const val          = row[col.key] as string;
-                                            const isHIniLocked = col.key === 'horometroInicio' && ri === 0 && hIniLocked;
-                                            const isSuggested  = !!(row._suggested?.[col.key as keyof GridRow]);
-                                            // Inline H.Fin validation
-                                            const isHFinError  = col.key === 'horometroFin' && val && row.horometroInicio
-                                                && (Number(val) <= Number(row.horometroInicio) || Number(val) - Number(row.horometroInicio) > 24);
-                                            return (
-                                                <td key={col.key}
-                                                    className={`border-r border-gray-100 p-0
-                                                        ${isActive && !isHIniLocked ? 'ring-2 ring-inset ring-blue-500' : ''}
-                                                        ${isHIniLocked ? 'bg-gray-50' : ''}
-                                                        ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''}
-                                                        ${isSuggested && !isActive ? 'bg-blue-50/60' : ''}
-                                                        ${isHFinError ? 'bg-red-50' : ''}`}
-                                                    onClick={() => !isHIniLocked && setActive({r:ri,c:ci})}>
-                                                    <input
-                                                        ref={el => { inputRefs.current[ri][ci] = el; }}
-                                                        type={col.type === 'date' ? 'date' : 'text'}
-                                                        inputMode={col.type === 'number' ? 'decimal' : undefined}
-                                                        value={val}
-                                                        readOnly={isHIniLocked}
-                                                        disabled={row._status === 'saved' || row._status === 'saving'}
-                                                        onChange={e => !isHIniLocked && updateRow(ri, col.key, e.target.value)}
-                                                        onKeyDown={e => handleKeyDown(e, ri, ci)}
-                                                        onPaste={e => handlePaste(e, ri, ci)}
-                                                        onFocus={() => !isHIniLocked && setActive({r:ri,c:ci})}
-                                                        onBlur={() => setActive(null)}
-                                                        title={isSuggested ? '💡 Sugerido — Tab para confirmar, o escribe para cambiar' : undefined}
-                                                        className={`w-full h-9 px-2.5 bg-transparent text-sm focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed
-                                                            ${isHIniLocked ? 'text-gray-400 cursor-not-allowed' : col.key === 'horometroInicio' ? 'text-gray-500' : 'text-gray-800'}
-                                                            ${col.key === 'fecha' ? 'font-medium' : ''}
-                                                            ${isSuggested ? 'italic text-blue-600' : ''}
-                                                            ${isHFinError ? 'text-red-600' : ''}
-                                                        `}
-                                                        style={{minWidth: col.width - 8}}
-                                                        placeholder={col.type === 'date' ? 'YYYY-MM-DD' : '—'}
-                                                        tabIndex={ri * COLS.length + ci + 1}
-                                                    />
-                                                </td>
-                                            );
-                                        })}
-
-                                        <td className="border-r border-gray-100 text-center px-1">
-                                            {hrs !== null
-                                                ? <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${hrs > 24 ? 'text-red-700 bg-red-100' : hrs > 0 ? 'text-green-700 bg-green-100' : 'text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
-                                                : <span className="text-gray-200 text-xs">—</span>}
+                                    <tr key={`ex-${r.id}`} className="border-b border-blue-100 bg-blue-50/30 hover:bg-blue-100/40">
+                                        <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{i+1}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
+                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
+                                        <td className="border-r border-blue-100 text-center px-1">
+                                            {hrs !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
+                                                : <span className="text-gray-200">—</span>}
                                         </td>
-
-                                        <td className="text-center px-2 min-w-[110px]">
-                                            {isDupe && row._status === 'idle' && !isEmpty && (
-                                                <span className="text-xs text-amber-600 font-medium flex items-center justify-center gap-1">
-                                                    ⚠ Ya registrada
-                                                </span>
-                                            )}
-                                            {row._status === 'saved' && (
-                                                <span className="flex items-center justify-center gap-1 text-xs text-green-600 font-medium">
-                                                    <CheckCircle2 size={13}/> Guardado
-                                                </span>
-                                            )}
-                                            {row._status === 'saving' && (
-                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500">
-                                                    <Loader2 size={13} className="animate-spin"/> Guardando…
-                                                </span>
-                                            )}
-                                            {row._status === 'error' && (
-                                                <span className="text-xs text-red-500 px-1 leading-tight block text-center" title={row._error}>
-                                                    ⚠ {row._error.length > 22 ? row._error.slice(0,22)+'…' : row._error}
-                                                </span>
-                                            )}
-                                            {row._status === 'idle' && !isEmpty && !isDupe && (
-                                                <button onClick={() => setRowToConfirmClear(ri)}
-                                                    className="flex items-center gap-1 mx-auto text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 px-2 py-1 rounded transition-colors">
-                                                    <Trash2 size={11}/> Limpiar
-                                                </button>
-                                            )}
+                                        <td className="text-center px-2">
+                                            <button onClick={() => startEditingRow(r)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-700 text-xs font-semibold rounded-md">
+                                                <Pencil size={10}/> Editar
+                                            </button>
                                         </td>
                                     </tr>
                                 );
                             })}
+
+                            {/* SEPARADOR */}
+                            {registrosExistentes.length > 0 && (
+                                <tr className="border-b-2 border-blue-200">
+                                    <td colSpan={COLS.length + 3} className="px-3 py-1 bg-blue-100/40 text-xs text-blue-500 font-semibold">
+                                        ↓ Nueva entrada
+                                    </td>
+                                </tr>
+                            )}
+
+                            {/* NUEVA FILA - UNA SOLA */}
+                            <tr className={`border-b transition-colors ${
+                                isDupe ? 'bg-amber-50' : isEmpty ? 'bg-white' : 'bg-green-50/30'
+                            }`}>
+                                <td className="p-2 text-xs font-semibold text-center border-r w-8">
+                                    {registrosExistentes.length + 1}
+                                </td>
+
+                                {COLS.map((col, ci) => {
+                                    const val = nuevaFila[col.key] as string;
+                                    const isSuggested = !!nuevaFila._suggested?.[col.key as keyof GridRow];
+                                    const isError = col.key === 'horometroFin' && val && nuevaFila.horometroInicio &&
+                                        (Number(val) <= Number(nuevaFila.horometroInicio));
+
+                                    return (
+                                        <td key={col.key} className={`p-1 border-r ${
+                                            isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''
+                                        } ${isSuggested && !isEmpty ? 'bg-green-100/50' : ''} ${isError ? 'bg-red-50' : ''}`}
+                                            style={{minWidth: col.width}}>
+                                            <input
+                                                ref={el => { inputRefs.current[ci] = el; }}
+                                                type={col.type === 'date' ? 'date' : 'text'}
+                                                inputMode={col.type === 'number' ? 'decimal' : undefined}
+                                                value={val}
+                                                onChange={e => updateNuevaFila(col.key, e.target.value)}
+                                                onKeyDown={e => handleKeyDown(e, ci)}
+                                                placeholder={col.type === 'date' ? 'YYYY-MM-DD' : '—'}
+                                                className={`w-full h-9 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
+                                                    ${isSuggested && !isEmpty ? 'italic text-green-600 bg-green-50 border-green-200' : 'border border-gray-200 text-gray-800'}
+                                                    ${isError ? 'text-red-600 border-red-300' : ''}
+                                                `}
+                                            />
+                                        </td>
+                                    );
+                                })}
+
+                                <td className="p-2 text-xs text-center border-r">
+                                    {hrs !== null ? (
+                                        <span className={`px-2 py-1 rounded font-bold ${
+                                            hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                                        }`}>
+                                            {hrs}h
+                                        </span>
+                                    ) : '—'}
+                                </td>
+
+                                <td className="text-center px-2 min-w-[120px]">
+                                    {isDupe && !isEmpty ? (
+                                        <span className="text-amber-600 font-medium text-xs">⚠ Duplicada</span>
+                                    ) : isEmpty ? (
+                                        <span className="text-gray-300 text-xs">—</span>
+                                    ) : (
+                                        <>
+                                            {savingRow ? (
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <Loader2 size={13} className="animate-spin text-blue-500" />
+                                                    <span className="text-xs text-blue-600 font-medium">Guardando…</span>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={saveRowAndReset}
+                                                    disabled={!canSave}
+                                                    className={`flex items-center gap-1 mx-auto px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                                                        canSave
+                                                            ? 'bg-green-500 hover:bg-green-600 text-white'
+                                                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    }`}
+                                                    title="O presiona Enter">
+                                                    <CheckCircle2 size={12}/>
+                                                    Guardar
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                    {rowError && <p className="text-red-500 text-xs mt-1 leading-tight">{rowError}</p>}
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
-                    <button onClick={() => addRows(1)}
-                        className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${
-                            rows.length === 0
-                                ? 'px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm'
-                                : 'text-blue-600 hover:text-blue-700 hover:underline'
-                        }`}>
-                        <Plus size={12}/> Agregar 1 fila
-                    </button>
-                    <div className="flex items-center gap-3 text-xs text-gray-400">
-                        {registrosExistentes.length > 0 && (
-                            <span className="text-blue-500">{registrosExistentes.length} guardados anteriores</span>
-                        )}
-                        {rows.length > 0 && <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>}
-                        {savedCount  > 0 && <span className="text-green-600 font-medium">✓ {savedCount} guardados</span>}
-                        {errorCount  > 0 && <span className="text-red-500 font-medium">✗ {errorCount} con error</span>}
-                    </div>
+                    <span className="text-xs text-gray-500">
+                        {registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''} guardado{registrosExistentes.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                        Presiona <kbd className="px-1 bg-white border border-gray-300 rounded">Enter</kbd> para guardar
+                    </span>
                 </div>
             </div>
-
-            {/* ── Botón guardar ── */}
-            {rows.length > 0 && (
-            <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-400">
-                    Se guardan solo las filas con Fecha, H.Ini y H.Fin válidos. Las filas amarillas tienen fecha ya registrada y serán omitidas.
-                </p>
-                <button onClick={saveAll} disabled={saving || filledCount === 0 || !listoParaEditar}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
-                    {saving
-                        ? <><Loader2 size={15} className="animate-spin"/> Guardando…</>
-                        : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''} nuevo{filledCount!==1?'s':''}</>}
-                </button>
-            </div>
-            )}
         </div>
     );
 }
 
-// ── Dropdown "Nuevo Registro" ─────────────────────────────────────────────────
 function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     onIndividual: () => void;
     onPlanilla: () => void;
@@ -1164,15 +918,12 @@ function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     return (
         <div className="relative">
             <div className="flex items-stretch rounded-lg shadow-sm overflow-hidden">
-                {/* Botón principal */}
                 <button
                     onClick={onIndividual}
                     className="flex items-center gap-2 pl-4 pr-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm transition-colors">
                     <Plus size={16}/> Nuevo Registro
                 </button>
-                {/* Separador */}
                 <div className="w-px bg-blue-500"/>
-                {/* Flecha dropdown */}
                 <button
                     onClick={() => setOpen(o => !o)}
                     className="px-2 py-2 bg-blue-600 hover:bg-blue-700 text-white transition-colors">
@@ -1182,7 +933,6 @@ function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
 
             {open && (
                 <>
-                    {/* Overlay para cerrar al hacer clic afuera */}
                     <div className="fixed inset-0 z-10" onClick={() => setOpen(false)}/>
                     <div className="absolute right-0 top-full mt-1.5 z-20 bg-white rounded-xl shadow-lg border border-gray-100 w-56 py-1.5 animate-in fade-in zoom-in-95 duration-100">
                         <button
@@ -1214,7 +964,6 @@ function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     );
 }
 
-// ── Página principal ───────────────────────────────────────────────────────────
 function RegistrosDiariosInner() {
     const searchParams  = useSearchParams();
     const router        = useRouter();
@@ -1275,7 +1024,7 @@ function RegistrosDiariosInner() {
             barrenos: r.barrenos, metrosLineales: r.metrosLineales,
             litrosDiesel: r.litrosDiesel, precioDiesel: r.precioDiesel,
             operadores: r.operadores, peones: r.peones,
-            horometroInicio: r.horometroFin, // el fin anterior = inicio siguiente
+            horometroInicio: r.horometroFin,
             bordo: r.bordo, espaciamiento: r.espaciamiento,
             profundidadPromedio: r.profundidadPromedio,
             rentaEquipoDiaria: r.rentaEquipoDiaria,
@@ -1337,9 +1086,8 @@ function RegistrosDiariosInner() {
     const hayFiltros = filtroEquipo !== 'todos' || filtroObra !== 'todas' || filtroSemana !== 'todas' || !!filtroDesde || !!filtroHasta || !!busqueda;
     const clearFiltros = () => { setFiltroEquipo('todos'); setFiltroObra('todas'); setFiltroSemana('todas'); setFiltroDesde(''); setFiltroHasta(''); setBusqueda(''); };
 
-    // Último registro por equipo (por horómetro fin más alto) — solo ese puede duplicarse
     const lastIdByEquipo = useMemo(() => {
-        const map = new Map<string, string>(); // equipoNombre -> id del registro con mayor horometroFin
+        const map = new Map<string, string>();
         for (const r of registros) {
             const key = r.equipo.nombre;
             const current = registros.find(x => x.id === map.get(key));
@@ -1369,7 +1117,6 @@ function RegistrosDiariosInner() {
                         <p className="text-sm text-gray-500 mt-1">Control diario de operación — equivalente a la hoja Rpte del Excel.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* Botón Nuevo Registro con dropdown */}
                         <NuevoRegistroDropdown
                             onIndividual={() => {
                                 const params = new URLSearchParams();
@@ -1385,7 +1132,6 @@ function RegistrosDiariosInner() {
 
                 {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-                {/* Vista Planilla */}
                 {vista === 'planilla' && (
                     <>
                         <div className="flex items-center gap-3">
@@ -1402,7 +1148,6 @@ function RegistrosDiariosInner() {
                     </>
                 )}
 
-                {/* Vista Lista — Filtros */}
                 {vista === 'lista' && (<>
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                     <div className="flex items-center gap-2">
@@ -1421,17 +1166,17 @@ function RegistrosDiariosInner() {
                                 className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"/>
                         </div>
                         <select value={filtroEquipo} onChange={e => setFiltroEquipo(e.target.value)}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroEquipo !== 'todos' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroEquipo !== 'todos' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
                             <option value="todos">Todos los equipos</option>
                             {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
                         </select>
                         <select value={filtroObra} onChange={e => setFiltroObra(e.target.value)}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroObra !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroObra !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
                             <option value="todas">Todas las obras</option>
                             {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                         </select>
                         <select value={filtroSemana} onChange={e => { setFiltroSemana(e.target.value); setFiltroDesde(''); setFiltroHasta(''); }}
-                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroSemana !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200 text-gray-700'}`}>
+                            className={`py-1.5 px-2 text-xs border rounded-lg bg-white focus:outline-none ${filtroSemana !== 'todas' ? 'border-blue-400 text-blue-700 font-semibold' : 'border-gray-200'}`}>
                             <option value="todas">Todas las semanas</option>
                             {semanas.map(s => { const [ano, sem] = s.split('-'); return <option key={s} value={s}>Sem. {parseInt(sem)} / {ano}</option>; })}
                         </select>
@@ -1449,7 +1194,6 @@ function RegistrosDiariosInner() {
                     {hayFiltros && <p className="text-xs text-blue-600">Mostrando <span className="font-bold">{filtrados.length}</span> de {registros.length} registros</p>}
                 </div>
 
-                {/* KPIs */}
                 {!loading && filtrados.length > 0 && (
                     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                         {[
@@ -1468,7 +1212,6 @@ function RegistrosDiariosInner() {
                     </div>
                 )}
 
-                {/* Tabla */}
                 <Card>
                     {loading ? (
                         <div className="p-10 text-center text-gray-400 text-sm">Cargando registros...</div>
@@ -1489,7 +1232,8 @@ function RegistrosDiariosInner() {
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-600 transition-colors"
                                                 onClick={() => handleSort('fecha')}>
                                                 <span className="flex items-center gap-1">Fecha
-                                                    {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={11} className="text-blue-500"/> : <ArrowDown size={11} className="text-blue-500"/>) : <ArrowUpDown size={11} className="opacity-30"/>}
+                                                    {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={11} className="text-blue-500"/> : <ArrowDown size={11} className="text-blue-500"/>)
+                                                        : <ArrowUpDown size={11} className="opacity-30"/>}
                                                 </span>
                                             </th>
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo</th>
@@ -1514,7 +1258,6 @@ function RegistrosDiariosInner() {
                                 </table>
                             </div>
 
-                            {/* Footer paginación */}
                             <div className="p-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
                                 <p className="text-xs text-gray-400">
                                     {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}
@@ -1536,7 +1279,7 @@ function RegistrosDiariosInner() {
                                             .map((n, i) => n === '...'
                                                 ? <span key={`e${i}`} className="px-1.5 text-xs text-gray-400">…</span>
                                                 : <button key={n} onClick={() => setPage(n as number)}
-                                                    className={`min-w-[28px] h-7 rounded-lg text-xs font-medium transition-colors ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                                                    className={`min-w-[28px] h-7 rounded-lg text-xs font-medium transition-colors ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 hover:bg-gray-50'}`}>
                                                     {n}
                                                   </button>
                                             )}
