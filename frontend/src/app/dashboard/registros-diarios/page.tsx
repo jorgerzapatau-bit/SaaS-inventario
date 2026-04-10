@@ -323,75 +323,7 @@ type RegistroExistente = {
 };
 
 
-// ── Panel de registros existentes (colapsable) ────────────────────────────────
-function RegistrosExistentesPanel({ registros }: { registros: RegistroExistente[] }) {
-    const [expanded, setExpanded] = useState(false);
-    const ultimo = registros[0];
-    const ultimaFecha = (() => {
-        const iso = (ultimo.fecha || '').slice(0, 10);
-        return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
-    })();
-
-    // Ordenar por fecha ascendente para mostrar en tabla
-    const ordenados = [...registros].sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-    return (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl overflow-hidden text-xs">
-            {/* Header siempre visible */}
-            <button type="button" onClick={() => setExpanded(e => !e)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-100/50 transition-colors text-left">
-                <span className="font-semibold text-blue-700 flex items-center gap-1.5">
-                    <CheckCircle2 size={12}/>
-                    {registros.length} registro{registros.length !== 1 ? 's' : ''} ya cargados para esta obra/equipo
-                </span>
-                <span className="flex items-center gap-2 text-blue-500">
-                    <span className="text-blue-400 font-normal">
-                        Último: <strong className="text-blue-600">{ultimaFecha}</strong> · H. Fin: <strong className="text-blue-600">{ultimo.horometroFin}</strong>
-                        {' · '}<span className="italic">H. Inicial precargado ↓</span>
-                    </span>
-                    {expanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
-                </span>
-            </button>
-
-            {/* Tabla colapsable */}
-            {expanded && (
-                <div className="border-t border-blue-100 overflow-x-auto max-h-52 overflow-y-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 bg-blue-50 z-10">
-                            <tr className="border-b border-blue-100">
-                                {['#', 'Fecha', 'H. Ini', 'H. Fin', 'Hrs', 'Barrenos', 'Metros Lin.'].map(h => (
-                                    <th key={h} className="px-3 py-1.5 text-xs font-semibold text-blue-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-blue-50">
-                            {ordenados.map((r, i) => {
-                                const iso = (r.fecha || '').slice(0, 10);
-                                const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
-                                const esUltimo = r.id === ultimo.id;
-                                return (
-                                    <tr key={r.id} className={`${esUltimo ? 'bg-blue-100/60 font-semibold' : 'bg-white/60 hover:bg-blue-50/50'} transition-colors`}>
-                                        <td className="px-3 py-1.5 text-blue-300">{i + 1}</td>
-                                        <td className="px-3 py-1.5 text-blue-700 whitespace-nowrap">{fechaStr}</td>
-                                        <td className="px-3 py-1.5 text-gray-500">{r.horometroInicio ?? '—'}</td>
-                                        <td className="px-3 py-1.5 text-gray-700">{r.horometroFin}</td>
-                                        <td className="px-3 py-1.5 text-gray-600">
-                                            {r.horometroInicio != null
-                                                ? `${r.horometroFin - r.horometroInicio}h`
-                                                : '—'}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-gray-600">{r.barrenos || '—'}</td>
-                                        <td className="px-3 py-1.5 text-gray-600">{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div>
-    );
-}
+// RegistrosExistentesPanel removed — integrated into unified grid
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
     const INITIAL_ROWS = 1;
@@ -723,9 +655,15 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     </div>
                 </div>
 
-                {/* Banner: registros ya cargados con tabla colapsable */}
+                {/* Hint: registros existentes se muestran en la tabla unificada debajo */}
                 {listoParaEditar && registrosExistentes.length > 0 && (
-                    <RegistrosExistentesPanel registros={registrosExistentes} />
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
+                        <CheckCircle2 size={12} className="shrink-0"/>
+                        <span>
+                            <strong>{registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''}</strong> ya cargados para esta obra/equipo — aparecen en la tabla de abajo.
+                            {' '}Último H. Fin: <strong>{registrosExistentes[0]?.horometroFin}</strong> · precargado como H. Inicial ↓
+                        </span>
+                    </div>
                 )}
                 {listoParaEditar && registrosExistentes.length === 0 && !loadingCtx && (
                     <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
@@ -828,6 +766,66 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             </tr>
                         </thead>
                         <tbody>
+                            {/* ── Filas read-only: registros ya guardados ── */}
+                            {(() => {
+                                const ordenados = [...registrosExistentes].sort((a,b) => a.fecha.localeCompare(b.fecha));
+                                return ordenados.map((r, i) => {
+                                    const iso = (r.fecha || '').slice(0, 10);
+                                    const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+                                    const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
+                                    const esUltimo = i === ordenados.length - 1;
+                                    return (
+                                        <tr key={`ex-${r.id}`} className={`border-b border-blue-100/60 transition-colors ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'}`}>
+                                            <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8">{i+1}</td>
+                                            {/* Fecha */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs font-medium text-blue-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
+                                            {/* H. Ini */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-400" style={{minWidth:90}}>{r.horometroInicio ?? '—'}</td>
+                                            {/* H. Fin */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600 font-semibold" style={{minWidth:90}}>{r.horometroFin}</td>
+                                            {/* Barrenos */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:85}}>{r.barrenos || '—'}</td>
+                                            {/* Metros */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-600" style={{minWidth:95}}>{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'}</td>
+                                            {/* Prof — empty */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:85}}>—</td>
+                                            {/* Litros — empty */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:95}}>—</td>
+                                            {/* P.U. — empty */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:90}}>—</td>
+                                            {/* Renta — empty */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:95}}>—</td>
+                                            {/* Op */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:55}}>—</td>
+                                            {/* Pn */}
+                                            <td className="border-r border-blue-100 px-2.5 h-9 text-xs text-gray-300" style={{minWidth:55}}>—</td>
+                                            {/* Hrs */}
+                                            <td className="border-r border-blue-100 text-center px-1">
+                                                {hrs !== null
+                                                    ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
+                                                    : <span className="text-gray-200 text-xs">—</span>}
+                                            </td>
+                                            {/* Estado */}
+                                            <td className="text-center px-2">
+                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium">
+                                                    <CheckCircle2 size={11}/> Guardado
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
+
+                            {/* ── Separador visual entre guardados y nuevos ── */}
+                            {registrosExistentes.length > 0 && (
+                                <tr className="border-b-2 border-blue-200">
+                                    <td colSpan={COLS.length + 3} className="px-3 py-1 bg-blue-100/40 text-xs text-blue-500 font-semibold tracking-wide">
+                                        ↓ Nuevos registros
+                                    </td>
+                                </tr>
+                            )}
+
+                            {/* ── Filas editables: nuevas entradas ── */}
                             {rows.map((row, ri) => {
                                 const hrs = row.horometroFin && row.horometroInicio
                                     ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
@@ -840,10 +838,11 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                                  : isDupe                   ? 'bg-amber-50'
                                                  : isEmpty                  ? 'bg-white'
                                                  : 'bg-white hover:bg-gray-50/50';
+                                const globalIdx  = registrosExistentes.length + ri + 1;
                                 if (!inputRefs.current[ri]) inputRefs.current[ri] = [];
                                 return (
                                     <tr key={ri} className={`border-b border-gray-100 transition-colors ${rowBg}`}>
-                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{ri+1}</td>
+                                        <td className="text-xs text-gray-300 text-center border-r border-gray-100 select-none p-1 w-8">{globalIdx}</td>
 
                                         {COLS.map((col, ci) => {
                                             const isActive     = active?.r === ri && active?.c === ci;
@@ -936,6 +935,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                         + Agregar 1 fila
                     </button>
                     <div className="flex items-center gap-3 text-xs text-gray-400">
+                        {registrosExistentes.length > 0 && (
+                            <span className="text-blue-500">{registrosExistentes.length} guardados anteriores</span>
+                        )}
                         <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>
                         {savedCount  > 0 && <span className="text-green-600 font-medium">✓ {savedCount} guardados</span>}
                         {errorCount  > 0 && <span className="text-red-500 font-medium">✗ {errorCount} con error</span>}
@@ -952,7 +954,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg shadow-sm transition-colors">
                     {saving
                         ? <><Loader2 size={15} className="animate-spin"/> Guardando…</>
-                        : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''}</>}
+                        : <><CheckCircle2 size={15}/> Guardar {filledCount} registro{filledCount!==1?'s':''} nuevo{filledCount!==1?'s':''}</>}
                 </button>
             </div>
         </div>
