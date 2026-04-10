@@ -316,10 +316,82 @@ type ObraConEquipos = ObraSimple & {
 
 type RegistroExistente = {
     id: string; fecha: string;
+    horometroInicio: number | null;
     horometroFin: number;
     metrosLineales: number;
     barrenos: number;
 };
+
+
+// ── Panel de registros existentes (colapsable) ────────────────────────────────
+function RegistrosExistentesPanel({ registros }: { registros: RegistroExistente[] }) {
+    const [expanded, setExpanded] = useState(false);
+    const ultimo = registros[0];
+    const ultimaFecha = (() => {
+        const iso = (ultimo.fecha || '').slice(0, 10);
+        return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+    })();
+
+    // Ordenar por fecha ascendente para mostrar en tabla
+    const ordenados = [...registros].sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+    return (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl overflow-hidden text-xs">
+            {/* Header siempre visible */}
+            <button type="button" onClick={() => setExpanded(e => !e)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-100/50 transition-colors text-left">
+                <span className="font-semibold text-blue-700 flex items-center gap-1.5">
+                    <CheckCircle2 size={12}/>
+                    {registros.length} registro{registros.length !== 1 ? 's' : ''} ya cargados para esta obra/equipo
+                </span>
+                <span className="flex items-center gap-2 text-blue-500">
+                    <span className="text-blue-400 font-normal">
+                        Último: <strong className="text-blue-600">{ultimaFecha}</strong> · H. Fin: <strong className="text-blue-600">{ultimo.horometroFin}</strong>
+                        {' · '}<span className="italic">H. Inicial precargado ↓</span>
+                    </span>
+                    {expanded ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                </span>
+            </button>
+
+            {/* Tabla colapsable */}
+            {expanded && (
+                <div className="border-t border-blue-100 overflow-x-auto max-h-52 overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="sticky top-0 bg-blue-50 z-10">
+                            <tr className="border-b border-blue-100">
+                                {['#', 'Fecha', 'H. Ini', 'H. Fin', 'Hrs', 'Barrenos', 'Metros Lin.'].map(h => (
+                                    <th key={h} className="px-3 py-1.5 text-xs font-semibold text-blue-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-blue-50">
+                            {ordenados.map((r, i) => {
+                                const iso = (r.fecha || '').slice(0, 10);
+                                const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+                                const esUltimo = r.id === ultimo.id;
+                                return (
+                                    <tr key={r.id} className={`${esUltimo ? 'bg-blue-100/60 font-semibold' : 'bg-white/60 hover:bg-blue-50/50'} transition-colors`}>
+                                        <td className="px-3 py-1.5 text-blue-300">{i + 1}</td>
+                                        <td className="px-3 py-1.5 text-blue-700 whitespace-nowrap">{fechaStr}</td>
+                                        <td className="px-3 py-1.5 text-gray-500">{r.horometroInicio ?? '—'}</td>
+                                        <td className="px-3 py-1.5 text-gray-700">{r.horometroFin}</td>
+                                        <td className="px-3 py-1.5 text-gray-600">
+                                            {r.horometroInicio != null
+                                                ? `${r.horometroFin - r.horometroInicio}h`
+                                                : '—'}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-gray-600">{r.barrenos || '—'}</td>
+                                        <td className="px-3 py-1.5 text-gray-600">{r.metrosLineales ? Number(r.metrosLineales).toFixed(1) : '—'}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
     const INITIAL_ROWS = 1;
@@ -376,7 +448,15 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             const eq = equipos.find(e => e.id === newEquipoId);
             const existentes: RegistroExistente[] = todos
                 .filter((r: any) => r.obra?.id === obraId && r.equipo?.nombre === eq?.nombre)
-                .sort((a: any, b: any) => b.horometroFin - a.horometroFin);
+                .sort((a: any, b: any) => b.horometroFin - a.horometroFin)
+                .map((r: any) => ({
+                    id: r.id,
+                    fecha: r.fecha,
+                    horometroInicio: r.horometroInicio ?? null,
+                    horometroFin: r.horometroFin,
+                    metrosLineales: r.metrosLineales,
+                    barrenos: r.barrenos,
+                }));
 
             setRegistrosExistentes(existentes);
 
@@ -643,19 +723,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     </div>
                 </div>
 
-                {/* Banner: último registro cargado */}
+                {/* Banner: registros ya cargados con tabla colapsable */}
                 {listoParaEditar && registrosExistentes.length > 0 && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs space-y-1">
-                        <p className="font-semibold text-blue-700 flex items-center gap-1.5">
-                            <CheckCircle2 size={12}/> {registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''} ya cargados para esta obra/equipo
-                        </p>
-                        <p className="text-blue-600">
-                            Último: <strong>{(() => { const f = registrosExistentes[0].fecha; const iso = (f || '').slice(0,10); return iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', {weekday:'short', day:'2-digit', month:'short'}) : '—'; })()}</strong>
-                            {' · '}H. Fin: <strong>{registrosExistentes[0].horometroFin}</strong>
-                            {' · '}
-                            <span className="text-blue-400">H. Inicial de la planilla precargado ↓</span>
-                        </p>
-                    </div>
+                    <RegistrosExistentesPanel registros={registrosExistentes} />
                 )}
                 {listoParaEditar && registrosExistentes.length === 0 && !loadingCtx && (
                     <div className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-xs text-gray-500">
