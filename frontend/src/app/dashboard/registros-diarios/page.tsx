@@ -682,6 +682,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
     const savedCount   = rows.filter(r => r._status === 'saved').length;
     const errorCount   = rows.filter(r => r._status === 'error').length;
+    const filledCount  = rows.filter(r => r.fecha || r.horometroFin || r.horometroInicio).length;
     const listoParaEditar = !!obraId && !!equipoId;
 
     // ── Calcular avance acumulado incluyendo filas recién guardadas ──
