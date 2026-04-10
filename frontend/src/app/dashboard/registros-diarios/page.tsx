@@ -38,6 +38,21 @@ type SortDir = 'asc' | 'desc';
 
 const PAGE_SIZE = 20;
 
+// ── Tipo para edición inline de fila existente ────────────────────────────────
+type EditingRow = {
+    id: string;
+    barrenos: string;
+    metrosLineales: string;
+    profundidadPromedio: string;
+    litrosDiesel: string;
+    precioDiesel: string;
+    rentaEquipoDiaria: string;
+    operadores: string;
+    peones: string;
+    horometroInicio: string;
+    horometroFin: string;
+};
+
 // ── Modal confirmación eliminar ────────────────────────────────────────────────
 function DeleteModal({ registro, onConfirm, onCancel }: {
     registro: Registro; onConfirm: () => void; onCancel: () => void;
@@ -343,6 +358,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
     const [saving,   setSaving]   = useState(false);
     const [hIniLocked,        setHIniLocked]        = useState(true);
     const [rowToConfirmClear, setRowToConfirmClear] = useState<number|null>(null);
+    const [editingRow,        setEditingRow]         = useState<EditingRow | null>(null);
+    const [savingInline,      setSavingInline]       = useState(false);
+    const [inlineError,       setInlineError]        = useState('');
 
     const gridRef    = useRef<HTMLDivElement>(null);
     const inputRefs  = useRef<(HTMLInputElement|null)[][]>([]);
@@ -607,7 +625,61 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         setSaving(false);
     };
 
-    const filledCount  = rows.filter(r => r.fecha || r.horometroFin).length;
+    // ── Guardar edición inline de fila existente ──
+    const saveInlineEdit = async () => {
+        if (!editingRow) return;
+        setSavingInline(true);
+        setInlineError('');
+        try {
+            await fetchApi(`/registros-diarios/${editingRow.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    barrenos:            editingRow.barrenos            ? Number(editingRow.barrenos)            : 0,
+                    metrosLineales:      editingRow.metrosLineales       ? Number(editingRow.metrosLineales)      : 0,
+                    profundidadPromedio: editingRow.profundidadPromedio  ? Number(editingRow.profundidadPromedio) : null,
+                    litrosDiesel:        editingRow.litrosDiesel         ? Number(editingRow.litrosDiesel)        : 0,
+                    precioDiesel:        editingRow.precioDiesel         ? Number(editingRow.precioDiesel)        : 0,
+                    rentaEquipoDiaria:   editingRow.rentaEquipoDiaria    ? Number(editingRow.rentaEquipoDiaria)   : null,
+                    operadores:          editingRow.operadores           ? Number(editingRow.operadores)          : 1,
+                    peones:              editingRow.peones               ? Number(editingRow.peones)              : 0,
+                    horometroInicio:     Number(editingRow.horometroInicio),
+                    horometroFin:        Number(editingRow.horometroFin),
+                }),
+            });
+            // Update local state
+            setRegistrosExistentes(prev => prev.map(r => r.id === editingRow.id ? {
+                ...r,
+                barrenos:      Number(editingRow.barrenos)       || r.barrenos,
+                metrosLineales: Number(editingRow.metrosLineales) || r.metrosLineales,
+                horometroInicio: Number(editingRow.horometroInicio),
+                horometroFin:    Number(editingRow.horometroFin),
+            } : r));
+            setEditingRow(null);
+        } catch (e: any) {
+            setInlineError(e.message || 'Error al guardar');
+        } finally {
+            setSavingInline(false);
+        }
+    };
+
+    const startEditingRow = (r: RegistroExistente) => {
+        setEditingRow({
+            id: r.id,
+            barrenos:            String(r.barrenos        ?? ''),
+            metrosLineales:      String(r.metrosLineales  ?? ''),
+            profundidadPromedio: '',
+            litrosDiesel:        '',
+            precioDiesel:        '21.95',
+            rentaEquipoDiaria:   '',
+            operadores:          '1',
+            peones:              '0',
+            horometroInicio:     String(r.horometroInicio ?? ''),
+            horometroFin:        String(r.horometroFin    ?? ''),
+        });
+        setInlineError('');
+    };
+
+
     const savedCount   = rows.filter(r => r._status === 'saved').length;
     const errorCount   = rows.filter(r => r._status === 'error').length;
     const listoParaEditar = !!obraId && !!equipoId;
@@ -695,6 +767,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
                 <p className="text-xs text-gray-400">
                     💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada. Las celdas en <span className="text-blue-500 font-medium italic">azul itálica</span> son sugerencias del día anterior — presiona <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para confirmar o escribe para cambiar.
+                    {' '}<span className="text-indigo-500 font-medium">✏️ Doble clic en una fila guardada para corregir sus valores.</span>
                 </p>
             </div>
 
@@ -766,16 +839,86 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             </tr>
                         </thead>
                         <tbody>
-                            {/* ── Filas read-only: registros ya guardados ── */}
+                            {/* ── Filas read-only / editables: registros ya guardados ── */}
                             {(() => {
                                 const ordenados = [...registrosExistentes].sort((a,b) => a.fecha.localeCompare(b.fecha));
                                 return ordenados.map((r, i) => {
                                     const iso = (r.fecha || '').slice(0, 10);
                                     const fechaStr = iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' }) : '—';
+                                    const esUltimo  = i === ordenados.length - 1;
+                                    const isEditing = editingRow?.id === r.id;
+
+                                    if (isEditing) {
+                                        const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
+                                            ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio))
+                                            : null;
+                                        const editInp = (key: keyof EditingRow, placeholder = '') => (
+                                            <input
+                                                type="text" inputMode="decimal"
+                                                value={editingRow[key] as string}
+                                                onChange={e => setEditingRow(prev => prev ? {...prev, [key]: e.target.value} : prev)}
+                                                placeholder={placeholder}
+                                                className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                            />
+                                        );
+                                        return (
+                                            <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
+                                                <td className="text-xs text-amber-400 text-center border-r border-amber-100 select-none p-1 w-8">{i+1}</td>
+                                                {/* Fecha — no editable */}
+                                                <td className="border-r border-amber-100 px-2.5 h-9 text-xs font-medium text-amber-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
+                                                {/* H. Ini */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('horometroInicio', '—')}</td>
+                                                {/* H. Fin */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('horometroFin', '—')}</td>
+                                                {/* Barrenos */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:85}}>{editInp('barrenos', '—')}</td>
+                                                {/* Metros */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('metrosLineales', '—')}</td>
+                                                {/* Prof */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:85}}>{editInp('profundidadPromedio', '—')}</td>
+                                                {/* Litros */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('litrosDiesel', '—')}</td>
+                                                {/* P.U. */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:90}}>{editInp('precioDiesel', '21.95')}</td>
+                                                {/* Renta */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:95}}>{editInp('rentaEquipoDiaria', '—')}</td>
+                                                {/* Op */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:55}}>{editInp('operadores', '1')}</td>
+                                                {/* Pn */}
+                                                <td className="border-r border-amber-100 p-1" style={{minWidth:55}}>{editInp('peones', '0')}</td>
+                                                {/* Hrs */}
+                                                <td className="border-r border-amber-100 text-center px-1">
+                                                    {hrsEdit !== null
+                                                        ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
+                                                        : <span className="text-gray-200 text-xs">—</span>}
+                                                </td>
+                                                {/* Acciones */}
+                                                <td className="text-center px-2 min-w-[110px]">
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        {inlineError && <span className="text-xs text-red-500 leading-tight">{inlineError}</span>}
+                                                        <div className="flex gap-1">
+                                                            <button onClick={saveInlineEdit} disabled={savingInline}
+                                                                className="px-2 py-1 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xs font-semibold rounded transition-colors flex items-center gap-1">
+                                                                {savingInline ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
+                                                                {savingInline ? '…' : 'OK'}
+                                                            </button>
+                                                            <button onClick={() => { setEditingRow(null); setInlineError(''); }}
+                                                                className="px-2 py-1 border border-gray-200 hover:bg-gray-100 text-gray-600 text-xs rounded transition-colors">
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    }
+
                                     const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
-                                    const esUltimo = i === ordenados.length - 1;
                                     return (
-                                        <tr key={`ex-${r.id}`} className={`border-b border-blue-100/60 transition-colors ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'}`}>
+                                        <tr key={`ex-${r.id}`}
+                                            className={`border-b border-blue-100/60 transition-colors group cursor-pointer ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}
+                                            title="Doble clic para editar esta fila"
+                                            onDoubleClick={() => startEditingRow(r)}>
                                             <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8">{i+1}</td>
                                             {/* Fecha */}
                                             <td className="border-r border-blue-100 px-2.5 h-9 text-xs font-medium text-blue-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
@@ -807,7 +950,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                             </td>
                                             {/* Estado */}
                                             <td className="text-center px-2">
-                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium">
+                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Pencil size={10}/> Editar
+                                                </span>
+                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium group-hover:hidden">
                                                     <CheckCircle2 size={11}/> Guardado
                                                 </span>
                                             </td>
