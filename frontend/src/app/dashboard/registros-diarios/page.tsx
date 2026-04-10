@@ -322,7 +322,7 @@ type RegistroExistente = {
 };
 
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
-    const INITIAL_ROWS = 8;
+    const INITIAL_ROWS = 1;
 
     // ── Selección obra / equipo ──
     const [obraId,   setObraId]   = useState('');
@@ -524,7 +524,25 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         });
     };
 
-    const addRows   = (n=5) => setRows(prev => [...prev, ...Array.from({length:n}, emptyRow)]);
+    const addRows   = (n=1) => setRows(prev => {
+        // Find the last row that has at least fecha + H.Fin filled (to generate suggestions)
+        const lastFilled = [...prev].reverse().find(r => r.fecha && r.horometroFin);
+        const newRows = Array.from({length: n}, (_, i) => {
+            const base = emptyRow();
+            if (lastFilled) {
+                // Build a chain: each new row suggests from the previous one
+                const chainBase = i === 0 ? lastFilled : { ...emptyRow(), ...buildSuggestedRow(lastFilled) };
+                const sug = buildSuggestedRow(i === 0 ? lastFilled : chainBase);
+                return {
+                    ...base,
+                    ...sug,
+                    _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any,
+                };
+            }
+            return base;
+        });
+        return [...prev, ...newRows];
+    });
     const clearRow  = (ri: number) => setRows(prev => prev.map((r,i) => i===ri ? emptyRow() : r));
 
     // ── Guardar todas las filas válidas ──
@@ -843,9 +861,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
-                    <button onClick={() => addRows(5)}
+                    <button onClick={() => addRows(1)}
                         className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline">
-                        + Agregar 5 filas
+                        + Agregar 1 fila
                     </button>
                     <div className="flex items-center gap-3 text-xs text-gray-400">
                         <span>{filledCount} fila{filledCount !== 1 ? 's' : ''} con datos</span>
