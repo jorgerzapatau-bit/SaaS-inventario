@@ -52,6 +52,175 @@ type EditingRow = {
     horometroFin: string;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos para plantillas
+// ─────────────────────────────────────────────────────────────────────────────
+type Plantilla = {
+    id: string;
+    numero: number;
+    metrosContratados: number;
+    barrenos: number;
+    fechaInicio: string | null;
+    fechaFin: string | null;
+    notas: string | null;
+};
+
+type ObraConEquipos = ObraSimple & {
+    obraEquipos?: { equipoId: string }[];
+    plantillas?: Plantilla[];
+};
+
+type RegistroExistente = {
+    id: string; fecha: string;
+    horometroInicio: number | null;
+    horometroFin: number;
+    metrosLineales: number;
+    barrenos: number;
+    profundidadPromedio: number | null;
+    litrosDiesel: number | null;
+    precioDiesel: number | null;
+    rentaEquipoDiaria: number | null;
+    operadores: number | null;
+    peones: number | null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Determina a qué plantilla pertenece un registro según su fecha */
+function plantillaDeRegistro(fecha: string, plantillas: Plantilla[]): Plantilla | null {
+    const iso = fecha.slice(0, 10);
+    for (const p of plantillas) {
+        const desde = p.fechaInicio ? p.fechaInicio.slice(0, 10) : null;
+        const hasta = p.fechaFin   ? p.fechaFin.slice(0, 10)   : null;
+        if (desde && iso >= desde && (!hasta || iso <= hasta)) return p;
+    }
+    return null;
+}
+
+/** Calcula metros/barrenos acumulados por plantilla a partir de los registros */
+function calcularAvancePorPlantilla(
+    registros: RegistroExistente[],
+    plantillas: Plantilla[],
+): Map<number, { metros: number; barrenos: number }> {
+    const map = new Map<number, { metros: number; barrenos: number }>();
+    for (const p of plantillas) map.set(p.numero, { metros: 0, barrenos: 0 });
+    for (const r of registros) {
+        const p = plantillaDeRegistro(r.fecha, plantillas);
+        if (p) {
+            const cur = map.get(p.numero)!;
+            cur.metros   += r.metrosLineales;
+            cur.barrenos += r.barrenos;
+        }
+    }
+    return map;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tarjetas de plantilla (reemplazo del banner verde genérico)
+// ─────────────────────────────────────────────────────────────────────────────
+function PlantillasPanel({
+    plantillas,
+    avance,
+}: {
+    plantillas: Plantilla[];
+    avance: Map<number, { metros: number; barrenos: number }>;
+}) {
+    if (!plantillas.length) return null;
+
+    const fmtFecha = (iso: string | null) => {
+        if (!iso) return '—';
+        const [yr, mo, dy] = iso.slice(0, 10).split('-').map(Number);
+        return new Date(yr, mo - 1, dy).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    return (
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(plantillas.length, 3)}, minmax(0, 1fr))` }}>
+            {plantillas.map(p => {
+                const av = avance.get(p.numero) ?? { metros: 0, barrenos: 0 };
+                const pctMetros   = p.metrosContratados > 0 ? Math.min(100, (av.metros   / p.metrosContratados) * 100) : 0;
+                const pctBarrenos = p.barrenos          > 0 ? Math.min(100, (av.barrenos / p.barrenos)          * 100) : 0;
+                const completa    = pctMetros >= 100 && pctBarrenos >= 100;
+                const faltanM     = Math.max(0, p.metrosContratados - av.metros);
+                const faltanB     = Math.max(0, p.barrenos          - av.barrenos);
+
+                return (
+                    <div
+                        key={p.id}
+                        className={`rounded-xl border p-4 space-y-3 transition-all ${
+                            completa
+                                ? 'bg-green-50 border-green-300'
+                                : 'bg-indigo-50/60 border-indigo-200'
+                        }`}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${completa ? 'bg-green-200 text-green-800' : 'bg-indigo-200 text-indigo-800'}`}>
+                                    P{p.numero}
+                                </div>
+                                <span className={`text-sm font-semibold ${completa ? 'text-green-800' : 'text-indigo-800'}`}>
+                                    Plantilla {p.numero}
+                                </span>
+                            </div>
+                            {completa ? (
+                                <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-200 text-green-800">
+                                    <CheckCircle2 size={11}/> Completa
+                                </span>
+                            ) : (
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-700">
+                                    En progreso
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Fechas */}
+                        <p className="text-xs text-gray-500">
+                            {fmtFecha(p.fechaInicio)} → {fmtFecha(p.fechaFin)}
+                        </p>
+
+                        {/* Barra metros */}
+                        <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                                <span className="text-gray-500">Metros</span>
+                                <span className={`font-semibold ${completa ? 'text-green-700' : 'text-indigo-700'}`}>
+                                    {av.metros.toFixed(1)} / {p.metrosContratados} m
+                                </span>
+                            </div>
+                            <div className="h-2 bg-white/70 rounded-full overflow-hidden border border-white">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-500 ${completa ? 'bg-green-500' : 'bg-indigo-500'}`}
+                                    style={{ width: `${pctMetros}%` }}
+                                />
+                            </div>
+                            {!completa && faltanM > 0 && (
+                                <p className="text-xs text-amber-600 font-medium">
+                                    Faltan {faltanM.toFixed(1)} m · {pctMetros.toFixed(1)}% completado
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Barrenos */}
+                        <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Barrenos</span>
+                            <span className={`font-semibold ${pctBarrenos >= 100 ? 'text-green-700' : 'text-indigo-600'}`}>
+                                {av.barrenos} / {p.barrenos}
+                                {!completa && faltanB > 0 && (
+                                    <span className="ml-1 text-amber-600 font-normal">(faltan {faltanB})</span>
+                                )}
+                            </span>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal de eliminación
+// ─────────────────────────────────────────────────────────────────────────────
 function DeleteModal({ registro, onConfirm, onCancel }: {
     registro: Registro; onConfirm: () => void; onCancel: () => void;
 }) {
@@ -102,6 +271,9 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fila de la lista general
+// ─────────────────────────────────────────────────────────────────────────────
 function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     r: Registro;
     onDelete: (r: Registro) => void;
@@ -222,6 +394,9 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Encabezado de columna ordenable
+// ─────────────────────────────────────────────────────────────────────────────
 function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     label: string; sortKey: SortKey; current: SortKey; dir: SortDir;
     onSort: (k: SortKey) => void; className?: string;
@@ -239,6 +414,9 @@ function SortTh({ label, sortKey, current, dir, onSort, className = '' }: {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Grid de carga masiva (Planilla)
+// ─────────────────────────────────────────────────────────────────────────────
 type GridRow = {
     fecha: string;
     horometroInicio: string;
@@ -310,33 +488,75 @@ function validateGridRow(r: GridRow) {
     return '';
 }
 
-type ObraConEquipos = ObraSimple & {
-    obraEquipos?: { equipoId: string }[];
-    plantillas?:  { metrosContratados: number; barrenos: number }[];
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Separador de plantilla en la tabla de la planilla
+// ─────────────────────────────────────────────────────────────────────────────
+function PlantillaSeparator({ plantilla, avance, colSpan }: {
+    plantilla: Plantilla;
+    avance: { metros: number; barrenos: number };
+    colSpan: number;
+}) {
+    const pctM = plantilla.metrosContratados > 0
+        ? Math.min(100, (avance.metros / plantilla.metrosContratados) * 100) : 0;
+    const completa = pctM >= 100 && avance.barrenos >= plantilla.barrenos;
 
-type RegistroExistente = {
-    id: string; fecha: string;
-    horometroInicio: number | null;
-    horometroFin: number;
-    metrosLineales: number;
-    barrenos: number;
-    profundidadPromedio: number | null;
-    litrosDiesel: number | null;
-    precioDiesel: number | null;
-    rentaEquipoDiaria: number | null;
-    operadores: number | null;
-    peones: number | null;
-};
+    const fmtF = (iso: string | null) => {
+        if (!iso) return '?';
+        const [yr, mo, dy] = iso.slice(0, 10).split('-').map(Number);
+        return new Date(yr, mo - 1, dy).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
 
+    return (
+        <tr>
+            <td colSpan={colSpan} className="px-3 py-1.5">
+                <div className={`flex items-center gap-3 rounded-lg px-3 py-2 text-xs ${completa ? 'bg-green-100 border border-green-300' : 'bg-indigo-100 border border-indigo-200'}`}>
+                    <div className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center font-bold text-xs ${completa ? 'bg-green-300 text-green-900' : 'bg-indigo-300 text-indigo-900'}`}>
+                        P{plantilla.numero}
+                    </div>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className={`font-semibold ${completa ? 'text-green-800' : 'text-indigo-800'}`}>
+                            Plantilla {plantilla.numero}
+                        </span>
+                        <span className={`${completa ? 'text-green-600' : 'text-indigo-500'}`}>
+                            {fmtF(plantilla.fechaInicio)} → {fmtF(plantilla.fechaFin)}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <div className="w-24 h-1.5 bg-white/70 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full ${completa ? 'bg-green-500' : 'bg-indigo-500'}`}
+                                    style={{ width: `${pctM}%` }}
+                                />
+                            </div>
+                            <span className={`font-semibold ${completa ? 'text-green-700' : 'text-indigo-700'}`}>
+                                {avance.metros.toFixed(1)} / {plantilla.metrosContratados} m
+                            </span>
+                        </div>
+                        <span className={`font-semibold ${avance.barrenos >= plantilla.barrenos ? 'text-green-700' : 'text-indigo-600'}`}>
+                            {avance.barrenos} / {plantilla.barrenos} barrenos
+                        </span>
+                        {completa && (
+                            <span className="flex items-center gap-1 text-green-700 font-semibold">
+                                <CheckCircle2 size={12}/> Completa
+                            </span>
+                        )}
+                    </div>
+                </div>
+            </td>
+        </tr>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlanillaGrid
+// ─────────────────────────────────────────────────────────────────────────────
 function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEquipos[] }) {
     const [obraId,   setObraId]   = useState('');
     const [equipoId, setEquipoId] = useState('');
     const [registrosExistentes, setRegistrosExistentes] = useState<RegistroExistente[]>([]);
     const [loadingCtx,          setLoadingCtx]          = useState(false);
-    const [plantillaAvance,     setPlantillaAvance]      = useState<{metros: number; barrenos: number; metrosTotal: number; barrenosTotal: number} | null>(null);
 
-    // ✅ NUEVA FILA - SOLO SI EL USUARIO PRESIONA AGREGAR
     const [nuevaFila, setNuevaFila]   = useState<GridRow | null>(null);
     const [savingRow, setSavingRow]   = useState(false);
     const [rowError,  setRowError]    = useState('');
@@ -353,22 +573,41 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
         : equipos;
 
+    // Plantillas de la obra seleccionada, ordenadas por número
+    const plantillas: Plantilla[] = useMemo(() =>
+        (obraSeleccionada?.plantillas ?? []).sort((a, b) => a.numero - b.numero),
+        [obraSeleccionada]
+    );
+
     const fechasExistentes = useMemo(
         () => new Set(registrosExistentes.map(r => r.fecha.slice(0, 10))),
         [registrosExistentes]
     );
 
-    // ✅ ORDENAR POR FECHA (MÁS ANTIGUA PRIMERO)
     const registrosOrdenados = useMemo(
         () => [...registrosExistentes].sort((a, b) => a.fecha.localeCompare(b.fecha)),
         [registrosExistentes]
     );
 
+    // Avance acumulado por plantilla
+    const avancePorPlantilla = useMemo(
+        () => calcularAvancePorPlantilla(registrosOrdenados, plantillas),
+        [registrosOrdenados, plantillas]
+    );
+
+    // Totales generales
+    const totalMetros   = useMemo(() => registrosOrdenados.reduce((s, r) => s + r.metrosLineales, 0), [registrosOrdenados]);
+    const totalBarrenos = useMemo(() => registrosOrdenados.reduce((s, r) => s + r.barrenos,       0), [registrosOrdenados]);
+    const totalHrs      = useMemo(() => registrosOrdenados.reduce((s, r) => {
+        const ini = r.horometroInicio ?? 0;
+        return s + Math.max(0, r.horometroFin - ini);
+    }, 0), [registrosOrdenados]);
+    const totalDiesel   = useMemo(() => registrosOrdenados.reduce((s, r) => s + (r.litrosDiesel ?? 0), 0), [registrosOrdenados]);
+
     const handleObraChange = (newObraId: string) => {
         setObraId(newObraId);
         setEquipoId('');
         setRegistrosExistentes([]);
-        setPlantillaAvance(null);
         setNuevaFila(null);
         setRowError('');
     };
@@ -399,22 +638,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 }));
 
             setRegistrosExistentes(existentes);
-
-            const obra = obras.find(o => o.id === obraId);
-            if (obra?.plantillas?.length) {
-                const plt = obra.plantillas[0];
-                const metrosAcum   = existentes.reduce((s, r) => s + r.metrosLineales, 0);
-                const barrenosAcum = existentes.reduce((s, r) => s + r.barrenos, 0);
-                setPlantillaAvance({
-                    metros:        metrosAcum,
-                    barrenos:      barrenosAcum,
-                    metrosTotal:   plt.metrosContratados,
-                    barrenosTotal: plt.barrenos,
-                });
-            }
         } catch { /* silencioso */ }
         finally { setLoadingCtx(false); }
-    }, [obraId, equipos, obras]);
+    }, [obraId, equipos]);
 
     const updateNuevaFila = (key: keyof GridRow, val: string) => {
         setNuevaFila(prev => prev ? {
@@ -427,7 +653,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         setRowError('');
     };
 
-    // ✅ AGREGAR UNA NUEVA FILA
     const addNewRow = () => {
         if (!nuevaFila) {
             const ultimoRegistro = registrosOrdenados[registrosOrdenados.length - 1];
@@ -452,7 +677,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         }
     };
 
-    // ✅ CANCELAR NUEVA FILA
     const cancelNewRow = () => {
         setNuevaFila(null);
         setRowError('');
@@ -471,7 +695,6 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         }
     };
 
-    // ✅ GUARDAR UNA FILA
     const saveRowAndReset = async () => {
         if (!nuevaFila || !equipoId) {
             alert('Selecciona equipo antes de guardar');
@@ -483,11 +706,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
         try {
             const errMsg = validateGridRow(nuevaFila);
-            if (errMsg) {
-                setRowError(errMsg);
-                setSavingRow(false);
-                return;
-            }
+            if (errMsg) { setRowError(errMsg); setSavingRow(false); return; }
 
             if (fechasExistentes.has(nuevaFila.fecha)) {
                 setRowError('⚠ Fecha ya registrada');
@@ -530,18 +749,8 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             };
 
             setRegistrosExistentes(prev => [...prev, nuevoRegistro]);
-
-            if (plantillaAvance) {
-                setPlantillaAvance(prev => prev ? {
-                    ...prev,
-                    metros:   prev.metros   + (nuevaFila.metrosLineales  ? Number(nuevaFila.metrosLineales)  : 0),
-                    barrenos: prev.barrenos + (nuevaFila.barrenos        ? Number(nuevaFila.barrenos)        : 0),
-                } : null);
-            }
-
             setShowSaveSuccess(true);
             setTimeout(() => setShowSaveSuccess(false), 2000);
-
             setNuevaFila(null);
             setRowError('');
         } catch (err: any) {
@@ -581,10 +790,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                 horometroFin:        Number(editingRow.horometroFin),
                 profundidadPromedio: editingRow.profundidadPromedio ? Number(editingRow.profundidadPromedio) : r.profundidadPromedio,
                 litrosDiesel:        editingRow.litrosDiesel        ? Number(editingRow.litrosDiesel)        : r.litrosDiesel,
-                precioDiesel:        editingRow.precioDiesel         ? Number(editingRow.precioDiesel)        : r.precioDiesel,
-                rentaEquipoDiaria:   editingRow.rentaEquipoDiaria    ? Number(editingRow.rentaEquipoDiaria)   : r.rentaEquipoDiaria,
-                operadores:          editingRow.operadores           ? Number(editingRow.operadores)           : r.operadores,
-                peones:              editingRow.peones               ? Number(editingRow.peones)               : r.peones,
+                precioDiesel:        editingRow.precioDiesel        ? Number(editingRow.precioDiesel)        : r.precioDiesel,
+                rentaEquipoDiaria:   editingRow.rentaEquipoDiaria   ? Number(editingRow.rentaEquipoDiaria)   : r.rentaEquipoDiaria,
+                operadores:          editingRow.operadores          ? Number(editingRow.operadores)          : r.operadores,
+                peones:              editingRow.peones              ? Number(editingRow.peones)              : r.peones,
             } : r));
             setShowSaveSuccess(true);
             setTimeout(() => setShowSaveSuccess(false), 2000);
@@ -603,10 +812,10 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
             metrosLineales:      String(r.metrosLineales  ?? ''),
             profundidadPromedio: r.profundidadPromedio != null ? String(r.profundidadPromedio) : '',
             litrosDiesel:        r.litrosDiesel        != null ? String(r.litrosDiesel)        : '',
-            precioDiesel:        r.precioDiesel         != null ? String(r.precioDiesel)        : '21.95',
-            rentaEquipoDiaria:   r.rentaEquipoDiaria    != null ? String(r.rentaEquipoDiaria)   : '',
-            operadores:          r.operadores           != null ? String(r.operadores)           : '1',
-            peones:              r.peones               != null ? String(r.peones)               : '0',
+            precioDiesel:        r.precioDiesel        != null ? String(r.precioDiesel)        : '21.95',
+            rentaEquipoDiaria:   r.rentaEquipoDiaria   != null ? String(r.rentaEquipoDiaria)   : '',
+            operadores:          r.operadores          != null ? String(r.operadores)           : '1',
+            peones:              r.peones              != null ? String(r.peones)               : '0',
             horometroInicio:     String(r.horometroInicio ?? ''),
             horometroFin:        String(r.horometroFin    ?? ''),
         });
@@ -621,10 +830,35 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
         : null;
     const canSave = nuevaFila && !isEmpty && !isDupe && !savingRow;
 
-    const pctAvance = plantillaAvance && plantillaAvance.metrosTotal > 0
-        ? Math.min(100, (plantillaAvance.metros / plantillaAvance.metrosTotal) * 100)
-        : 0;
-    const plantillaCompleta = pctAvance >= 100;
+    // ─── Construcción de filas con separadores de plantilla ───────────────────
+    interface RowGroup {
+        plantilla: Plantilla | null;
+        registros: RegistroExistente[];
+    }
+
+    const grupos: RowGroup[] = useMemo(() => {
+        if (!plantillas.length) return [{ plantilla: null, registros: registrosOrdenados }];
+
+        const map = new Map<number | 'sin', RegistroExistente[]>();
+        for (const p of plantillas) map.set(p.numero, []);
+        map.set('sin', []);
+
+        for (const r of registrosOrdenados) {
+            const p = plantillaDeRegistro(r.fecha, plantillas);
+            const key = p ? p.numero : 'sin';
+            map.get(key)!.push(r);
+        }
+
+        const result: RowGroup[] = [];
+        for (const p of plantillas) {
+            result.push({ plantilla: p, registros: map.get(p.numero)! });
+        }
+        const sinPlantilla = map.get('sin')!;
+        if (sinPlantilla.length) result.push({ plantilla: null, registros: sinPlantilla });
+        return result;
+    }, [registrosOrdenados, plantillas]);
+
+    const colSpanTotal = COLS.length + 3; // # + cols + Hrs + Acción
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
@@ -666,30 +900,16 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
                         <CheckCircle2 size={12} className="shrink-0"/>
                         <span>
-                            <strong>{registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''}</strong> cargados. Último: <strong>{registrosOrdenados[registrosOrdenados.length - 1]?.horometroFin}</strong>
+                            <strong>{registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''}</strong> cargados. Último horómetro: <strong>{registrosOrdenados[registrosOrdenados.length - 1]?.horometroFin}</strong>
                         </span>
                     </div>
                 )}
 
-                {/* PLANTILLA AVANCE */}
-                {plantillaAvance && (
-                    <div className={`border rounded-xl px-4 py-3 text-xs space-y-2 ${plantillaCompleta ? 'bg-green-50 border-green-200' : 'bg-indigo-50 border-indigo-100'}`}>
-                        <div className="flex items-center justify-between">
-                            <p className={`font-semibold ${plantillaCompleta ? 'text-green-700' : 'text-indigo-700'}`}>
-                                {plantillaCompleta ? '🎉 Plantilla completada' : `Plantilla · ${pctAvance.toFixed(1)}%`}
-                            </p>
-                            <span className={`text-xs ${plantillaCompleta ? 'text-green-600' : 'text-indigo-500'}`}>
-                                {plantillaAvance.metros.toFixed(1)} / {plantillaAvance.metrosTotal} m
-                            </span>
-                        </div>
-                        <div className="w-full h-2 bg-white/60 rounded-full overflow-hidden border border-white">
-                            <div className={`h-full rounded-full transition-all duration-500 ${plantillaCompleta ? 'bg-green-500' : 'bg-indigo-500'}`}
-                                style={{width: `${pctAvance}%`}}/>
-                        </div>
-                    </div>
+                {/* ── TARJETAS DE PLANTILLA (nuevo) ─────────────────────────── */}
+                {listoParaEditar && plantillas.length > 0 && (
+                    <PlantillasPanel plantillas={plantillas} avance={avancePorPlantilla} />
                 )}
 
-                {/* NOTIFICACIÓN ÉXITO */}
                 {showSaveSuccess && (
                     <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-700 flex items-center gap-2 animate-in fade-in duration-200">
                         <CheckCircle2 size={14} className="text-green-600"/>
@@ -739,6 +959,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             </div>
                         </div>
                     )}
+
                     <table className="w-full border-collapse text-sm" style={{minWidth: 980}}>
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-200">
@@ -754,83 +975,116 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                             </tr>
                         </thead>
                         <tbody>
-                            {/* ✅ REGISTROS GUARDADOS - ORDENADOS POR FECHA (MÁS ANTIGUA PRIMERO) */}
-                            {registrosOrdenados.map((r, i) => {
-                                const iso = (r.fecha || '').slice(0, 10);
-                                const [yr, mo, dy] = iso.split('-').map(Number);
-                                const fechaStr = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
-                                const isEditing = editingRow?.id === r.id;
+                            {grupos.map((grupo, gi) => {
+                                const avGrupo = grupo.plantilla
+                                    ? (avancePorPlantilla.get(grupo.plantilla.numero) ?? { metros: 0, barrenos: 0 })
+                                    : { metros: 0, barrenos: 0 };
 
-                                if (isEditing) {
-                                    const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
-                                        ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio))
-                                        : null;
-                                    const editInp = (key: keyof EditingRow, placeholder = '') => (
-                                        <input
-                                            type="text" inputMode="decimal"
-                                            value={editingRow[key] as string}
-                                            onChange={e => setEditingRow(prev => prev ? {...prev, [key]: e.target.value} : prev)}
-                                            placeholder={placeholder}
-                                            className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                                        />
-                                    );
-                                    return (
-                                        <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
-                                            <td className="p-2 text-xs text-amber-400 text-center border-r w-8">{i+1}</td>
-                                            <td className="border-r border-amber-100 px-2 h-9 text-xs font-medium text-amber-700 whitespace-nowrap">{fechaStr}</td>
-                                            {COLS.slice(1).map(col => (
-                                                <td key={col.key} className="border-r border-amber-100 p-1" style={{minWidth: col.width}}>
-                                                    {editInp(col.key as keyof EditingRow, '—')}
-                                                </td>
-                                            ))}
-                                            <td className="border-r border-amber-100 text-center px-1">
-                                                {hrsEdit !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
-                                                    : <span className="text-gray-200">—</span>}
-                                            </td>
-                                            <td className="text-center px-2">
-                                                <span className="text-xs text-amber-600 font-semibold">Editando…</span>
-                                            </td>
-                                        </tr>
-                                    );
-                                }
-
-                                const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
                                 return (
-                                    <tr key={`ex-${r.id}`} className="border-b border-blue-100 bg-blue-50/30 hover:bg-blue-100/40">
-                                        <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{i+1}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
-                                        <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
-                                        <td className="border-r border-blue-100 text-center px-1">
-                                            {hrs !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
-                                                : <span className="text-gray-200">—</span>}
-                                        </td>
-                                        <td className="text-center px-2">
-                                            <button onClick={() => startEditingRow(r)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-700 text-xs font-semibold rounded-md">
-                                                <Pencil size={10}/> Editar
-                                            </button>
-                                        </td>
-                                    </tr>
+                                    <React.Fragment key={grupo.plantilla ? `plt-${grupo.plantilla.numero}` : 'sin-plantilla'}>
+                                        {/* Separador de plantilla */}
+                                        {grupo.plantilla && (
+                                            <PlantillaSeparator
+                                                plantilla={grupo.plantilla}
+                                                avance={avGrupo}
+                                                colSpan={colSpanTotal}
+                                            />
+                                        )}
+
+                                        {/* Filas de registros del grupo */}
+                                        {grupo.registros.map((r, i) => {
+                                            const iso = (r.fecha || '').slice(0, 10);
+                                            const [yr, mo, dy] = iso.split('-').map(Number);
+                                            const fechaStr = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
+                                            const isEditing = editingRow?.id === r.id;
+
+                                            // Índice global para mostrar el número de fila
+                                            const globalIdx = grupos.slice(0, gi).reduce((s, g) => s + g.registros.length, 0) + i + 1;
+
+                                            if (isEditing) {
+                                                const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
+                                                    ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio))
+                                                    : null;
+                                                const editInp = (key: keyof EditingRow, placeholder = '') => (
+                                                    <input
+                                                        type="text" inputMode="decimal"
+                                                        value={editingRow[key] as string}
+                                                        onChange={e => setEditingRow(prev => prev ? {...prev, [key]: e.target.value} : prev)}
+                                                        placeholder={placeholder}
+                                                        className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                                    />
+                                                );
+                                                return (
+                                                    <tr key={`ex-${r.id}`} className="border-b border-amber-200 bg-amber-50/60">
+                                                        <td className="p-2 text-xs text-amber-400 text-center border-r w-8">{globalIdx}</td>
+                                                        <td className="border-r border-amber-100 px-2 h-9 text-xs font-medium text-amber-700 whitespace-nowrap">{fechaStr}</td>
+                                                        {COLS.slice(1).map(col => (
+                                                            <td key={col.key} className="border-r border-amber-100 p-1" style={{minWidth: col.width}}>
+                                                                {editInp(col.key as keyof EditingRow, '—')}
+                                                            </td>
+                                                        ))}
+                                                        <td className="border-r border-amber-100 text-center px-1">
+                                                            {hrsEdit !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span>
+                                                                : <span className="text-gray-200">—</span>}
+                                                        </td>
+                                                        <td className="text-center px-2">
+                                                            <span className="text-xs text-amber-600 font-semibold">Editando…</span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+
+                                            const hrsReg = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
+                                            const rowBg = grupo.plantilla
+                                                ? (gi % 2 === 0 ? 'bg-blue-50/20 hover:bg-blue-100/30' : 'bg-indigo-50/20 hover:bg-indigo-100/30')
+                                                : 'bg-gray-50/30 hover:bg-gray-100/40';
+
+                                            return (
+                                                <tr key={`ex-${r.id}`} className={`border-b border-gray-100 ${rowBg}`}>
+                                                    <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{globalIdx}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 text-center px-1">
+                                                        {hrsReg !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrsReg}h</span>
+                                                            : <span className="text-gray-200">—</span>}
+                                                    </td>
+                                                    <td className="text-center px-2">
+                                                        <button onClick={() => startEditingRow(r)}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-700 text-xs font-semibold rounded-md">
+                                                            <Pencil size={10}/> Editar
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+
+                                        {/* Fila vacía si el grupo no tiene registros */}
+                                        {grupo.plantilla && grupo.registros.length === 0 && (
+                                            <tr>
+                                                <td colSpan={colSpanTotal} className="text-center py-3 text-xs text-gray-400 italic border-b border-gray-100">
+                                                    Sin registros para esta plantilla — agrega el primer día
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 );
                             })}
 
-                            {/* ✅ NUEVA FILA - SOLO SI EXISTE */}
+                            {/* NUEVA FILA */}
                             {nuevaFila && (
                                 <tr className={`border-b transition-colors ${
                                     isDupe ? 'bg-amber-50' : isEmpty ? 'bg-gray-50' : 'bg-green-50/40'
                                 }`}>
-                                    <td className="p-2 text-xs font-semibold text-center border-r w-8" colSpan={1}>
-                                        +
-                                    </td>
+                                    <td className="p-2 text-xs font-semibold text-center border-r w-8">+</td>
 
                                     {COLS.map((col, ci) => {
                                         const val = nuevaFila[col.key] as string;
@@ -905,6 +1159,28 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                     </table>
                 </div>
 
+                {/* ── BARRA DE TOTALES (nuevo) ──────────────────────────────── */}
+                {listoParaEditar && registrosExistentes.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2.5 border-t border-gray-100 bg-gray-50/80 text-xs">
+                        <span className="text-gray-400 font-medium">Totales:</span>
+                        <span className="text-gray-600">
+                            <span className="font-semibold text-gray-800">{registrosExistentes.length}</span> registros
+                        </span>
+                        <span className="text-gray-600">
+                            <span className="font-semibold text-gray-800">{totalBarrenos}</span> barrenos
+                        </span>
+                        <span className="text-gray-600">
+                            <span className="font-semibold text-blue-700">{totalMetros.toFixed(1)} m</span>
+                        </span>
+                        <span className="text-gray-600">
+                            <span className="font-semibold text-gray-800">{totalHrs}</span> hrs
+                        </span>
+                        <span className="text-gray-600">
+                            <span className="font-semibold text-gray-800">{totalDiesel.toLocaleString('es-MX')}</span> lt diésel
+                        </span>
+                    </div>
+                )}
+
                 <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50">
                     <span className="text-xs text-gray-500">
                         {registrosExistentes.length} registro{registrosExistentes.length !== 1 ? 's' : ''} guardado{registrosExistentes.length !== 1 ? 's' : ''}
@@ -927,6 +1203,9 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Dropdown "Nuevo Registro"
+// ─────────────────────────────────────────────────────────────────────────────
 function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     onIndividual: () => void;
     onPlanilla: () => void;
@@ -981,6 +1260,9 @@ function NuevoRegistroDropdown({ onIndividual, onPlanilla }: {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Página principal
+// ─────────────────────────────────────────────────────────────────────────────
 function RegistrosDiariosInner() {
     const searchParams  = useSearchParams();
     const router        = useRouter();
@@ -1035,7 +1317,7 @@ function RegistrosDiariosInner() {
     const handleDuplicate = (r: Registro) => {
         const params = new URLSearchParams();
         const eq = equipos.find(e => e.nombre === r.equipo.nombre);
-        if (eq)       params.set('equipoId', eq.id);
+        if (eq)         params.set('equipoId', eq.id);
         if (r.obra?.id) params.set('obraId', r.obra.id);
         const copia = {
             barrenos: r.barrenos, metrosLineales: r.metrosLineales,
@@ -1214,12 +1496,12 @@ function RegistrosDiariosInner() {
                 {!loading && filtrados.length > 0 && (
                     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                         {[
-                            { label: 'Registros',      value: String(filtrados.length),                                              unit: '' },
-                            { label: 'Horas totales',  value: totalHoras.toFixed(1),                                                 unit: 'hrs' },
-                            { label: 'Metros totales', value: totalMetros.toFixed(1),                                                unit: 'm' },
-                            { label: 'Diésel total',   value: totalLitros.toLocaleString('es-MX'),                                   unit: 'lt' },
+                            { label: 'Registros',      value: String(filtrados.length),                                               unit: '' },
+                            { label: 'Horas totales',  value: totalHoras.toFixed(1),                                                  unit: 'hrs' },
+                            { label: 'Metros totales', value: totalMetros.toFixed(1),                                                 unit: 'm' },
+                            { label: 'Diésel total',   value: totalLitros.toLocaleString('es-MX'),                                    unit: 'lt' },
                             { label: 'Costo diésel',   value: `$${totalCosto.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '' },
-                            { label: 'Lt/hr prom.',    value: promLtHr,                                                              unit: '' },
+                            { label: 'Lt/hr prom.',    value: promLtHr,                                                               unit: '' },
                         ].map(k => (
                             <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                                 <p className="text-xs text-gray-400 mb-1">{k.label}</p>
@@ -1315,6 +1597,9 @@ function RegistrosDiariosInner() {
         </>
     );
 }
+
+// Necesario para usar React.Fragment con key en el render de grupos
+import React from 'react';
 
 export default function RegistrosDiariosPage() {
     return (
