@@ -767,7 +767,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
 
                 <p className="text-xs text-gray-400">
                     💡 Pega datos desde Excel con <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Ctrl+V</kbd>. El H. Inicial se autocompleta con el H. Final del día anterior. Las celdas en <span className="text-amber-600 font-medium">amarillo</span> indican fecha ya registrada. Las celdas en <span className="text-blue-500 font-medium italic">azul itálica</span> son sugerencias del día anterior — presiona <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">Tab</kbd> para confirmar o escribe para cambiar.
-                    {' '}<span className="text-indigo-500 font-medium">✏️ Doble clic en una fila guardada para corregir sus valores.</span>
+                    {' '}<span className="text-amber-600 font-medium">✏️ Usa el botón <strong>Editar</strong> en cualquier fila guardada para corregir sus valores.</span>
                 </p>
             </div>
 
@@ -916,9 +916,7 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                     const hrs = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
                                     return (
                                         <tr key={`ex-${r.id}`}
-                                            className={`border-b border-blue-100/60 transition-colors group cursor-pointer ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}
-                                            title="Doble clic para editar esta fila"
-                                            onDoubleClick={() => startEditingRow(r)}>
+                                            className={`border-b border-blue-100/60 transition-colors ${esUltimo ? 'bg-blue-50/70' : 'bg-blue-50/30'} hover:bg-blue-100/40`}>
                                             <td className="text-xs text-blue-300 text-center border-r border-blue-100 select-none p-1 w-8">{i+1}</td>
                                             {/* Fecha */}
                                             <td className="border-r border-blue-100 px-2.5 h-9 text-xs font-medium text-blue-700 whitespace-nowrap" style={{minWidth:130}}>{fechaStr}</td>
@@ -948,14 +946,14 @@ function PlanillaGrid({ equipos, obras }: { equipos: Equipo[]; obras: ObraConEqu
                                                     ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrs}h</span>
                                                     : <span className="text-gray-200 text-xs">—</span>}
                                             </td>
-                                            {/* Estado */}
-                                            <td className="text-center px-2">
-                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {/* Estado — botón Editar siempre visible */}
+                                            <td className="text-center px-2 min-w-[110px]">
+                                                <button
+                                                    onClick={() => startEditingRow(r)}
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 hover:border-amber-400 text-amber-700 hover:text-amber-800 text-xs font-semibold rounded-md transition-colors cursor-pointer"
+                                                    title="Editar este registro">
                                                     <Pencil size={10}/> Editar
-                                                </span>
-                                                <span className="flex items-center justify-center gap-1 text-xs text-blue-500 font-medium group-hover:hidden">
-                                                    <CheckCircle2 size={11}/> Guardado
-                                                </span>
+                                                </button>
                                             </td>
                                         </tr>
                                     );
