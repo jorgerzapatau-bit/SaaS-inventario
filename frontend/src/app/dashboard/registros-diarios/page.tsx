@@ -38,7 +38,7 @@ type Registro = {
     notas: string | null;
 };
 
-type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
+type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodometroInicial?: number };
 type ObraSimple = { id: string; nombre: string };
 
 type Plantilla = {
@@ -572,6 +572,7 @@ function PlantillaSeparator({ plantilla, avance, colSpan }: {
 function CapturaGrid({
     obraId, plantilla, equipoId, equipoNombre,
     plantillas, allPlantillas,
+    equipoHodometro,
     onReset,
 }: {
     obraId: string;
@@ -580,6 +581,7 @@ function CapturaGrid({
     equipoNombre: string;
     plantillas: Plantilla[];
     allPlantillas: Plantilla[];
+    equipoHodometro?: number;
     onReset: () => void;
 }) {
     const [registrosExistentes, setRegistrosExistentes] = useState<RegistroExistente[]>([]);
@@ -591,6 +593,7 @@ function CapturaGrid({
     const [savingInline, setSavingInline] = useState(false);
     const [inlineError,  setInlineError]  = useState('');
     const [showSuccess,  setShowSuccess]  = useState(false);
+    const [horometroLocked, setHorometroLocked] = useState(true);
 
     const inputRefs = useRef<(HTMLInputElement|null)[]>([]);
 
@@ -649,17 +652,23 @@ function CapturaGrid({
 
     const addNewRow = () => {
         if (nuevaFila) return;
+        setHorometroLocked(true);
         const ultimo = registrosOrdenados[registrosOrdenados.length - 1];
-        if (ultimo) {
-            const prev: GridRow = { ...emptyRow(), fecha: ultimo.fecha.slice(0, 10), horometroFin: String(ultimo.horometroFin) };
-            const sug = buildSuggestedRow(prev);
-            setNuevaFila({ ...emptyRow(), ...sug, _suggested: Object.fromEntries(Object.keys(sug).map(k => [k, true])) as any });
-        } else {
-            setNuevaFila(emptyRow());
-        }
+        // El horómetro inicial es el horometroFin del último registro, o el hodometroInicial del equipo
+        const hIni = ultimo
+            ? String(ultimo.horometroFin)
+            : equipoHodometro != null ? String(equipoHodometro) : '';
+        setNuevaFila({
+            ...emptyRow(),
+            horometroInicio: hIni,
+            horometroFin: '',
+            barrenos: '', metrosLineales: '', profundidadPromedio: '',
+            litrosDiesel: '', rentaEquipoDiaria: '',
+            operadores: '1', peones: '1',
+        });
     };
 
-    const cancelNewRow = () => { setNuevaFila(null); setRowError(''); };
+    const cancelNewRow = () => { setNuevaFila(null); setRowError(''); setHorometroLocked(true); };
 
     const updateNuevaFila = (key: keyof GridRow, val: string) => {
         setNuevaFila(prev => prev ? { ...prev, [key]: val, _status: 'idle', _error: '', _suggested: { ...prev._suggested, [key]: false } } : null);
@@ -779,10 +788,16 @@ function CapturaGrid({
     };
 
     const isDupe  = nuevaFila ? (!!nuevaFila.fecha && fechasExistentes.has(nuevaFila.fecha)) : false;
-    const isEmpty = nuevaFila ? (!nuevaFila.fecha && !nuevaFila.horometroFin && !nuevaFila.horometroInicio) : true;
+    const isEmpty = nuevaFila ? (!nuevaFila.fecha && !nuevaFila.horometroFin) : true;
     const hrs     = nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio
         ? Math.max(0, Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) : null;
-    const canSave = nuevaFila && !isEmpty && !isDupe && !savingRow;
+    const hFinValid = nuevaFila
+        ? (nuevaFila.horometroFin && nuevaFila.horometroInicio
+            ? Number(nuevaFila.horometroFin) > Number(nuevaFila.horometroInicio)
+              && (Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) <= 24
+            : true)
+        : true;
+    const canSave = nuevaFila && !isEmpty && !isDupe && !savingRow && hFinValid;
     const colSpanTotal = COLS.length + 3;
 
     return (
@@ -975,7 +990,7 @@ function CapturaGrid({
                                                 <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
                                                 <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
                                                 <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria ?? '—'}</td>
+                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                                                 <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
                                                 <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
                                                 <td className="border-r border-blue-100 text-center px-1">
@@ -997,30 +1012,63 @@ function CapturaGrid({
                                             <td className="p-2 text-xs font-semibold text-center border-r w-8">+</td>
                                             {COLS.map((col, ci) => {
                                                 const val = nuevaFila[col.key] as string;
-                                                const isSuggested = !!nuevaFila._suggested?.[col.key as keyof GridRow];
-                                                const isError = col.key === 'horometroFin' && val && nuevaFila.horometroInicio &&
-                                                    (Number(val) <= Number(nuevaFila.horometroInicio));
+                                                const isHIni = col.key === 'horometroInicio';
+                                                const isHFin = col.key === 'horometroFin';
+                                                const hFinNum = Number(nuevaFila.horometroFin);
+                                                const hIniNum = Number(nuevaFila.horometroInicio);
+                                                const isErrorMenor = isHFin && val && nuevaFila.horometroInicio && hFinNum <= hIniNum;
+                                                const isError24    = isHFin && val && nuevaFila.horometroInicio && (hFinNum - hIniNum) > 24;
+                                                const isError = isErrorMenor || isError24;
+                                                const isLocked = isHIni && horometroLocked;
+
                                                 return (
-                                                    <td key={col.key} className={`p-1 border-r ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''} ${isSuggested && !isEmpty ? 'bg-green-100/50' : ''} ${isError ? 'bg-red-50' : ''}`} style={{ minWidth: col.width }}>
-                                                        <input
-                                                            ref={el => { inputRefs.current[ci] = el; }}
-                                                            type={col.type === 'date' ? 'date' : 'text'}
-                                                            inputMode={col.type === 'number' ? 'decimal' : undefined}
-                                                            value={val}
-                                                            onChange={e => updateNuevaFila(col.key, e.target.value)}
-                                                            onKeyDown={e => handleKeyDown(e, ci)}
-                                                            placeholder={col.type === 'date' ? 'DD/MM/YYYY' : '—'}
-                                                            className={`w-full h-9 px-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
-                                                                ${isSuggested && !isEmpty ? 'italic text-green-600 bg-green-50 border-green-200' : 'border border-gray-200 text-gray-800'}
-                                                                ${isError ? 'text-red-600 border-red-300' : ''}
-                                                            `}
-                                                        />
+                                                    <td key={col.key} className={`p-1 border-r ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''} ${isError ? 'bg-red-50' : ''} ${isLocked ? 'bg-gray-50' : ''}`} style={{ minWidth: col.width }}>
+                                                        {isHIni ? (
+                                                            <div className="relative flex items-center h-9">
+                                                                <input
+                                                                    ref={el => { inputRefs.current[ci] = el; }}
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    value={val}
+                                                                    readOnly={horometroLocked}
+                                                                    onChange={e => updateNuevaFila(col.key, e.target.value)}
+                                                                    onKeyDown={e => handleKeyDown(e, ci)}
+                                                                    placeholder="—"
+                                                                    className={`w-full h-9 pl-2 pr-7 text-xs focus:outline-none focus:ring-2 transition-colors ${
+                                                                        horometroLocked
+                                                                            ? 'bg-gray-50 border border-gray-200 text-gray-500 cursor-not-allowed'
+                                                                            : 'border border-blue-300 text-gray-800 focus:ring-blue-500'
+                                                                    }`}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    title={horometroLocked ? 'Editar horómetro inicial' : 'Bloquear'}
+                                                                    onClick={() => setHorometroLocked(l => !l)}
+                                                                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                                                                >
+                                                                    {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                ref={el => { inputRefs.current[ci] = el; }}
+                                                                type={col.type === 'date' ? 'date' : 'text'}
+                                                                inputMode={col.type === 'number' ? 'decimal' : undefined}
+                                                                value={val}
+                                                                onChange={e => updateNuevaFila(col.key, e.target.value)}
+                                                                onKeyDown={e => handleKeyDown(e, ci)}
+                                                                placeholder={col.type === 'date' ? 'DD/MM/YYYY' : '—'}
+                                                                className={`w-full h-9 px-2 text-xs border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
+                                                                    ${isError ? 'text-red-600 border-red-300 bg-red-50' : 'border-gray-200 text-gray-800'}
+                                                                `}
+                                                            />
+                                                        )}
                                                     </td>
                                                 );
                                             })}
                                             <td className="p-2 text-xs text-center border-r">
                                                 {hrs !== null
-                                                    ? <span className={`px-2 py-1 rounded font-bold ${hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{hrs}h</span>
+                                                    ? <span className={`px-2 py-1 rounded font-bold ${hrs > 24 ? 'bg-red-100 text-red-700' : hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
                                                     : '—'}
                                             </td>
                                             <td className="text-center px-2 min-w-[120px] space-y-1">
@@ -1040,6 +1088,12 @@ function CapturaGrid({
                                                             ✕
                                                         </button>
                                                     </div>
+                                                )}
+                                                {nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio && Number(nuevaFila.horometroFin) <= Number(nuevaFila.horometroInicio) && (
+                                                    <p className="text-red-500 text-xs leading-tight mt-1">H. Fin debe ser mayor al Inicial</p>
+                                                )}
+                                                {nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio && (Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) > 24 && (
+                                                    <p className="text-red-500 text-xs leading-tight mt-1">⚠ Supera 24 hrs</p>
                                                 )}
                                                 {rowError && <p className="text-red-500 text-xs leading-tight mt-1">{rowError}</p>}
                                             </td>
@@ -1174,6 +1228,7 @@ function RegistrosDiariosInner() {
                     id: pe.equipo.id,
                     nombre: pe.equipo.nombre,
                     numeroEconomico: pe.equipo.numeroEconomico,
+                    hodometroInicial: pe.equipo.hodometroInicial != null ? Number(pe.equipo.hodometroInicial) : undefined,
                 })));
             })
             .catch(() => {
@@ -1468,6 +1523,7 @@ function RegistrosDiariosInner() {
                                 equipoNombre={equipoNombre}
                                 plantillas={plantillas}
                                 allPlantillas={plantillas}
+                                equipoHodometro={equipos.find(e => e.id === equipoId)?.hodometroInicial}
                                 onReset={resetWizard}
                             />
                         )}
