@@ -31,14 +31,20 @@ export async function GET(req: NextRequest, { params }: Params) {
                     fecha: true,
                     barrenos: true,
                     metrosLineales: true,
+                    plantillaId: true,
                     equipo: { select: { nombre: true, numeroEconomico: true } },
+                    plantilla: { select: { numero: true } },
                 },
             });
 
             return Response.json(registros.map(r => ({
-                ...r,
-                metrosLineales: Number(r.metrosLineales),
+                id: r.id,
                 fecha: r.fecha.toISOString().slice(0, 10),
+                barrenos: r.barrenos,
+                metrosLineales: Number(r.metrosLineales),
+                equipo: r.equipo,
+                plantillaId: r.plantillaId ?? null,
+                plantillaNumero: r.plantilla?.numero ?? null,
             })));
         }
 

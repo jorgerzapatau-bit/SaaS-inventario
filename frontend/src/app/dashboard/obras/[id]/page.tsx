@@ -304,7 +304,22 @@ function CorteModal({
         const gruposMap: Map<string, Grupo> = new Map();
         for (const r of registrosDisponibles) {
             const pKey = r.plantillaId ?? '__sin_plantilla__';
-            const pLabel = r.plantillaNumero != null ? `Plantilla ${r.plantillaNumero}` : 'Sin plantilla';
+
+            // Buscar los datos de la plantilla en obra.plantillas para enriquecer el label
+            const plantillaInfo = r.plantillaNumero != null
+                ? obra.plantillas?.find(p => p.numero === r.plantillaNumero)
+                : null;
+
+            let pLabel: string;
+            if (r.plantillaNumero != null) {
+                const inicio = plantillaInfo?.fechaInicio ? fDate(plantillaInfo.fechaInicio) : null;
+                const fin    = plantillaInfo?.fechaFin    ? fDate(plantillaInfo.fechaFin)    : null;
+                const rango  = inicio && fin ? ` · ${inicio} – ${fin}` : inicio ? ` · desde ${inicio}` : '';
+                pLabel = `Plantilla ${r.plantillaNumero}${rango}`;
+            } else {
+                pLabel = 'Sin plantilla asignada';
+            }
+
             if (!gruposMap.has(pKey)) {
                 gruposMap.set(pKey, { plantillaId: r.plantillaId, plantillaLabel: pLabel, equipos: [] });
             }
