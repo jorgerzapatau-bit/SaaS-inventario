@@ -1,7 +1,7 @@
 "use client";
 
 import {
-    useEffect, useState, useMemo, useRef, useCallback, Suspense,
+    useEffect, useState, useMemo, useCallback, Suspense,
 } from 'react';
 import React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -358,6 +358,218 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
                 </div>
             </div>
         </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Panel de captura de nueva fila — todos los campos (mismo formato que edición)
+// ─────────────────────────────────────────────────────────────────────────────
+function NuevaFilaPanel({
+    row,
+    horometroLocked,
+    onToggleLock,
+    onChange,
+    onSave,
+    onCancel,
+    saving,
+    error,
+    isDupe,
+}: {
+    row: GridRow;
+    horometroLocked: boolean;
+    onToggleLock: () => void;
+    onChange: (key: keyof GridRow, val: string) => void;
+    onSave: () => void;
+    onCancel: () => void;
+    saving: boolean;
+    error: string;
+    isDupe: boolean;
+}) {
+    const inp = (
+        key: keyof GridRow,
+        label: string,
+        placeholder = '—',
+        type: 'text' | 'number' | 'date' = 'text',
+    ) => (
+        <div className="space-y-1">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</label>
+            <input
+                type={type === 'number' ? 'text' : type}
+                inputMode={type === 'number' ? 'decimal' : undefined}
+                value={row[key] as string}
+                onChange={e => onChange(key, e.target.value)}
+                placeholder={placeholder}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+                    if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                }}
+                className="w-full h-9 px-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
+            />
+        </div>
+    );
+
+    const textarea = (key: keyof GridRow, label: string) => (
+        <div className="space-y-1 col-span-full">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</label>
+            <textarea
+                value={row[key] as string}
+                onChange={e => onChange(key, e.target.value)}
+                placeholder="Observaciones del día..."
+                rows={2}
+                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white resize-none"
+            />
+        </div>
+    );
+
+    const hrs = row.horometroFin && row.horometroInicio
+        ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
+        : null;
+
+    return (
+        <tr className="bg-green-50/40 border-b-2 border-green-200">
+            <td colSpan={100} className="p-0">
+                <div className="px-4 pt-3 pb-4 space-y-4">
+                    {/* Encabezado */}
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-100 border border-green-200 rounded-lg">
+                                <Plus size={12} className="text-green-600"/>
+                                <span className="text-xs font-bold text-green-700">Nuevo registro</span>
+                            </div>
+                            {hrs !== null && hrs > 0 && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-full">
+                                    {hrs} hrs trabajadas
+                                </span>
+                            )}
+                            {isDupe && (
+                                <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 font-semibold rounded-full flex items-center gap-1">
+                                    <AlertTriangle size={10}/> Fecha duplicada
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {error && (
+                                <span className="text-xs text-red-600 font-medium flex items-center gap-1">
+                                    <AlertTriangle size={12}/> {error}
+                                </span>
+                            )}
+                            <button onClick={onCancel}
+                                className="px-3 py-1.5 border border-gray-200 bg-white text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                                Esc · Cancelar
+                            </button>
+                            <button onClick={onSave} disabled={saving || isDupe}
+                                className="px-4 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                                {saving ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
+                                {saving ? 'Guardando…' : 'Enter · Guardar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 1: Fecha + Horómetro + Producción */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <TableProperties size={10}/> Horómetro y Producción
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3">
+                            {/* Fecha */}
+                            <div className={`space-y-1 ${isDupe ? 'ring-2 ring-amber-400 rounded-lg' : ''}`}>
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">Fecha *</label>
+                                <input
+                                    type="date"
+                                    value={row.fecha}
+                                    onChange={e => onChange('fecha', e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+                                        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                                    }}
+                                    className={`w-full h-9 px-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white ${isDupe ? 'border-amber-400 bg-amber-50' : 'border-gray-200 text-gray-800'}`}
+                                />
+                            </div>
+                            {/* H. Inicial con lock */}
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                                    H. Inicial <Lock size={9} className="text-gray-300"/>
+                                </label>
+                                <div className="relative flex items-center">
+                                    <input
+                                        type="text" inputMode="decimal"
+                                        value={row.horometroInicio}
+                                        readOnly={horometroLocked}
+                                        onChange={e => onChange('horometroInicio', e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+                                            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                                        }}
+                                        placeholder="—"
+                                        className={`w-full h-9 pl-2.5 pr-7 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                                            horometroLocked
+                                                ? 'bg-gray-50 border-gray-100 text-gray-500 cursor-not-allowed'
+                                                : 'border-blue-300 text-gray-800 focus:ring-blue-500/30'
+                                        }`}
+                                    />
+                                    <button
+                                        type="button"
+                                        title={horometroLocked ? 'Editar horómetro inicial' : 'Bloquear'}
+                                        onClick={onToggleLock}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-blue-600 transition-colors">
+                                        {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
+                                    </button>
+                                </div>
+                            </div>
+                            {inp('horometroFin',        'H. Final *',   '—', 'number')}
+                            {inp('barrenos',            'Barrenos',     '—', 'number')}
+                            {inp('metrosLineales',      'Metros Lin.',  '—', 'number')}
+                            {inp('profundidadPromedio', 'Prof. (m)',    '—', 'number')}
+                            {inp('bordo',               'Bordo (m)',    '—', 'number')}
+                            {inp('espaciamiento',       'Espac. (m)',   '—', 'number')}
+                            {/* Vol Roca placeholder */}
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">Vol. Roca (m³)</label>
+                                <div className="w-full h-9 px-2.5 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400 flex items-center bg-gray-50/60 select-none text-xs italic">
+                                    Auto
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 2: Costos / Perforación / Personal */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <Droplets size={10}/> Costos · Perforación · Personal
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                            {inp('litrosDiesel',      'Litros Diésel',  '—', 'number')}
+                            {inp('precioDiesel',      'P.U. Diésel ($)', '21.95', 'number')}
+                            {inp('rentaEquipoDiaria', 'Renta/Día ($)',   '—', 'number')}
+                            {inp('operadores',        'Operadores',      '1', 'number')}
+                            {inp('peones',            'Peones',          '1', 'number')}
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">% Pérdida</label>
+                                <div className="w-full h-9 px-2.5 border border-dashed border-gray-200 rounded-lg text-xs text-gray-400 flex items-center bg-gray-50/60 italic">—</div>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">% Avance</label>
+                                <div className="w-full h-9 px-2.5 border border-dashed border-gray-200 rounded-lg text-xs text-gray-400 flex items-center bg-gray-50/60 italic">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 3: Tanque interno + Notas */}
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <SlidersHorizontal size={10}/> Opcional — Tanque Interno · Notas
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                            {inp('tanqueInicio',       'CM Inicio',     '—', 'number')}
+                            {inp('litrosTanqueInicio', 'Litros Inicio', '—', 'number')}
+                            {inp('tanqueFin',          'CM Fin',        '—', 'number')}
+                            {inp('litrosTanqueFin',    'Litros Fin',    '—', 'number')}
+                            {textarea('notas', 'Notas')}
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
     );
 }
 
@@ -858,8 +1070,6 @@ function CapturaGrid({
     const [showSuccess,  setShowSuccess]  = useState(false);
     const [horometroLocked, setHorometroLocked] = useState(true);
 
-    const inputRefs = useRef<(HTMLInputElement|null)[]>([]);
-
     useEffect(() => {
         let alive = true;
         setLoadingCtx(true);
@@ -935,12 +1145,6 @@ function CapturaGrid({
     const updateNuevaFila = (key: keyof GridRow, val: string | boolean) => {
         setNuevaFila(prev => prev ? { ...prev, [key]: val, _status: 'idle', _error: '', _suggested: { ...prev._suggested, [key]: false } } : null);
         setRowError('');
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent, ci: number) => {
-        if (e.key === 'Enter') { e.preventDefault(); saveRowAndReset(); }
-        else if (e.key === 'Tab') { e.preventDefault(); inputRefs.current[ci + 1]?.focus(); }
-        else if (e.key === 'Escape') cancelNewRow();
     };
 
     const saveRowAndReset = async () => {
@@ -1073,16 +1277,6 @@ function CapturaGrid({
     };
 
     const isDupe  = nuevaFila ? (!!nuevaFila.fecha && fechasExistentes.has(nuevaFila.fecha)) : false;
-    const isEmpty = nuevaFila ? (!nuevaFila.fecha && !nuevaFila.horometroFin) : true;
-    const hrs     = nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio
-        ? Math.max(0, Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) : null;
-    const hFinValid = nuevaFila
-        ? (nuevaFila.horometroFin && nuevaFila.horometroInicio
-            ? Number(nuevaFila.horometroFin) > Number(nuevaFila.horometroInicio)
-              && (Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) <= 24
-            : true)
-        : true;
-    const canSave = nuevaFila && !isEmpty && !isDupe && !savingRow && hFinValid;
     const colSpanTotal = COLS_MAIN.length + 3;
 
     return (
@@ -1261,153 +1455,19 @@ function CapturaGrid({
                                         );
                                     })}
 
-                                    {/* Nueva fila */}
+                                    {/* Nueva fila — panel expandido igual que edición */}
                                     {nuevaFila && (
-                                        <>
-                                            <tr className={`border-b transition-colors ${isDupe ? 'bg-amber-50' : isEmpty ? 'bg-gray-50' : 'bg-green-50/40'}`}>
-                                                <td className="p-2 text-xs font-semibold text-center border-r w-8">+</td>
-                                                {COLS_MAIN.map((col, ci) => {
-                                                    const val = nuevaFila[col.key] as string;
-                                                    const isHIni = col.key === 'horometroInicio';
-                                                    const isHFin = col.key === 'horometroFin';
-                                                    const hFinNum = Number(nuevaFila.horometroFin);
-                                                    const hIniNum = Number(nuevaFila.horometroInicio);
-                                                    const isErrorMenor = isHFin && val && nuevaFila.horometroInicio && hFinNum <= hIniNum;
-                                                    const isError24    = isHFin && val && nuevaFila.horometroInicio && (hFinNum - hIniNum) > 24;
-                                                    const isError = isErrorMenor || isError24;
-                                                    const isLocked = isHIni && horometroLocked;
-
-                                                    return (
-                                                        <td key={col.key} className={`p-1 border-r ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''} ${isError ? 'bg-red-50' : ''} ${isLocked ? 'bg-gray-50' : ''}`} style={{ minWidth: col.width }}>
-                                                            {isHIni ? (
-                                                                <div className="relative flex items-center h-9">
-                                                                    <input
-                                                                        ref={el => { inputRefs.current[ci] = el; }}
-                                                                        type="text" inputMode="decimal"
-                                                                        value={val}
-                                                                        readOnly={horometroLocked}
-                                                                        onChange={e => updateNuevaFila(col.key, e.target.value)}
-                                                                        onKeyDown={e => handleKeyDown(e, ci)}
-                                                                        placeholder="—"
-                                                                        className={`w-full h-9 pl-2 pr-7 text-xs focus:outline-none focus:ring-2 transition-colors ${
-                                                                            horometroLocked
-                                                                                ? 'bg-gray-50 border border-gray-200 text-gray-500 cursor-not-allowed'
-                                                                                : 'border border-blue-300 text-gray-800 focus:ring-blue-500'
-                                                                        }`}
-                                                                    />
-                                                                    <button
-                                                                        type="button"
-                                                                        title={horometroLocked ? 'Editar horómetro inicial' : 'Bloquear'}
-                                                                        onClick={() => setHorometroLocked(l => !l)}
-                                                                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-blue-600 transition-colors"
-                                                                    >
-                                                                        {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <input
-                                                                    ref={el => { inputRefs.current[ci] = el; }}
-                                                                    type={col.type === 'date' ? 'date' : 'text'}
-                                                                    inputMode={col.type === 'number' ? 'decimal' : undefined}
-                                                                    value={val}
-                                                                    onChange={e => updateNuevaFila(col.key, e.target.value)}
-                                                                    onKeyDown={e => handleKeyDown(e, ci)}
-                                                                    placeholder={col.type === 'date' ? 'DD/MM/YYYY' : '—'}
-                                                                    className={`w-full h-9 px-2 text-xs border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
-                                                                        ${isError ? 'text-red-600 border-red-300 bg-red-50' : 'border-gray-200 text-gray-800'}
-                                                                    `}
-                                                                />
-                                                            )}
-                                                        </td>
-                                                    );
-                                                })}
-                                                <td className="p-2 text-xs text-center border-r">
-                                                    {hrs !== null
-                                                        ? <span className={`px-2 py-1 rounded font-bold ${hrs > 24 ? 'bg-red-100 text-red-700' : hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
-                                                        : '—'}
-                                                </td>
-                                                <td className="text-center px-2 min-w-[120px] space-y-1">
-                                                    {isDupe && !isEmpty ? (
-                                                        <span className="text-amber-600 font-medium text-xs block">⚠ Duplicada</span>
-                                                    ) : isEmpty ? (
-                                                        <span className="text-gray-300 text-xs block">—</span>
-                                                    ) : (
-                                                        <div className="flex gap-1 justify-center">
-                                                            <button onClick={saveRowAndReset} disabled={!canSave}
-                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold transition-colors ${canSave ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                                                                {savingRow ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
-                                                                {savingRow ? '…' : 'OK'}
-                                                            </button>
-                                                            <button onClick={cancelNewRow}
-                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-gray-600 transition-colors">
-                                                                ✕
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                    {rowError && <p className="text-red-500 text-xs leading-tight mt-1">{rowError}</p>}
-                                                </td>
-                                            </tr>
-
-                                            {/* Panel "más campos" para la nueva fila */}
-                                            {nuevaFila._expanded && (
-                                                <tr className="bg-green-50/50 border-b border-green-100">
-                                                    <td colSpan={colSpanTotal} className="px-4 pt-2 pb-3">
-                                                        <div className="space-y-3">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-600 flex items-center gap-1">
-                                                                <SlidersHorizontal size={10}/> Campos adicionales — Bordo, Tanque, Notas
-                                                            </p>
-                                                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                                                                {(['bordo','espaciamiento'] as const).map(key => (
-                                                                    <div key={key} className="space-y-1">
-                                                                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                                                            {key === 'bordo' ? 'Bordo (m)' : 'Espac. (m)'}
-                                                                        </label>
-                                                                        <input type="text" inputMode="decimal"
-                                                                            value={nuevaFila[key]}
-                                                                            onChange={e => updateNuevaFila(key, e.target.value)}
-                                                                            placeholder="—"
-                                                                            className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
-                                                                    </div>
-                                                                ))}
-                                                                {(['tanqueInicio','litrosTanqueInicio','tanqueFin','litrosTanqueFin'] as const).map(key => (
-                                                                    <div key={key} className="space-y-1">
-                                                                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                                                            {key === 'tanqueInicio' ? 'CM Ini.' : key === 'litrosTanqueInicio' ? 'Lt Ini.' : key === 'tanqueFin' ? 'CM Fin' : 'Lt Fin'}
-                                                                        </label>
-                                                                        <input type="text" inputMode="decimal"
-                                                                            value={nuevaFila[key]}
-                                                                            onChange={e => updateNuevaFila(key, e.target.value)}
-                                                                            placeholder="—"
-                                                                            className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
-                                                                    </div>
-                                                                ))}
-                                                                <div className="space-y-1 col-span-full sm:col-span-1">
-                                                                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">Notas</label>
-                                                                    <input type="text"
-                                                                        value={nuevaFila.notas}
-                                                                        onChange={e => updateNuevaFila('notas', e.target.value)}
-                                                                        placeholder="Observaciones..."
-                                                                        className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-
-                                            {/* Botón "▸ más campos" */}
-                                            {!nuevaFila._expanded && !isEmpty && (
-                                                <tr className="border-b border-dashed border-green-200">
-                                                    <td colSpan={colSpanTotal} className="text-center py-1">
-                                                        <button
-                                                            onClick={() => updateNuevaFila('_expanded' as any, true)}
-                                                            className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1 mx-auto py-0.5 px-2 rounded hover:bg-green-50 transition-colors">
-                                                            <ChevronDown size={12}/> más campos (bordo, tanque, notas)
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </>
+                                        <NuevaFilaPanel
+                                            row={nuevaFila}
+                                            horometroLocked={horometroLocked}
+                                            onToggleLock={() => setHorometroLocked(l => !l)}
+                                            onChange={(key, val) => updateNuevaFila(key, val)}
+                                            onSave={saveRowAndReset}
+                                            onCancel={cancelNewRow}
+                                            saving={savingRow}
+                                            error={rowError}
+                                            isDupe={isDupe}
+                                        />
                                     )}
                                 </tbody>
                             </table>
