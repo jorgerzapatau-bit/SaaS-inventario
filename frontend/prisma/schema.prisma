@@ -498,7 +498,7 @@ model RegistroDiario {
   plantilla             PlantillaObra?         @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
   usuario               Usuario                @relation(fields: [usuarioId], references: [id])
 
-  @@unique([equipoId, fecha])
+  @@unique([equipoId, fecha, plantillaId])
   @@index([empresaId])
   @@index([equipoId])
   @@index([fecha])

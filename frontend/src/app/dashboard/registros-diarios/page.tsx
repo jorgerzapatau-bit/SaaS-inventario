@@ -443,7 +443,7 @@ function NuevaFilaPanel({
                             )}
                             {isDupe && (
                                 <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 font-semibold rounded-full flex items-center gap-1">
-                                    <AlertTriangle size={10}/> Fecha duplicada
+                                    <AlertTriangle size={10}/> Fecha ya registrada en esta plantilla
                                 </span>
                             )}
                         </div>
@@ -966,20 +966,6 @@ type GridRow = {
     _expanded: boolean;
 };
 
-const COLS_MAIN: { key: keyof Omit<GridRow, '_status'|'_error'|'_suggested'|'_expanded'>; label: string; width: number; type: string }[] = [
-    { key: 'fecha',               label: 'Fecha',        width: 130, type: 'date'   },
-    { key: 'horometroInicio',     label: 'H. Ini',       width: 90,  type: 'number' },
-    { key: 'horometroFin',        label: 'H. Fin',       width: 90,  type: 'number' },
-    { key: 'barrenos',            label: 'Barrenos',     width: 85,  type: 'number' },
-    { key: 'metrosLineales',      label: 'Metros Lin.',  width: 95,  type: 'number' },
-    { key: 'profundidadPromedio', label: 'Prof. (m)',    width: 85,  type: 'number' },
-    { key: 'litrosDiesel',        label: 'Litros Diés.', width: 95,  type: 'number' },
-    { key: 'precioDiesel',        label: 'P.U. Diés.',   width: 90,  type: 'number' },
-    { key: 'rentaEquipoDiaria',   label: 'Renta/Día',    width: 95,  type: 'number' },
-    { key: 'operadores',          label: 'Op.',          width: 55,  type: 'number' },
-    { key: 'peones',              label: 'Pn.',          width: 55,  type: 'number' },
-];
-
 function emptyRow(): GridRow {
     return {
         fecha:'', horometroInicio:'', horometroFin:'', barrenos:'', metrosLineales:'',
@@ -1152,7 +1138,7 @@ function CapturaGrid({
         setRowError('');
         const errMsg = validateGridRow(nuevaFila);
         if (errMsg) { setRowError(errMsg); return; }
-        if (fechasExistentes.has(nuevaFila.fecha)) { setRowError('⚠ Fecha ya registrada'); return; }
+        if (fechasExistentes.has(nuevaFila.fecha)) { setRowError('⚠ Fecha ya registrada en esta plantilla'); return; }
         setSavingRow(true);
         try {
             await fetchApi('/registros-diarios', {
@@ -1207,7 +1193,7 @@ function CapturaGrid({
             setRowError('');
         } catch (err: any) {
             const msg = err.message || 'Error';
-            setRowError(msg.toLowerCase().includes('ya existe') || msg.includes('P2002') ? '⚠ Fecha ya registrada' : msg);
+            setRowError(msg.toLowerCase().includes('ya existe') || msg.includes('P2002') ? '⚠ Este equipo ya tiene un registro en esa fecha' : msg);
         } finally { setSavingRow(false); }
     };
 
@@ -1276,8 +1262,8 @@ function CapturaGrid({
         finally { setSavingInline(false); }
     };
 
-    const isDupe  = nuevaFila ? (!!nuevaFila.fecha && fechasExistentes.has(nuevaFila.fecha)) : false;
-    const colSpanTotal = COLS_MAIN.length + 3;
+    const isDupe       = nuevaFila ? (!!nuevaFila.fecha && fechasExistentes.has(nuevaFila.fecha)) : false;
+    const colSpanTotal = 14; // # + 11 columnas de datos + Hrs + Acción
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
@@ -1377,18 +1363,6 @@ function CapturaGrid({
                     <>
                         <div className="overflow-x-auto">
                             <table className="w-full border-collapse text-sm" style={{ minWidth: 980 }}>
-                                <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-200">
-                                        <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r">#</th>
-                                        {COLS_MAIN.map(col => (
-                                            <th key={col.key} className="p-2 text-xs font-semibold uppercase text-left border-r text-gray-500 whitespace-nowrap" style={{ minWidth: col.width }}>
-                                                {col.label}
-                                            </th>
-                                        ))}
-                                        <th className="p-2 text-xs font-semibold text-center border-r text-green-600 whitespace-nowrap" style={{ minWidth: 64 }}>Hrs</th>
-                                        <th className="p-2 text-xs font-semibold text-center" style={{ minWidth: 120 }}>Acción</th>
-                                    </tr>
-                                </thead>
                                 <tbody>
                                     <PlantillaSeparator plantilla={plantilla} avance={avancePlantilla} colSpan={colSpanTotal}/>
 
