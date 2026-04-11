@@ -44,6 +44,7 @@ export type RegistroFormValues = {
     profundidadPromedio: string;
     porcentajeAvance: string;
     rentaEquipoDiaria: string;
+    plantillaId: string;
 };
 
 type Props = {
@@ -81,6 +82,7 @@ const emptyForm = (hoy: string, equipoIdParam = '', obraIdParam = ''): RegistroF
     profundidadPromedio: '',
     porcentajeAvance: '',
     rentaEquipoDiaria: '',
+    plantillaId: '',
 });
 
 export function RegistroFormInner({ mode, registroId, initialValues, equipoIdParam = '', obraIdParam = '' }: Props) {
@@ -186,11 +188,16 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                 if (obraIdParam) {
                     const ob = obs.find((o: ObraSimple) => o.id === obraIdParam);
                     if (ob) {
+                        const plantillaSugerida = ob.plantillas?.find(p =>
+                            (!p.fechaInicio || p.fechaInicio <= hoy) &&
+                            (!p.fechaFin    || p.fechaFin   >= hoy)
+                        ) ?? ob.plantillas?.[0];
                         setForm(f => ({
                             ...f,
                             obraId: ob.id,
                             bordo: ob.bordo != null ? String(ob.bordo) : f.bordo,
                             espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
+                            plantillaId: plantillaSugerida?.id ?? '',
                         }));
                         // Solo buscar horómetro de la obra/equipo si no viene de copia
                         if (targetId && !tieneHorometroDesCopia) fetchHorometroObraEquipo(obraIdParam, targetId);
@@ -216,12 +223,19 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
         const equiposNuevosIds = ob?.obraEquipos?.map(oe => oe.equipoId) ?? [];
         const equipoSigueValido = !ob?.obraEquipos?.length || equiposNuevosIds.includes(form.equipoId);
         const nuevoEquipoId = equipoSigueValido ? form.equipoId : '';
+        // Auto-sugerir plantilla activa según la fecha actual
+        const fechaRef = form.fecha || hoy;
+        const plantillaSugerida = ob?.plantillas?.find(p =>
+            (!p.fechaInicio || p.fechaInicio <= fechaRef) &&
+            (!p.fechaFin    || p.fechaFin   >= fechaRef)
+        ) ?? ob?.plantillas?.[0];
         setForm(f => ({
             ...f,
             obraId,
             equipoId: nuevoEquipoId,
             bordo: ob?.bordo != null ? String(ob.bordo) : f.bordo,
             espaciamiento: ob?.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
+            plantillaId: plantillaSugerida?.id ?? '',
         }));
         if (!equipoSigueValido) {
             setHorometroFuente(null);
@@ -295,6 +309,7 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
             profundidadPromedio: form.profundidadPromedio ? Number(form.profundidadPromedio) : null,
             porcentajeAvance: form.porcentajeAvance ? Number(form.porcentajeAvance) : null,
             rentaEquipoDiaria: form.rentaEquipoDiaria ? Number(form.rentaEquipoDiaria) : null,
+            plantillaId: form.plantillaId || null,
         };
         try {
             if (mode === 'new') {
@@ -409,6 +424,31 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                             )}
                         </select>
                     </div>
+
+                    {/* Selector de plantilla */}
+                    {obraSeleccionada && (obraSeleccionada.plantillas?.length ?? 0) > 1 && (
+                        <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Plantilla <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={form.plantillaId}
+                                onChange={e => set('plantillaId', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                <option value="">— Selecciona una plantilla —</option>
+                                {obraSeleccionada.plantillas!.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                        Plantilla {p.numero}
+                                        {p.fechaInicio && p.fechaFin ? ` (${p.fechaInicio.slice(0,10)} → ${p.fechaFin.slice(0,10)})` : ''}
+                                        {` — ${p.metrosContratados} m`}
+                                    </option>
+                                ))}
+                            </select>
+                            {!form.plantillaId && (
+                                <p className="text-xs text-amber-600 mt-1">Selecciona a qué plantilla pertenece este registro</p>
+                            )}
+                        </div>
+                    )}
 
                     {/* Banner avance plantilla */}
                     {avancePlantilla && (

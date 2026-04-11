@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const equipoId    = searchParams.get('equipoId')    || undefined;
         const obraId      = searchParams.get('obraId')      || undefined;
+        const plantillaId = searchParams.get('plantillaId') || undefined;
         const sinCorte    = searchParams.get('sinCorte')    === 'true';
         const semanaNum   = searchParams.get('semanaNum')   ? parseInt(searchParams.get('semanaNum')!)   : undefined;
         const anoNum      = searchParams.get('anoNum')      ? parseInt(searchParams.get('anoNum')!)      : undefined;
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
                 empresaId: user.empresaId,
                 ...(equipoId  && { equipoId }),
                 ...(obraId    && { obraId }),
+                ...(plantillaId && { plantillaId }),
                 ...(semanaNum && { semanaNum }),
                 ...(anoNum    && { anoNum }),
                 // sinCorte=true → corteRegistro es null (pendiente de facturar)
@@ -45,6 +47,7 @@ export async function GET(req: NextRequest) {
                 usuario:       { select: { nombre: true } },
                 cliente:       { select: { nombre: true } },
                 obra:          { select: { id: true, nombre: true } },
+                plantilla:     { select: { id: true, numero: true } },
                 // Incluir info del corte para saber si ya está facturado
                 corteRegistro: {
                     include: {
@@ -87,6 +90,7 @@ export async function POST(req: NextRequest) {
             almacenId,
             registrarDieselEnKardex,
             obraId,
+            plantillaId,
             // ── Campos de perforación (Track Drill) ──
             bordo,
             espaciamiento,
@@ -145,7 +149,8 @@ export async function POST(req: NextRequest) {
                     obraNombre:         obraNombre || null,
                     semanaNum,
                     anoNum,
-                    obraId:             obraId || null,
+                    obraId:             obraId     || null,
+                    plantillaId:        plantillaId || null,
                     notas:              notas  || null,
                     usuarioId:          user.id,
                     // ── Campos de perforación ──
@@ -232,6 +237,8 @@ function serializeRegistro(r: any) {
 
     return {
         ...r,
+        plantillaId: r.plantillaId ?? null,
+        plantilla:   r.plantilla   ?? null,
         horometroInicio:     Number(r.horometroInicio),
         horometroFin:        Number(r.horometroFin),
         horasTrabajadas:     horas,

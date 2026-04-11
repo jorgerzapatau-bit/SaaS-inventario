@@ -13,8 +13,9 @@ export async function GET(req: NextRequest, { params }: Params) {
         const registro = await prisma.registroDiario.findFirst({
             where: { id, empresaId: user.empresaId },
             include: {
-                equipo:  { select: { id: true, nombre: true, numeroEconomico: true, hodometroInicial: true } },
-                obra:    { select: { id: true, nombre: true } },
+                equipo:    { select: { id: true, nombre: true, numeroEconomico: true, hodometroInicial: true } },
+                obra:      { select: { id: true, nombre: true } },
+                plantilla: { select: { id: true, numero: true } },
                 usuario: { select: { nombre: true } },
                 cliente: { select: { nombre: true, telefono: true } },
                 movimientosInventario: {
@@ -52,7 +53,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
             tanqueInicio, litrosTanqueInicio,
             tanqueFin, litrosTanqueFin,
             operadores, peones,
-            clienteId, obraNombre, notas,
+            clienteId, obraNombre, notas, plantillaId,
             // ── Campos de perforación (Track Drill) ──
             bordo, espaciamiento, volumenRoca, porcentajePerdida,
             profundidadPromedio, porcentajeAvance, rentaEquipoDiaria,
@@ -88,6 +89,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 ...(clienteId           !== undefined && { clienteId:          clienteId  || null }),
                 ...(obraNombre          !== undefined && { obraNombre:         obraNombre || null }),
                 ...(notas               !== undefined && { notas:              notas      || null }),
+                ...(plantillaId          !== undefined && { plantillaId:        plantillaId || null }),
                 // ── Campos de perforación ──
                 ...(bordo               !== undefined && { bordo:              bordo              != null ? Number(bordo)              : null }),
                 ...(espaciamiento       !== undefined && { espaciamiento:      espaciamiento      != null ? Number(espaciamiento)      : null }),
@@ -150,6 +152,8 @@ function serializeRegistro(r: any) {
 
     return {
         ...r,
+        plantillaId: r.plantillaId ?? null,
+        plantilla:   r.plantilla   ?? null,
         horometroInicio:     Number(r.horometroInicio),
         horometroFin:        Number(r.horometroFin),
         horasTrabajadas:     horas,

@@ -358,6 +358,8 @@ model PlantillaObra {
   createdAt         DateTime  @default(now())
   obra              Obra      @relation(fields: [obraId], references: [id])
 
+  registrosDiarios  RegistroDiario[]
+
   @@unique([obraId, numero])
   @@index([obraId])
 }
@@ -463,6 +465,8 @@ model RegistroDiario {
   porcentajeAvance      Decimal?               @db.Decimal
   rentaEquipoDiaria     Decimal?               @db.Decimal
 
+  plantillaId           String?
+
   corteRegistro         CorteRegistro?
   movimientosInventario MovimientoInventario[]
   cliente               Cliente?               @relation(fields: [clienteId], references: [id])
@@ -470,6 +474,7 @@ model RegistroDiario {
   empresa               Empresa                @relation(fields: [empresaId], references: [id])
   equipo                Equipo                 @relation(fields: [equipoId], references: [id])
   obra                  Obra?                  @relation(fields: [obraId], references: [id])
+  plantilla             PlantillaObra?         @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
   usuario               Usuario                @relation(fields: [usuarioId], references: [id])
 
   @@unique([equipoId, fecha])
@@ -478,6 +483,7 @@ model RegistroDiario {
   @@index([fecha])
   @@index([obraId])
   @@index([corteId])
+  @@index([plantillaId])
 }
 
 model ResumenSemana {

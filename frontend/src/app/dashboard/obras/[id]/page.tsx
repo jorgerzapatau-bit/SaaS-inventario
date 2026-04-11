@@ -54,6 +54,7 @@ type RegistroDiario = {
     precioDiesel: number;
     horometroInicio: number | null;
     horometroFin: number | null;
+    plantillaId: string | null;
 };
 
 type ObraEquipo = {
@@ -543,30 +544,17 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
 
     const plantillas = obra.plantillas ?? [];
 
-    // ── Agrupar registros por plantilla según rango de fechas ────────────────
-    // Cada registro se asigna a UNA sola plantilla (la primera que lo cubra).
+    // ── Agrupar registros por plantillaId explícito ──────────────────────────
+    // Usamos el campo plantillaId del registro (asignado al momento de crear).
+    // Si es null, cae en "Sin plantilla asignada".
     const plantillasOrdenadas = [...plantillas].sort((a, b) => a.numero - b.numero);
-    const asignadoMap = new Map<string, string>(); // registroId -> plantillaId
-    for (const r of registros) {
-        const d = new Date(r.fecha + 'T12:00:00');
-        for (const p of plantillasOrdenadas) {
-            const ini = p.fechaInicio ? new Date(p.fechaInicio + 'T00:00:00') : null;
-            const fin = p.fechaFin    ? new Date(p.fechaFin    + 'T23:59:59') : null;
-            const dentroIni = ini ? d >= ini : true;
-            const dentroFin = fin ? d <= fin : true;
-            if (dentroIni && dentroFin) {
-                asignadoMap.set(r.id, p.id);
-                break;
-            }
-        }
-    }
     const grupos: { plantilla: PlantillaObraDetalle | null; regs: RegistroDiario[] }[] = plantillasOrdenadas.map(p => ({
         plantilla: p,
-        regs: registros.filter(r => asignadoMap.get(r.id) === p.id),
+        regs: registros.filter(r => r.plantillaId === p.id),
     }));
 
-    // Registros que no cayeron en ninguna plantilla
-    const sinPlantilla = registros.filter(r => !asignadoMap.has(r.id));
+    // Registros sin plantillaId asignado (registros antiguos o sin obra con plantillas)
+    const sinPlantilla = registros.filter(r => !r.plantillaId || !plantillasOrdenadas.some(p => p.id === r.plantillaId));
     if (sinPlantilla.length > 0) grupos.push({ plantilla: null, regs: sinPlantilla });
 
     // ── Tabla de registros reutilizable ──────────────────────────────────────
