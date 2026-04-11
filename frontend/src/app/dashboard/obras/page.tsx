@@ -456,26 +456,30 @@ function ObraModal({
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             }
 
-            if (plantillasValidas.some(p => p.equipos.length > 0)) {
+            // Asignar equipos a plantillas — upsert directo, la API maneja duplicados
+            const plantillasConEquipos = plantillasValidas.filter(p => p.equipos.filter(e => e.equipoId).length > 0);
+            if (plantillasConEquipos.length > 0) {
                 setSavingPlantillaEquipo(true);
                 try {
+                    // Re-fetch para tener los IDs reales de plantillas (especialmente las recien creadas)
                     const obraActualizada: any = await fetchApi(`/obras/${obraId}`);
                     const plantillasDB: any[] = obraActualizada.plantillas ?? [];
-                    for (const plt of plantillasValidas) {
-                        const pDB = plantillasDB.find((p: any) => p.numero === plt.numero);
+
+                    for (const plt of plantillasConEquipos) {
+                        // En edicion buscar por id; en creacion buscar por numero
+                        const pDB = plt.id
+                            ? plantillasDB.find((p: any) => p.id === plt.id)
+                            : plantillasDB.find((p: any) => p.numero === plt.numero);
                         if (!pDB) continue;
-                        const eqValidos = plt.equipos.filter(e => e.equipoId);
-                        for (const eq of eqValidos) {
-                            const yaAsignado = (pDB.plantillaEquipos ?? []).some((pe: any) => pe.equipoId === eq.equipoId);
-                            if (!yaAsignado) {
-                                await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
-                                    method: 'POST',
-                                    body: JSON.stringify({
-                                        equipoId:    eq.equipoId,
-                                        fechaInicio: eq.fechaInicio || plt.fechaInicio || null,
-                                    }),
-                                }).catch(() => {});
-                            }
+
+                        for (const eq of plt.equipos.filter(e => e.equipoId)) {
+                            await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    equipoId:    eq.equipoId,
+                                    fechaInicio: eq.fechaInicio || plt.fechaInicio || null,
+                                }),
+                            });
                         }
                     }
                 } finally {
