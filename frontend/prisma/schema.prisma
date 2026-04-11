@@ -298,6 +298,8 @@ model Equipo {
   // --- Trazabilidad de componentes ---
   componentesInstalados    Componente[]            @relation("ComponenteEnEquipo")
   movimientosComponente    MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
+  // --- Equipos asignados a plantillas ---
+  plantillaEquipos         PlantillaEquipo[]
 }
 
 // =============================================================================
@@ -343,25 +345,44 @@ model Obra {
 
 // C1-B: Plantillas por obra (Plt1, Plt2, ...)
 model PlantillaObra {
-  id                String    @id @default(uuid())
+  id                String              @id @default(uuid())
   obraId            String
-  numero            Int       // 1, 2, 3...
+  numero            Int                 // 1, 2, 3...
   metrosContratados Decimal
-  barrenos          Int       @default(0)
+  barrenos          Int                 @default(0)
   bordo             Decimal?
   espaciamiento     Decimal?
   precioUnitario    Decimal?
-  moneda            Moneda    @default(MXN)
-  fechaInicio       DateTime? @db.Date
-  fechaFin          DateTime? @db.Date
+  moneda            Moneda              @default(MXN)
+  fechaInicio       DateTime?           @db.Date
+  fechaFin          DateTime?           @db.Date
+  status            StatusPlantilla     @default(ACTIVA)
   notas             String?
-  createdAt         DateTime  @default(now())
-  obra              Obra      @relation(fields: [obraId], references: [id])
+  createdAt         DateTime            @default(now())
+  obra              Obra                @relation(fields: [obraId], references: [id])
 
   registrosDiarios  RegistroDiario[]
+  plantillaEquipos  PlantillaEquipo[]
 
   @@unique([obraId, numero])
   @@index([obraId])
+}
+
+// Equipos asignados a una plantilla específica
+model PlantillaEquipo {
+  id           String        @id @default(uuid())
+  plantillaId  String
+  equipoId     String
+  fechaInicio  DateTime      @db.Date
+  fechaFin     DateTime?     @db.Date
+  notas        String?
+  createdAt    DateTime      @default(now())
+  plantilla    PlantillaObra @relation(fields: [plantillaId], references: [id])
+  equipo       Equipo        @relation(fields: [equipoId], references: [id])
+
+  @@unique([plantillaId, equipoId])
+  @@index([plantillaId])
+  @@index([equipoId])
 }
 
 // C3-A: ObraEquipo con horómetros por obra
@@ -649,6 +670,12 @@ enum TipoMovimiento {
 }
 
 enum StatusObra {
+  ACTIVA
+  PAUSADA
+  TERMINADA
+}
+
+enum StatusPlantilla {
   ACTIVA
   PAUSADA
   TERMINADA

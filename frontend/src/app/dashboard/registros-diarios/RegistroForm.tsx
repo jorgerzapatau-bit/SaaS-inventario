@@ -13,7 +13,16 @@ type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodo
 type ObraSimple = {
     id: string; nombre: string; status: string;
     bordo?: number | null; espaciamiento?: number | null;
-    plantillas?: { id: string; numero: number; metrosContratados: number; barrenos: number; fechaInicio: string | null; fechaFin: string | null }[];
+    plantillas?: {
+        id: string;
+        numero: number;
+        metrosContratados: number;
+        barrenos: number;
+        fechaInicio: string | null;
+        fechaFin: string | null;
+        status: string;
+        plantillaEquipos?: { equipoId: string; equipo: { id: string; nombre: string; numeroEconomico: string | null } }[];
+    }[];
     obraEquipos?: { equipoId: string }[];
 };
 type ObraEquipo = { equipoId: string; obraId: string; horometroInicial: number | null };
@@ -226,9 +235,10 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
         // Auto-sugerir plantilla activa según la fecha actual
         const fechaRef = form.fecha || hoy;
         const plantillaSugerida = ob?.plantillas?.find(p =>
+            p.status !== 'TERMINADA' &&
             (!p.fechaInicio || p.fechaInicio <= fechaRef) &&
             (!p.fechaFin    || p.fechaFin   >= fechaRef)
-        ) ?? ob?.plantillas?.[0];
+        ) ?? ob?.plantillas?.find(p => p.status !== 'TERMINADA') ?? ob?.plantillas?.[0];
         setForm(f => ({
             ...f,
             obraId,
@@ -243,6 +253,22 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
         }
         if (obraId && nuevoEquipoId) fetchHorometroObraEquipo(obraId, nuevoEquipoId);
         fetchAvancePlantilla(obraId);
+    };
+
+    const handlePlantillaChange = (plantillaId: string) => {
+        set('plantillaId', plantillaId);
+        // Si la plantilla tiene equipos asignados y el equipo actual no está en ella, resetear
+        const plantilla = obraSeleccionada?.plantillas?.find(p => p.id === plantillaId);
+        const equiposPlantilla = plantilla?.plantillaEquipos ?? [];
+        if (equiposPlantilla.length > 0) {
+            const equipoEnPlantilla = equiposPlantilla.some(pe => pe.equipoId === form.equipoId);
+            if (!equipoEnPlantilla) {
+                setForm(f => ({ ...f, plantillaId, equipoId: '' }));
+                setHorometroFuente(null);
+                return;
+            }
+        }
+        setForm(f => ({ ...f, plantillaId }));
     };
 
     const horas = form.horometroFin && form.horometroInicio
@@ -274,9 +300,14 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
 
     const obraSeleccionada = obras.find(o => o.id === form.obraId);
     const equipoSeleccionado = equipos.find(e => e.id === form.equipoId);
-    const equiposDeObra = obraSeleccionada?.obraEquipos?.length
-        ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
-        : equipos;
+    const plantillaSeleccionada = obraSeleccionada?.plantillas?.find(p => p.id === form.plantillaId);
+    const equiposPlantilla = plantillaSeleccionada?.plantillaEquipos ?? [];
+    // Si la plantilla tiene equipos asignados → filtrar por ellos; si no → usar los de la obra
+    const equiposDeObra = equiposPlantilla.length > 0
+        ? equipos.filter(eq => equiposPlantilla.some(pe => pe.equipoId === eq.id))
+        : obraSeleccionada?.obraEquipos?.length
+            ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
+            : equipos;
 
     const handleSave = async () => {
         if (!form.equipoId) { setError('Selecciona un equipo'); return; }
@@ -426,26 +457,40 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                     </div>
 
                     {/* Selector de plantilla */}
-                    {obraSeleccionada && (obraSeleccionada.plantillas?.length ?? 0) > 1 && (
+                    {obraSeleccionada && (obraSeleccionada.plantillas?.length ?? 0) >= 1 && (
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">
                                 Plantilla <span className="text-red-500">*</span>
                             </label>
                             <select
                                 value={form.plantillaId}
-                                onChange={e => set('plantillaId', e.target.value)}
+                                onChange={e => handlePlantillaChange(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                                 <option value="">— Selecciona una plantilla —</option>
-                                {obraSeleccionada.plantillas!.map(p => (
-                                    <option key={p.id} value={p.id}>
-                                        Plantilla {p.numero}
-                                        {p.fechaInicio && p.fechaFin ? ` (${p.fechaInicio.slice(0,10)} → ${p.fechaFin.slice(0,10)})` : ''}
-                                        {` — ${p.metrosContratados} m`}
-                                    </option>
-                                ))}
+                                {obraSeleccionada.plantillas!.map(p => {
+                                    const statusLabel = p.status === 'TERMINADA' ? ' ✓ Terminada' : p.status === 'PAUSADA' ? ' ⏸ Pausada' : '';
+                                    const equiposLabel = (p.plantillaEquipos?.length ?? 0) > 0
+                                        ? ` · ${p.plantillaEquipos!.length} equipo${p.plantillaEquipos!.length !== 1 ? 's' : ''}`
+                                        : '';
+                                    return (
+                                        <option key={p.id} value={p.id}>
+                                            {`Plantilla ${p.numero}${statusLabel}${equiposLabel}`}
+                                            {p.fechaInicio && p.fechaFin ? ` (${p.fechaInicio.slice(0,10)} → ${p.fechaFin.slice(0,10)})` : ''}
+                                            {` — ${p.metrosContratados} m`}
+                                        </option>
+                                    );
+                                })}
                             </select>
                             {!form.plantillaId && (
                                 <p className="text-xs text-amber-600 mt-1">Selecciona a qué plantilla pertenece este registro</p>
+                            )}
+                            {plantillaSeleccionada?.status === 'TERMINADA' && (
+                                <p className="text-xs text-orange-500 mt-1">⚠ Esta plantilla está marcada como Terminada</p>
+                            )}
+                            {plantillaSeleccionada && equiposPlantilla.length > 0 && (
+                                <p className="text-xs text-blue-500 mt-1">
+                                    Equipos asignados: {equiposPlantilla.map(pe => pe.equipo.nombre).join(', ')}
+                                </p>
                             )}
                         </div>
                     )}
@@ -503,10 +548,13 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                         <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">Equipo *</label>
                             <select value={form.equipoId} onChange={e => handleEquipoChange(e.target.value)}
-                                disabled={!form.obraId}
+                                disabled={!form.obraId || ((obraSeleccionada?.plantillas?.length ?? 0) >= 1 && !form.plantillaId)}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed">
                                 <option value="">
-                                    {form.obraId ? '— Selecciona un equipo —' : '— Primero selecciona una obra —'}
+                                    {!form.obraId ? '— Primero selecciona una obra —'
+                                        : (obraSeleccionada?.plantillas?.length ?? 0) >= 1 && !form.plantillaId
+                                            ? '— Primero selecciona una plantilla —'
+                                            : '— Selecciona un equipo —'}
                                 </option>
                                 {equiposDeObra.map(eq => (
                                     <option key={eq.id} value={eq.id}>
@@ -515,6 +563,9 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                                 ))}
                             </select>
                             {!form.obraId && <p className="text-xs text-amber-600 mt-1">Selecciona la obra primero</p>}
+                            {form.obraId && !form.plantillaId && (obraSeleccionada?.plantillas?.length ?? 0) >= 1 && (
+                                <p className="text-xs text-amber-600 mt-1">Selecciona la plantilla primero</p>
+                            )}
                             {form.obraId && equiposDeObra.length === 0 && (
                                 <p className="text-xs text-amber-600 mt-1">Sin equipos asignados. <a href="/dashboard/obras" className="underline">Asignar →</a></p>
                             )}

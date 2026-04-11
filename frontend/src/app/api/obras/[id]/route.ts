@@ -30,6 +30,19 @@ export async function GET(req: NextRequest, { params }: Params) {
                 },
                 plantillas: {
                     orderBy: { numero: 'asc' },   // Mejora 10
+                    include: {
+                        plantillaEquipos: {
+                            where: { fechaFin: null },
+                            include: {
+                                equipo: {
+                                    select: {
+                                        id: true, nombre: true,
+                                        numeroEconomico: true, modelo: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
                 },
                 cortesFacturacion: {
                     orderBy: { numero: 'desc' },
@@ -90,6 +103,8 @@ export async function GET(req: NextRequest, { params }: Params) {
                 bordo:             p.bordo         ? Number(p.bordo)         : null,
                 espaciamiento:     p.espaciamiento ? Number(p.espaciamiento) : null,
                 precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
+                status:            p.status,
+                plantillaEquipos:  (p.plantillaEquipos ?? []),
             })),
             obraEquipos: obra.obraEquipos.map(oe => ({
                 ...oe,
@@ -177,6 +192,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
                                 fechaInicio:       p.fechaInicio ? new Date(p.fechaInicio) : null,
                                 fechaFin:          p.fechaFin   ? new Date(p.fechaFin)    : null,
                                 notas:             p.notas      || null,
+                                ...(p.status !== undefined && { status: p.status }),
                             },
                         });
                     } else {
@@ -190,6 +206,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
                                 fechaInicio:       p.fechaInicio ? new Date(p.fechaInicio) : null,
                                 fechaFin:          p.fechaFin   ? new Date(p.fechaFin)    : null,
                                 notas:             p.notas      || null,
+                                ...(p.status !== undefined && { status: p.status }),
                             },
                         });
                     }

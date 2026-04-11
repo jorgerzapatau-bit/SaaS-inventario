@@ -82,7 +82,12 @@ type PlantillaObraDetalle = {
     barrenos: number;
     fechaInicio: string | null;
     fechaFin: string | null;
+    status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
     notas: string | null;
+    plantillaEquipos?: {
+        equipoId: string;
+        equipo: { id: string; nombre: string; numeroEconomico: string | null; modelo: string | null };
+    }[];
 };
 
 type ObraDetalle = {
@@ -801,8 +806,39 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
 // ─── Tab Plantillas ───────────────────────────────────────────────────────────
 function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => void }) {
     const plantillas = obra.plantillas ?? [];
-    const metrosPerforados = obra.metricas?.metrosPerforados ?? 0;
-    const barrenosPerforados = obra.metricas?.barrenos ?? 0;
+
+    const STATUS_PLANTILLA: Record<string, { label: string; style: string }> = {
+        ACTIVA:    { label: 'Activa',    style: 'bg-green-100 text-green-700' },
+        PAUSADA:   { label: 'Pausada',   style: 'bg-yellow-100 text-yellow-700' },
+        TERMINADA: { label: '✓ Terminada', style: 'bg-gray-100 text-gray-500' },
+    };
+
+    const handleStatusChange = async (plantillaId: string, status: string) => {
+        try {
+            await fetchApi(`/obras/${obra.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    plantillas: [{ id: plantillaId, status, metrosContratados: plantillas.find(p => p.id === plantillaId)?.metrosContratados }],
+                }),
+            });
+            onReload();
+        } catch (e: any) {
+            alert(e.message || 'Error al cambiar estado');
+        }
+    };
+
+    const handleRemoveEquipo = async (plantillaId: string, equipoId: string) => {
+        if (!confirm('¿Desasignar este equipo de la plantilla?')) return;
+        try {
+            await fetchApi(`/obras/${obra.id}/plantillas/${plantillaId}/equipos`, {
+                method: 'DELETE',
+                body: JSON.stringify({ equipoId }),
+            });
+            onReload();
+        } catch (e: any) {
+            alert(e.message || 'Error al desasignar equipo');
+        }
+    };
 
     if (plantillas.length === 0) {
         return (
@@ -819,29 +855,19 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
             <p className="text-sm font-semibold text-gray-700">Plantillas del contrato ({plantillas.length})</p>
             <div className="space-y-4">
                 {plantillas.map(p => {
-                    const pctMetros = p.metrosContratados > 0
-                        ? Math.min(100, (metrosPerforados / p.metrosContratados) * 100)
-                        : 0;
-                    const pctBarr = p.barrenos > 0
-                        ? Math.min(100, (barrenosPerforados / p.barrenos) * 100)
-                        : 0;
-                    const completa = metrosPerforados >= p.metrosContratados
-                        && (p.barrenos === 0 || barrenosPerforados >= p.barrenos);
+                    const registrosDePlantilla = [];  // avance per-plantilla viene del TabOperacion
+                    const st = STATUS_PLANTILLA[p.status] ?? STATUS_PLANTILLA['ACTIVA'];
+                    const equiposAsignados = p.plantillaEquipos ?? [];
 
                     return (
-                        <div key={p.id} className={`border rounded-xl p-4 ${completa ? 'border-green-200 bg-green-50/30' : 'border-gray-100 bg-white'}`}>
+                        <div key={p.id} className={`border rounded-xl p-4 ${p.status === 'TERMINADA' ? 'border-green-200 bg-green-50/30' : p.status === 'PAUSADA' ? 'border-yellow-200 bg-yellow-50/20' : 'border-gray-100 bg-white'}`}>
                             <div className="flex items-start justify-between gap-3 mb-3">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${completa ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${p.status === 'TERMINADA' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                                         P{p.numero}
                                     </div>
                                     <div>
-                                        <p className="text-sm font-semibold text-gray-800">
-                                            Plantilla {p.numero}
-                                            {completa && (
-                                                <span className="ml-2 text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ Completa</span>
-                                            )}
-                                        </p>
+                                        <p className="text-sm font-semibold text-gray-800">Plantilla {p.numero}</p>
                                         <div className="flex gap-3 mt-0.5 text-xs text-gray-400 flex-wrap">
                                             {p.fechaInicio && <span>Inicio: {fDate(p.fechaInicio)}</span>}
                                             {p.fechaFin    && <span>Cierre: {fDate(p.fechaFin)}</span>}
@@ -849,43 +875,64 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                                         </div>
                                     </div>
                                 </div>
+                                {/* Status selector */}
+                                <select
+                                    value={p.status}
+                                    onChange={e => handleStatusChange(p.id, e.target.value)}
+                                    className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none ${st.style}`}
+                                >
+                                    <option value="ACTIVA">Activa</option>
+                                    <option value="PAUSADA">Pausada</option>
+                                    <option value="TERMINADA">✓ Terminada</option>
+                                </select>
                             </div>
 
-                            {/* Métricas de la plantilla */}
-                            <div className="grid grid-cols-2 gap-4 mb-3">
+                            {/* Métricas */}
+                            <div className="grid grid-cols-2 gap-3 text-xs text-gray-500 mb-3">
                                 <div>
-                                    <div className="flex justify-between items-end mb-1">
-                                        <span className="text-xs text-gray-500">Metros perforados</span>
-                                        <span className={`text-xs font-bold ${completa ? 'text-green-600' : 'text-blue-600'}`}>
-                                            {metrosPerforados.toFixed(1)} / {p.metrosContratados} m
-                                        </span>
-                                    </div>
-                                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full transition-all ${pctMetros >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                                            style={{ width: `${pctMetros}%` }} />
-                                    </div>
-                                    <p className="text-xs text-gray-400 mt-1">{pctMetros.toFixed(1)}%</p>
+                                    <span className="text-gray-400">Metros contratados: </span>
+                                    <strong className="text-gray-700">{p.metrosContratados} m</strong>
                                 </div>
                                 {p.barrenos > 0 && (
                                     <div>
-                                        <div className="flex justify-between items-end mb-1">
-                                            <span className="text-xs text-gray-500">Barrenos</span>
-                                            <span className={`text-xs font-bold ${pctBarr >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
-                                                {barrenosPerforados} / {p.barrenos}
-                                            </span>
-                                        </div>
-                                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                                            <div className={`h-full rounded-full transition-all ${pctBarr >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                                                style={{ width: `${pctBarr}%` }} />
-                                        </div>
-                                        <p className="text-xs text-gray-400 mt-1">{pctBarr.toFixed(1)}%</p>
+                                        <span className="text-gray-400">Barrenos: </span>
+                                        <strong className="text-gray-700">{p.barrenos}</strong>
                                     </div>
                                 )}
                             </div>
 
-                            <p className="text-xs text-gray-400 text-right">
-                                Nota: edita la obra para modificar fechas o metros de esta plantilla.
-                            </p>
+                            {/* Equipos asignados a esta plantilla */}
+                            <div className="border-t border-gray-100 pt-3">
+                                <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                                    <Wrench size={11} /> Equipos asignados ({equiposAsignados.length})
+                                </p>
+                                {equiposAsignados.length === 0 ? (
+                                    <p className="text-xs text-gray-400 italic">
+                                        Sin equipos asignados a esta plantilla. Los equipos de la obra estarán disponibles al registrar.
+                                    </p>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        {equiposAsignados.map(pe => (
+                                            <div key={pe.equipoId}
+                                                className="flex items-center gap-1.5 bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-full">
+                                                <span className="font-medium">{pe.equipo.nombre}</span>
+                                                {pe.equipo.numeroEconomico && (
+                                                    <span className="text-blue-400">({pe.equipo.numeroEconomico})</span>
+                                                )}
+                                                <button
+                                                    onClick={() => handleRemoveEquipo(p.id, pe.equipoId)}
+                                                    className="ml-1 text-blue-400 hover:text-red-500 transition-colors"
+                                                    title="Desasignar equipo">
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">
+                                    Para asignar equipos a esta plantilla, usa el endpoint <code className="bg-gray-100 px-1 rounded">POST /api/obras/{obra.id}/plantillas/{p.id}/equipos</code>
+                                </p>
+                            </div>
                         </div>
                     );
                 })}
