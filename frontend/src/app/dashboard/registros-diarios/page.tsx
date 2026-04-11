@@ -11,7 +11,7 @@ import {
     Search, X, Filter, Drill, Pencil, Copy,
     ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
     AlertTriangle, CheckCircle2, Loader2, Lock,
-    Building2, Layers, Wrench, TableProperties,
+    Building2, Layers, Wrench, TableProperties, SlidersHorizontal,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -38,6 +38,8 @@ type Registro = {
     porcentajePerdida: number | null; profundidadPromedio: number | null;
     porcentajeAvance: number | null; rentaEquipoDiaria: number | null;
     notas: string | null;
+    tanqueInicio: number | null; litrosTanqueInicio: number | null;
+    tanqueFin: number | null; litrosTanqueFin: number | null;
 };
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null; hodometroInicial?: number };
@@ -70,14 +72,35 @@ type RegistroExistente = {
     rentaEquipoDiaria: number | null;
     operadores: number | null;
     peones: number | null;
+    bordo: number | null;
+    espaciamiento: number | null;
+    volumenRoca: number | null;
+    porcentajePerdida: number | null;
+    porcentajeAvance: number | null;
+    notas: string | null;
+    tanqueInicio: number | null;
+    litrosTanqueInicio: number | null;
+    tanqueFin: number | null;
+    litrosTanqueFin: number | null;
 };
 
+// EditingRow expandida con TODOS los campos
 type EditingRow = {
     id: string;
-    barrenos: string; metrosLineales: string; profundidadPromedio: string;
-    litrosDiesel: string; precioDiesel: string; rentaEquipoDiaria: string;
-    operadores: string; peones: string;
+    // Principales
+    barrenos: string; metrosLineales: string;
     horometroInicio: string; horometroFin: string;
+    // Costos / perforación
+    litrosDiesel: string; precioDiesel: string;
+    rentaEquipoDiaria: string;
+    operadores: string; peones: string;
+    bordo: string; espaciamiento: string;
+    profundidadPromedio: string;
+    // Opcionales — tanque interno + notas
+    tanqueInicio: string; litrosTanqueInicio: string;
+    tanqueFin: string; litrosTanqueFin: string;
+    notas: string;
+    volumenRoca: string; porcentajePerdida: string; porcentajeAvance: string;
 };
 
 type SortKey = 'fecha' | 'horas' | 'metros' | 'barrenos' | 'diesel' | 'costo';
@@ -120,6 +143,32 @@ const fmtFecha = (iso: string | null) => {
     const [yr, mo, dy] = iso.slice(0, 10).split('-').map(Number);
     return new Date(yr, mo - 1, dy).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+
+function editingRowFromRegistro(r: RegistroExistente): EditingRow {
+    return {
+        id: r.id,
+        barrenos:            String(r.barrenos ?? ''),
+        metrosLineales:      String(r.metrosLineales ?? ''),
+        horometroInicio:     r.horometroInicio != null ? String(r.horometroInicio) : '',
+        horometroFin:        String(r.horometroFin ?? ''),
+        litrosDiesel:        r.litrosDiesel        != null ? String(r.litrosDiesel)        : '',
+        precioDiesel:        r.precioDiesel        != null ? String(r.precioDiesel)        : '21.95',
+        rentaEquipoDiaria:   r.rentaEquipoDiaria   != null ? String(r.rentaEquipoDiaria)   : '',
+        operadores:          r.operadores          != null ? String(r.operadores)          : '1',
+        peones:              r.peones              != null ? String(r.peones)              : '0',
+        bordo:               r.bordo               != null ? String(r.bordo)               : '',
+        espaciamiento:       r.espaciamiento       != null ? String(r.espaciamiento)       : '',
+        profundidadPromedio: r.profundidadPromedio != null ? String(r.profundidadPromedio) : '',
+        tanqueInicio:        r.tanqueInicio        != null ? String(r.tanqueInicio)        : '',
+        litrosTanqueInicio:  r.litrosTanqueInicio  != null ? String(r.litrosTanqueInicio)  : '',
+        tanqueFin:           r.tanqueFin           != null ? String(r.tanqueFin)           : '',
+        litrosTanqueFin:     r.litrosTanqueFin     != null ? String(r.litrosTanqueFin)     : '',
+        notas:               r.notas               ?? '',
+        volumenRoca:         r.volumenRoca         != null ? String(r.volumenRoca)         : '',
+        porcentajePerdida:   r.porcentajePerdida   != null ? String(r.porcentajePerdida)   : '',
+        porcentajeAvance:    r.porcentajeAvance    != null ? String(r.porcentajeAvance)    : '',
+    };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stepper visual
@@ -164,10 +213,7 @@ function Stepper({ paso }: { paso: 1 | 2 | 3 | 4 }) {
 // Tarjeta de plantilla (selector)
 // ─────────────────────────────────────────────────────────────────────────────
 function PlantillaCard({
-    plantilla,
-    avance,
-    selected,
-    onSelect,
+    plantilla, avance, selected, onSelect,
 }: {
     plantilla: Plantilla;
     avance: { metros: number; barrenos: number };
@@ -191,7 +237,6 @@ function PlantillaCard({
                     : 'border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm'
             }`}
         >
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
@@ -221,13 +266,9 @@ function PlantillaCard({
                     )}
                 </div>
             </div>
-
-            {/* Fechas */}
             <p className="text-xs text-gray-500">
                 {fmtFecha(plantilla.fechaInicio)} → {fmtFecha(plantilla.fechaFin)}
             </p>
-
-            {/* Barra metros */}
             <div className="space-y-1">
                 <div className="flex justify-between text-xs">
                     <span className="text-gray-500">Metros</span>
@@ -249,8 +290,6 @@ function PlantillaCard({
                     </p>
                 )}
             </div>
-
-            {/* Barrenos */}
             <div className="flex justify-between text-xs">
                 <span className="text-gray-500">Barrenos</span>
                 <span className={`font-semibold ${pctBarrenos >= 100 ? 'text-green-700' : selected ? 'text-blue-700' : 'text-indigo-600'}`}>
@@ -260,7 +299,6 @@ function PlantillaCard({
                     )}
                 </span>
             </div>
-
             {completa && !selected && (
                 <p className="text-xs text-gray-400 italic flex items-center gap-1">
                     <Lock size={10}/> Completa — clic para editar de todas formas
@@ -324,32 +362,200 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fila de lista general (historial) — con jerarquía visual
+// Panel de edición inline expandible — todos los campos
 // ─────────────────────────────────────────────────────────────────────────────
-function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
+function InlineEditPanel({
+    row,
+    fechaLabel,
+    onChange,
+    onSave,
+    onCancel,
+    saving,
+    error,
+}: {
+    row: EditingRow;
+    fechaLabel: string;
+    onChange: (key: keyof EditingRow, val: string) => void;
+    onSave: () => void;
+    onCancel: () => void;
+    saving: boolean;
+    error: string;
+}) {
+    const inp = (
+        key: keyof EditingRow,
+        label: string,
+        placeholder = '—',
+        className = '',
+    ) => (
+        <div className={`space-y-1 ${className}`}>
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</label>
+            <input
+                type="text"
+                inputMode="decimal"
+                value={row[key] as string}
+                onChange={e => onChange(key, e.target.value)}
+                placeholder={placeholder}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+                    if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                }}
+                className="w-full h-9 px-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
+            />
+        </div>
+    );
+
+    const textarea = (key: keyof EditingRow, label: string) => (
+        <div className="space-y-1 col-span-full">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</label>
+            <textarea
+                value={row[key] as string}
+                onChange={e => onChange(key, e.target.value)}
+                placeholder="Observaciones del día..."
+                rows={2}
+                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white resize-none"
+            />
+        </div>
+    );
+
+    const hrs = row.horometroFin && row.horometroInicio
+        ? Math.max(0, Number(row.horometroFin) - Number(row.horometroInicio))
+        : null;
+
+    return (
+        <tr className="bg-amber-50/60 border-b-2 border-amber-200">
+            <td colSpan={100} className="p-0">
+                <div className="px-4 pt-3 pb-4 space-y-4">
+                    {/* Encabezado del panel */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 border border-amber-200 rounded-lg">
+                                <Pencil size={12} className="text-amber-600"/>
+                                <span className="text-xs font-bold text-amber-700">Editando: {fechaLabel}</span>
+                            </div>
+                            {hrs !== null && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-full">
+                                    {hrs} hrs trabajadas
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {error && (
+                                <span className="text-xs text-red-600 font-medium flex items-center gap-1">
+                                    <AlertTriangle size={12}/> {error}
+                                </span>
+                            )}
+                            <button onClick={onCancel}
+                                className="px-3 py-1.5 border border-gray-200 bg-white text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                                Esc · Cancelar
+                            </button>
+                            <button onClick={onSave} disabled={saving}
+                                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                                {saving ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
+                                {saving ? 'Guardando…' : 'Enter · Guardar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 1: Campos principales */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <TableProperties size={10}/> Horómetro y Producción
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">H. Inicial <Lock size={9} className="inline text-gray-300"/></label>
+                                <input
+                                    type="text" inputMode="decimal"
+                                    value={row.horometroInicio}
+                                    onChange={e => onChange('horometroInicio', e.target.value)}
+                                    className="w-full h-9 px-2.5 border border-gray-100 rounded-lg text-sm text-gray-500 bg-gray-50 focus:outline-none focus:border-blue-300"
+                                />
+                            </div>
+                            {inp('horometroFin',   'H. Final *')}
+                            {inp('barrenos',       'Barrenos')}
+                            {inp('metrosLineales', 'Metros Lin.')}
+                            {inp('profundidadPromedio', 'Prof. (m)')}
+                            {inp('bordo',         'Bordo (m)')}
+                            {inp('espaciamiento', 'Espac. (m)')}
+                            {inp('volumenRoca',   'Vol. Roca (m³)')}
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 2: Costos / Perforación / Personal */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <Droplets size={10}/> Costos · Perforación · Personal
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                            {inp('litrosDiesel',      'Litros Diésel')}
+                            {inp('precioDiesel',      'P.U. Diésel ($)')}
+                            {inp('rentaEquipoDiaria', 'Renta/Día ($)')}
+                            {inp('operadores',        'Operadores')}
+                            {inp('peones',            'Peones')}
+                            {inp('porcentajePerdida', '% Pérdida')}
+                            {inp('porcentajeAvance',  '% Avance')}
+                        </div>
+                    </div>
+
+                    {/* SECCIÓN 3: Tanque interno + Notas (opcionales) */}
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-3 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
+                            <SlidersHorizontal size={10}/> Opcional — Tanque Interno · Notas
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                            {inp('tanqueInicio',       'CM Inicio')}
+                            {inp('litrosTanqueInicio', 'Litros Inicio')}
+                            {inp('tanqueFin',          'CM Fin')}
+                            {inp('litrosTanqueFin',    'Litros Fin')}
+                            {textarea('notas', 'Notas')}
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fila de historial global — con jerarquía visual + edición inline
+// ─────────────────────────────────────────────────────────────────────────────
+function RegistroRow({
+    r, onDelete, onDuplicate, isLastForEquipo,
+    editingId, onStartEdit, onCancelEdit, onSaveEdit,
+    editingRow, onChangeEdit, savingEdit, editError,
+}: {
     r: Registro;
     onDelete: (r: Registro) => void;
-    onEdit: (id: string) => void;
     onDuplicate: (r: Registro) => void;
     isLastForEquipo: boolean;
+    editingId: string | null;
+    onStartEdit: (id: string) => void;
+    onCancelEdit: () => void;
+    onSaveEdit: () => void;
+    editingRow: EditingRow | null;
+    onChangeEdit: (key: keyof EditingRow, val: string) => void;
+    savingEdit: boolean;
+    editError: string;
 }) {
     const [expanded, setExpanded] = useState(false);
+    const isEditing = editingId === r.id;
     const [yr, mo, dy] = r.fecha.slice(0, 10).split('-').map(Number);
     const fecha = new Date(yr, mo - 1, dy).toLocaleDateString('es-MX', {
         weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
     });
+    const fechaLabel = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
 
     return (
         <>
-            <tr className="hover:bg-slate-50/80 transition-colors group cursor-pointer border-b border-gray-100" onClick={() => setExpanded(v => !v)}>
-                {/* Fecha + semana */}
+            <tr
+                className={`hover:bg-slate-50/80 transition-colors group cursor-pointer border-b border-gray-100 ${isEditing ? 'bg-amber-50/40' : ''}`}
+                onClick={() => !isEditing && setExpanded(v => !v)}
+            >
                 <td className="pl-4 pr-2 py-3 w-36">
                     <p className="text-sm font-semibold text-gray-800">{fecha.split(', ')[1] ?? fecha}</p>
                     <p className="text-xs text-gray-400 capitalize">{fecha.split(', ')[0]}</p>
                     {r.semanaNum && <p className="text-[10px] text-gray-300 mt-0.5">Sem. {r.semanaNum}/{r.anoNum}</p>}
                 </td>
-
-                {/* Equipo con chip */}
                 <td className="px-2 py-3">
                     <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -363,8 +569,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                         </div>
                     </div>
                 </td>
-
-                {/* Plantilla chip */}
                 <td className="px-2 py-3 w-20 text-center">
                     {r.plantilla ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
@@ -374,8 +578,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                         <span className="text-gray-300 text-xs">—</span>
                     )}
                 </td>
-
-                {/* Corte */}
                 <td className="px-2 py-3 w-24 text-center">
                     {r.corte ? (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
@@ -387,8 +589,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                         <span className="text-gray-200 text-xs">—</span>
                     )}
                 </td>
-
-                {/* Horómetro compacto */}
                 <td className="px-2 py-3 text-center">
                     <p className="text-xs font-mono text-gray-600">
                         {r.horometroInicio.toLocaleString('es-MX')}
@@ -397,8 +597,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                     </p>
                     <p className="text-[10px] text-gray-400">{r.horasTrabajadas} hrs</p>
                 </td>
-
-                {/* Producción */}
                 <td className="px-2 py-3 text-right">
                     <p className="text-sm font-bold text-gray-800">{r.barrenos}</p>
                     <p className="text-[10px] text-gray-400">bar.</p>
@@ -407,8 +605,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                     <p className="text-sm font-bold text-gray-800">{Number(r.metrosLineales).toFixed(1)}</p>
                     <p className="text-[10px] text-gray-400">m</p>
                 </td>
-
-                {/* Diésel + Costo */}
                 <td className="px-2 py-3 text-right">
                     <p className="text-sm font-semibold text-blue-600">{r.litrosDiesel}</p>
                     <p className="text-[10px] text-gray-400">lt</p>
@@ -417,7 +613,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                     <p className="text-sm font-semibold text-gray-700">${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
                     <p className="text-[10px] text-gray-400">diésel</p>
                 </td>
-                {/* Renta */}
                 <td className="px-2 py-3 text-right">
                     {r.rentaEquipoDiaria != null ? (
                         <>
@@ -426,8 +621,6 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                         </>
                     ) : <span className="text-gray-200 text-xs">—</span>}
                 </td>
-
-                {/* Acciones */}
                 <td className="pr-3 py-3 text-right">
                     <div className="flex justify-end items-center gap-0.5">
                         {isLastForEquipo ? (
@@ -437,21 +630,36 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
                                 <Copy size={13}/>
                             </button>
                         ) : <span className="p-1.5 w-[28px]"/>}
-                        <button onClick={e => { e.stopPropagation(); onEdit(r.id); }}
-                            className="p-1.5 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                        <button onClick={e => { e.stopPropagation(); isEditing ? onCancelEdit() : onStartEdit(r.id); }}
+                            className={`p-1.5 rounded-md transition-colors ${isEditing ? 'text-amber-600 bg-amber-100' : 'text-gray-300 hover:text-amber-600 hover:bg-amber-50 opacity-0 group-hover:opacity-100'}`}>
                             <Pencil size={13}/>
                         </button>
                         <button onClick={e => { e.stopPropagation(); onDelete(r); }}
                             className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                             <Trash2 size={13}/>
                         </button>
-                        {expanded
+                        {!isEditing && (expanded
                             ? <ChevronUp size={13} className="text-gray-400 ml-1"/>
-                            : <ChevronDown size={13} className="text-gray-400 ml-1"/>}
+                            : <ChevronDown size={13} className="text-gray-400 ml-1"/>)}
                     </div>
                 </td>
             </tr>
-            {expanded && (
+
+            {/* Panel de edición inline expandible */}
+            {isEditing && editingRow && (
+                <InlineEditPanel
+                    row={editingRow}
+                    fechaLabel={fechaLabel}
+                    onChange={onChangeEdit}
+                    onSave={onSaveEdit}
+                    onCancel={onCancelEdit}
+                    saving={savingEdit}
+                    error={editError}
+                />
+            )}
+
+            {/* Detalle expandido (cuando no está editando) */}
+            {expanded && !isEditing && (
                 <tr className="bg-slate-50/60">
                     <td colSpan={11} className="px-6 py-4 space-y-3 border-b border-gray-100">
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
@@ -535,31 +743,18 @@ type GridRow = {
     barrenos: string; metrosLineales: string; profundidadPromedio: string;
     litrosDiesel: string; precioDiesel: string; rentaEquipoDiaria: string;
     operadores: string; peones: string;
+    // Campos opcionales (expandibles)
+    bordo: string; espaciamiento: string;
+    tanqueInicio: string; litrosTanqueInicio: string;
+    tanqueFin: string; litrosTanqueFin: string;
+    notas: string;
     _status: 'idle' | 'saving' | 'saved' | 'error';
     _error: string;
     _suggested: Record<string, boolean>;
+    _expanded: boolean;
 };
 
-function buildSuggestedRow(prev: GridRow): Partial<GridRow> {
-    let nextFecha = '';
-    if (prev.fecha) {
-        const d = new Date(prev.fecha + 'T12:00:00');
-        d.setDate(d.getDate() + 1);
-        nextFecha = d.toISOString().slice(0, 10);
-    }
-    const hIni = prev.horometroFin || '';
-    const hFin = hIni && !isNaN(Number(hIni)) ? String(Number(hIni) + 8) : '';
-    return {
-        fecha: nextFecha, horometroInicio: hIni, horometroFin: hFin,
-        barrenos: prev.barrenos, metrosLineales: prev.metrosLineales,
-        profundidadPromedio: prev.profundidadPromedio,
-        litrosDiesel: prev.litrosDiesel, precioDiesel: prev.precioDiesel,
-        rentaEquipoDiaria: prev.rentaEquipoDiaria,
-        operadores: prev.operadores, peones: prev.peones,
-    };
-}
-
-const COLS: { key: keyof Omit<GridRow, '_status'|'_error'|'_suggested'>; label: string; width: number; type: string }[] = [
+const COLS_MAIN: { key: keyof Omit<GridRow, '_status'|'_error'|'_suggested'|'_expanded'>; label: string; width: number; type: string }[] = [
     { key: 'fecha',               label: 'Fecha',        width: 130, type: 'date'   },
     { key: 'horometroInicio',     label: 'H. Ini',       width: 90,  type: 'number' },
     { key: 'horometroFin',        label: 'H. Fin',       width: 90,  type: 'number' },
@@ -578,7 +773,10 @@ function emptyRow(): GridRow {
         fecha:'', horometroInicio:'', horometroFin:'', barrenos:'', metrosLineales:'',
         profundidadPromedio:'', litrosDiesel:'', precioDiesel:'21.95',
         rentaEquipoDiaria:'', operadores:'1', peones:'1',
-        _status:'idle', _error:'', _suggested:{},
+        bordo:'', espaciamiento:'',
+        tanqueInicio:'', litrosTanqueInicio:'', tanqueFin:'', litrosTanqueFin:'',
+        notas:'',
+        _status:'idle', _error:'', _suggested:{}, _expanded: false,
     };
 }
 
@@ -662,7 +860,6 @@ function CapturaGrid({
 
     const inputRefs = useRef<(HTMLInputElement|null)[]>([]);
 
-    // Cargar registros existentes filtrados por equipo + obra
     useEffect(() => {
         let alive = true;
         setLoadingCtx(true);
@@ -681,19 +878,28 @@ function CapturaGrid({
                     rentaEquipoDiaria: r.rentaEquipoDiaria ?? null,
                     operadores: r.operadores ?? null,
                     peones: r.peones ?? null,
+                    bordo: r.bordo ?? null,
+                    espaciamiento: r.espaciamiento ?? null,
+                    volumenRoca: r.volumenRoca ?? null,
+                    porcentajePerdida: r.porcentajePerdida ?? null,
+                    porcentajeAvance: r.porcentajeAvance ?? null,
+                    notas: r.notas ?? null,
+                    tanqueInicio: r.tanqueInicio ?? null,
+                    litrosTanqueInicio: r.litrosTanqueInicio ?? null,
+                    tanqueFin: r.tanqueFin ?? null,
+                    litrosTanqueFin: r.litrosTanqueFin ?? null,
                 })));
             })
             .catch(() => {})
             .finally(() => { if (alive) setLoadingCtx(false); });
         return () => { alive = false; };
-    }, [obraId, equipoId]);
+    }, [obraId, equipoId, plantilla.id]);
 
     const registrosOrdenados = useMemo(
         () => [...registrosExistentes].sort((a, b) => a.fecha.localeCompare(b.fecha)),
         [registrosExistentes]
     );
 
-    // Avance filtrado por la plantilla seleccionada
     const avancePlantilla = useMemo(() => {
         const regsPlantilla = registrosOrdenados.filter(r => plantillaDeRegistro(r.fecha, allPlantillas)?.id === plantilla.id);
         return {
@@ -704,7 +910,6 @@ function CapturaGrid({
 
     const fechasExistentes = useMemo(() => new Set(registrosExistentes.map(r => r.fecha.slice(0, 10))), [registrosExistentes]);
 
-    // Totales
     const totalMetros   = registrosOrdenados.reduce((s, r) => s + r.metrosLineales, 0);
     const totalBarrenos = registrosOrdenados.reduce((s, r) => s + r.barrenos,       0);
     const totalHrs      = registrosOrdenados.reduce((s, r) => s + Math.max(0, r.horometroFin - (r.horometroInicio ?? 0)), 0);
@@ -719,23 +924,15 @@ function CapturaGrid({
         if (nuevaFila) return;
         setHorometroLocked(true);
         const ultimo = registrosOrdenados[registrosOrdenados.length - 1];
-        // El horómetro inicial es el horometroFin del último registro, o el hodometroInicial del equipo
         const hIni = ultimo
             ? String(ultimo.horometroFin)
             : equipoHodometro != null ? String(equipoHodometro) : '';
-        setNuevaFila({
-            ...emptyRow(),
-            horometroInicio: hIni,
-            horometroFin: '',
-            barrenos: '', metrosLineales: '', profundidadPromedio: '',
-            litrosDiesel: '', rentaEquipoDiaria: '',
-            operadores: '1', peones: '1',
-        });
+        setNuevaFila({ ...emptyRow(), horometroInicio: hIni });
     };
 
     const cancelNewRow = () => { setNuevaFila(null); setRowError(''); setHorometroLocked(true); };
 
-    const updateNuevaFila = (key: keyof GridRow, val: string) => {
+    const updateNuevaFila = (key: keyof GridRow, val: string | boolean) => {
         setNuevaFila(prev => prev ? { ...prev, [key]: val, _status: 'idle', _error: '', _suggested: { ...prev._suggested, [key]: false } } : null);
         setRowError('');
     };
@@ -769,6 +966,13 @@ function CapturaGrid({
                     rentaEquipoDiaria: nuevaFila.rentaEquipoDiaria ? Number(nuevaFila.rentaEquipoDiaria) : null,
                     operadores:      nuevaFila.operadores      ? Number(nuevaFila.operadores)      : 1,
                     peones:          nuevaFila.peones          ? Number(nuevaFila.peones)          : 0,
+                    bordo:           nuevaFila.bordo           ? Number(nuevaFila.bordo)           : null,
+                    espaciamiento:   nuevaFila.espaciamiento   ? Number(nuevaFila.espaciamiento)   : null,
+                    tanqueInicio:        nuevaFila.tanqueInicio        ? Number(nuevaFila.tanqueInicio)        : null,
+                    litrosTanqueInicio:  nuevaFila.litrosTanqueInicio  ? Number(nuevaFila.litrosTanqueInicio)  : null,
+                    tanqueFin:           nuevaFila.tanqueFin           ? Number(nuevaFila.tanqueFin)           : null,
+                    litrosTanqueFin:     nuevaFila.litrosTanqueFin     ? Number(nuevaFila.litrosTanqueFin)     : null,
+                    notas:               nuevaFila.notas || null,
                 }),
             });
             const nuevoRegistro: RegistroExistente = {
@@ -783,6 +987,14 @@ function CapturaGrid({
                 rentaEquipoDiaria:   nuevaFila.rentaEquipoDiaria   ? Number(nuevaFila.rentaEquipoDiaria)   : null,
                 operadores:          nuevaFila.operadores          ? Number(nuevaFila.operadores)          : null,
                 peones:              nuevaFila.peones              ? Number(nuevaFila.peones)              : null,
+                bordo:               nuevaFila.bordo               ? Number(nuevaFila.bordo)               : null,
+                espaciamiento:       nuevaFila.espaciamiento       ? Number(nuevaFila.espaciamiento)       : null,
+                volumenRoca: null, porcentajePerdida: null, porcentajeAvance: null,
+                notas: nuevaFila.notas || null,
+                tanqueInicio:        nuevaFila.tanqueInicio        ? Number(nuevaFila.tanqueInicio)        : null,
+                litrosTanqueInicio:  nuevaFila.litrosTanqueInicio  ? Number(nuevaFila.litrosTanqueInicio)  : null,
+                tanqueFin:           nuevaFila.tanqueFin           ? Number(nuevaFila.tanqueFin)           : null,
+                litrosTanqueFin:     nuevaFila.litrosTanqueFin     ? Number(nuevaFila.litrosTanqueFin)     : null,
             };
             setRegistrosExistentes(prev => [...prev, nuevoRegistro]);
             setShowSuccess(true);
@@ -796,19 +1008,7 @@ function CapturaGrid({
     };
 
     const startEditingRow = (r: RegistroExistente) => {
-        setEditingRow({
-            id: r.id,
-            barrenos:            String(r.barrenos        ?? ''),
-            metrosLineales:      String(r.metrosLineales  ?? ''),
-            profundidadPromedio: r.profundidadPromedio != null ? String(r.profundidadPromedio) : '',
-            litrosDiesel:        r.litrosDiesel        != null ? String(r.litrosDiesel)        : '',
-            precioDiesel:        r.precioDiesel        != null ? String(r.precioDiesel)        : '21.95',
-            rentaEquipoDiaria:   r.rentaEquipoDiaria   != null ? String(r.rentaEquipoDiaria)   : '',
-            operadores:          r.operadores          != null ? String(r.operadores)          : '1',
-            peones:              r.peones              != null ? String(r.peones)              : '0',
-            horometroInicio:     String(r.horometroInicio ?? ''),
-            horometroFin:        String(r.horometroFin    ?? ''),
-        });
+        setEditingRow(editingRowFromRegistro(r));
         setInlineError('');
     };
 
@@ -830,6 +1030,16 @@ function CapturaGrid({
                     peones:              editingRow.peones               ? Number(editingRow.peones)              : 0,
                     horometroInicio:     Number(editingRow.horometroInicio),
                     horometroFin:        Number(editingRow.horometroFin),
+                    bordo:               editingRow.bordo               ? Number(editingRow.bordo)               : null,
+                    espaciamiento:       editingRow.espaciamiento        ? Number(editingRow.espaciamiento)       : null,
+                    volumenRoca:         editingRow.volumenRoca          ? Number(editingRow.volumenRoca)         : null,
+                    porcentajePerdida:   editingRow.porcentajePerdida    ? Number(editingRow.porcentajePerdida)   : null,
+                    porcentajeAvance:    editingRow.porcentajeAvance     ? Number(editingRow.porcentajeAvance)    : null,
+                    tanqueInicio:        editingRow.tanqueInicio         ? Number(editingRow.tanqueInicio)        : null,
+                    litrosTanqueInicio:  editingRow.litrosTanqueInicio   ? Number(editingRow.litrosTanqueInicio)  : null,
+                    tanqueFin:           editingRow.tanqueFin            ? Number(editingRow.tanqueFin)           : null,
+                    litrosTanqueFin:     editingRow.litrosTanqueFin      ? Number(editingRow.litrosTanqueFin)     : null,
+                    notas:               editingRow.notas || null,
                 }),
             });
             setRegistrosExistentes(prev => prev.map(r => r.id !== editingRow.id ? r : {
@@ -844,6 +1054,16 @@ function CapturaGrid({
                 rentaEquipoDiaria:   editingRow.rentaEquipoDiaria   ? Number(editingRow.rentaEquipoDiaria)   : r.rentaEquipoDiaria,
                 operadores:          editingRow.operadores          ? Number(editingRow.operadores)          : r.operadores,
                 peones:              editingRow.peones              ? Number(editingRow.peones)              : r.peones,
+                bordo:               editingRow.bordo               ? Number(editingRow.bordo)               : r.bordo,
+                espaciamiento:       editingRow.espaciamiento       ? Number(editingRow.espaciamiento)       : r.espaciamiento,
+                volumenRoca:         editingRow.volumenRoca         ? Number(editingRow.volumenRoca)         : r.volumenRoca,
+                porcentajePerdida:   editingRow.porcentajePerdida   ? Number(editingRow.porcentajePerdida)   : r.porcentajePerdida,
+                porcentajeAvance:    editingRow.porcentajeAvance    ? Number(editingRow.porcentajeAvance)    : r.porcentajeAvance,
+                tanqueInicio:        editingRow.tanqueInicio        ? Number(editingRow.tanqueInicio)        : r.tanqueInicio,
+                litrosTanqueInicio:  editingRow.litrosTanqueInicio  ? Number(editingRow.litrosTanqueInicio)  : r.litrosTanqueInicio,
+                tanqueFin:           editingRow.tanqueFin           ? Number(editingRow.tanqueFin)           : r.tanqueFin,
+                litrosTanqueFin:     editingRow.litrosTanqueFin     ? Number(editingRow.litrosTanqueFin)     : r.litrosTanqueFin,
+                notas:               editingRow.notas || r.notas,
             }));
             setShowSuccess(true);
             setTimeout(() => setShowSuccess(false), 2000);
@@ -863,14 +1083,12 @@ function CapturaGrid({
             : true)
         : true;
     const canSave = nuevaFila && !isEmpty && !isDupe && !savingRow && hFinValid;
-    const colSpanTotal = COLS.length + 3;
+    const colSpanTotal = COLS_MAIN.length + 3;
 
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
-            {/* Banner resumen de selección */}
+            {/* Banner resumen */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-4">
-
-                {/* Breadcrumb de selección */}
                 <div className="flex items-center gap-2 text-sm flex-wrap">
                     <button onClick={onReset} className="text-blue-500 hover:underline font-medium flex items-center gap-1">
                         <ChevronLeft size={14}/> Cambiar selección
@@ -963,33 +1181,12 @@ function CapturaGrid({
 
                 {!loadingCtx && (
                     <>
-                        {editingRow && (
-                            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border-b-2 border-amber-300">
-                                <div className="flex items-center gap-2 text-sm text-amber-800">
-                                    <Pencil size={14} className="text-amber-500"/>
-                                    <span className="font-semibold">Editando registro</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {inlineError && <span className="text-xs text-red-600">{inlineError}</span>}
-                                    <button onClick={() => { setEditingRow(null); setInlineError(''); }}
-                                        className="px-3 py-1.5 border border-gray-300 bg-white text-gray-600 text-xs rounded-lg hover:bg-gray-50">
-                                        Cancelar
-                                    </button>
-                                    <button onClick={saveInlineEdit} disabled={savingInline}
-                                        className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1">
-                                        {savingInline ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
-                                        Guardar
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
                         <div className="overflow-x-auto">
                             <table className="w-full border-collapse text-sm" style={{ minWidth: 980 }}>
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-200">
                                         <th className="w-8 p-2 text-xs text-gray-400 font-medium text-center border-r">#</th>
-                                        {COLS.map(col => (
+                                        {COLS_MAIN.map(col => (
                                             <th key={col.key} className="p-2 text-xs font-semibold uppercase text-left border-r text-gray-500 whitespace-nowrap" style={{ minWidth: col.width }}>
                                                 {col.label}
                                             </th>
@@ -999,7 +1196,6 @@ function CapturaGrid({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* Separador de plantilla activa */}
                                     <PlantillaSeparator plantilla={plantilla} avance={avancePlantilla} colSpan={colSpanTotal}/>
 
                                     {registrosOrdenados.length === 0 && !nuevaFila && (
@@ -1017,152 +1213,201 @@ function CapturaGrid({
                                         const isEditing = editingRow?.id === r.id;
                                         const hrsReg = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
 
-                                        if (isEditing) {
-                                            const hrsEdit = editingRow.horometroFin && editingRow.horometroInicio
-                                                ? Math.max(0, Number(editingRow.horometroFin) - Number(editingRow.horometroInicio)) : null;
-                                            const editInp = (key: keyof EditingRow, placeholder = '') => (
-                                                <input type="text" inputMode="decimal"
-                                                    value={editingRow[key] as string}
-                                                    onChange={e => setEditingRow(prev => prev ? { ...prev, [key]: e.target.value } : prev)}
-                                                    placeholder={placeholder}
-                                                    className="w-full h-9 px-2 bg-white border border-blue-300 rounded text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
-                                            );
-                                            return (
-                                                <tr key={r.id} className="border-b border-amber-200 bg-amber-50/60">
-                                                    <td className="p-2 text-xs text-amber-400 text-center border-r w-8">{i + 1}</td>
-                                                    <td className="border-r border-amber-100 px-2 h-9 text-xs font-medium text-amber-700 whitespace-nowrap">{fechaStr}</td>
-                                                    {COLS.slice(1).map(col => (
-                                                        <td key={col.key} className="border-r border-amber-100 p-1" style={{ minWidth: col.width }}>
-                                                            {editInp(col.key as keyof EditingRow, '—')}
-                                                        </td>
-                                                    ))}
-                                                    <td className="border-r border-amber-100 text-center px-1">
-                                                        {hrsEdit !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-amber-700 bg-amber-100">{hrsEdit}h</span> : <span className="text-gray-200">—</span>}
-                                                    </td>
-                                                    <td className="text-center px-2"><span className="text-xs text-amber-600 font-semibold">Editando…</span></td>
-                                                </tr>
-                                            );
-                                        }
-
                                         return (
-                                            <tr key={r.id} className="border-b border-gray-100 bg-blue-50/20 hover:bg-blue-100/30">
-                                                <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{i + 1}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
-                                                <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
-                                                <td className="border-r border-blue-100 text-center px-1">
-                                                    {hrsReg !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrsReg}h</span> : <span className="text-gray-200">—</span>}
-                                                </td>
-                                                <td className="text-center px-2">
-                                                    <button onClick={() => startEditingRow(r)}
-                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-700 text-xs font-semibold rounded-md">
-                                                        <Pencil size={10}/> Editar
-                                                    </button>
-                                                </td>
-                                            </tr>
+                                            <React.Fragment key={r.id}>
+                                                {/* Fila compacta */}
+                                                <tr className={`border-b border-gray-100 transition-colors ${isEditing ? 'bg-amber-50/40' : 'bg-blue-50/20 hover:bg-blue-100/30'}`}>
+                                                    <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{i + 1}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 text-center px-1">
+                                                        {hrsReg !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrsReg}h</span> : <span className="text-gray-200">—</span>}
+                                                    </td>
+                                                    <td className="text-center px-2">
+                                                        <button
+                                                            onClick={() => isEditing ? setEditingRow(null) : startEditingRow(r)}
+                                                            className={`inline-flex items-center gap-1 px-2.5 py-1 border text-xs font-semibold rounded-md transition-colors ${
+                                                                isEditing
+                                                                    ? 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200'
+                                                                    : 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-700'
+                                                            }`}>
+                                                            {isEditing ? <><X size={10}/> Cancelar</> : <><Pencil size={10}/> Editar</>}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+
+                                                {/* Panel expandible de edición inline */}
+                                                {isEditing && editingRow && (
+                                                    <InlineEditPanel
+                                                        row={editingRow}
+                                                        fechaLabel={fechaStr}
+                                                        onChange={(key, val) => setEditingRow(prev => prev ? { ...prev, [key]: val } : prev)}
+                                                        onSave={saveInlineEdit}
+                                                        onCancel={() => { setEditingRow(null); setInlineError(''); }}
+                                                        saving={savingInline}
+                                                        error={inlineError}
+                                                    />
+                                                )}
+                                            </React.Fragment>
                                         );
                                     })}
 
                                     {/* Nueva fila */}
                                     {nuevaFila && (
-                                        <tr className={`border-b transition-colors ${isDupe ? 'bg-amber-50' : isEmpty ? 'bg-gray-50' : 'bg-green-50/40'}`}>
-                                            <td className="p-2 text-xs font-semibold text-center border-r w-8">+</td>
-                                            {COLS.map((col, ci) => {
-                                                const val = nuevaFila[col.key] as string;
-                                                const isHIni = col.key === 'horometroInicio';
-                                                const isHFin = col.key === 'horometroFin';
-                                                const hFinNum = Number(nuevaFila.horometroFin);
-                                                const hIniNum = Number(nuevaFila.horometroInicio);
-                                                const isErrorMenor = isHFin && val && nuevaFila.horometroInicio && hFinNum <= hIniNum;
-                                                const isError24    = isHFin && val && nuevaFila.horometroInicio && (hFinNum - hIniNum) > 24;
-                                                const isError = isErrorMenor || isError24;
-                                                const isLocked = isHIni && horometroLocked;
+                                        <>
+                                            <tr className={`border-b transition-colors ${isDupe ? 'bg-amber-50' : isEmpty ? 'bg-gray-50' : 'bg-green-50/40'}`}>
+                                                <td className="p-2 text-xs font-semibold text-center border-r w-8">+</td>
+                                                {COLS_MAIN.map((col, ci) => {
+                                                    const val = nuevaFila[col.key] as string;
+                                                    const isHIni = col.key === 'horometroInicio';
+                                                    const isHFin = col.key === 'horometroFin';
+                                                    const hFinNum = Number(nuevaFila.horometroFin);
+                                                    const hIniNum = Number(nuevaFila.horometroInicio);
+                                                    const isErrorMenor = isHFin && val && nuevaFila.horometroInicio && hFinNum <= hIniNum;
+                                                    const isError24    = isHFin && val && nuevaFila.horometroInicio && (hFinNum - hIniNum) > 24;
+                                                    const isError = isErrorMenor || isError24;
+                                                    const isLocked = isHIni && horometroLocked;
 
-                                                return (
-                                                    <td key={col.key} className={`p-1 border-r ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''} ${isError ? 'bg-red-50' : ''} ${isLocked ? 'bg-gray-50' : ''}`} style={{ minWidth: col.width }}>
-                                                        {isHIni ? (
-                                                            <div className="relative flex items-center h-9">
+                                                    return (
+                                                        <td key={col.key} className={`p-1 border-r ${isDupe && col.key === 'fecha' ? 'bg-amber-100' : ''} ${isError ? 'bg-red-50' : ''} ${isLocked ? 'bg-gray-50' : ''}`} style={{ minWidth: col.width }}>
+                                                            {isHIni ? (
+                                                                <div className="relative flex items-center h-9">
+                                                                    <input
+                                                                        ref={el => { inputRefs.current[ci] = el; }}
+                                                                        type="text" inputMode="decimal"
+                                                                        value={val}
+                                                                        readOnly={horometroLocked}
+                                                                        onChange={e => updateNuevaFila(col.key, e.target.value)}
+                                                                        onKeyDown={e => handleKeyDown(e, ci)}
+                                                                        placeholder="—"
+                                                                        className={`w-full h-9 pl-2 pr-7 text-xs focus:outline-none focus:ring-2 transition-colors ${
+                                                                            horometroLocked
+                                                                                ? 'bg-gray-50 border border-gray-200 text-gray-500 cursor-not-allowed'
+                                                                                : 'border border-blue-300 text-gray-800 focus:ring-blue-500'
+                                                                        }`}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        title={horometroLocked ? 'Editar horómetro inicial' : 'Bloquear'}
+                                                                        onClick={() => setHorometroLocked(l => !l)}
+                                                                        className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                                                                    >
+                                                                        {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
                                                                 <input
                                                                     ref={el => { inputRefs.current[ci] = el; }}
-                                                                    type="text"
-                                                                    inputMode="decimal"
+                                                                    type={col.type === 'date' ? 'date' : 'text'}
+                                                                    inputMode={col.type === 'number' ? 'decimal' : undefined}
                                                                     value={val}
-                                                                    readOnly={horometroLocked}
                                                                     onChange={e => updateNuevaFila(col.key, e.target.value)}
                                                                     onKeyDown={e => handleKeyDown(e, ci)}
-                                                                    placeholder="—"
-                                                                    className={`w-full h-9 pl-2 pr-7 text-xs focus:outline-none focus:ring-2 transition-colors ${
-                                                                        horometroLocked
-                                                                            ? 'bg-gray-50 border border-gray-200 text-gray-500 cursor-not-allowed'
-                                                                            : 'border border-blue-300 text-gray-800 focus:ring-blue-500'
-                                                                    }`}
+                                                                    placeholder={col.type === 'date' ? 'DD/MM/YYYY' : '—'}
+                                                                    className={`w-full h-9 px-2 text-xs border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
+                                                                        ${isError ? 'text-red-600 border-red-300 bg-red-50' : 'border-gray-200 text-gray-800'}
+                                                                    `}
                                                                 />
-                                                                <button
-                                                                    type="button"
-                                                                    title={horometroLocked ? 'Editar horómetro inicial' : 'Bloquear'}
-                                                                    onClick={() => setHorometroLocked(l => !l)}
-                                                                    className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-blue-600 transition-colors"
-                                                                >
-                                                                    {horometroLocked ? <Lock size={11}/> : <Pencil size={11}/>}
-                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                                <td className="p-2 text-xs text-center border-r">
+                                                    {hrs !== null
+                                                        ? <span className={`px-2 py-1 rounded font-bold ${hrs > 24 ? 'bg-red-100 text-red-700' : hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
+                                                        : '—'}
+                                                </td>
+                                                <td className="text-center px-2 min-w-[120px] space-y-1">
+                                                    {isDupe && !isEmpty ? (
+                                                        <span className="text-amber-600 font-medium text-xs block">⚠ Duplicada</span>
+                                                    ) : isEmpty ? (
+                                                        <span className="text-gray-300 text-xs block">—</span>
+                                                    ) : (
+                                                        <div className="flex gap-1 justify-center">
+                                                            <button onClick={saveRowAndReset} disabled={!canSave}
+                                                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold transition-colors ${canSave ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                                                                {savingRow ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
+                                                                {savingRow ? '…' : 'OK'}
+                                                            </button>
+                                                            <button onClick={cancelNewRow}
+                                                                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-gray-600 transition-colors">
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {rowError && <p className="text-red-500 text-xs leading-tight mt-1">{rowError}</p>}
+                                                </td>
+                                            </tr>
+
+                                            {/* Panel "más campos" para la nueva fila */}
+                                            {nuevaFila._expanded && (
+                                                <tr className="bg-green-50/50 border-b border-green-100">
+                                                    <td colSpan={colSpanTotal} className="px-4 pt-2 pb-3">
+                                                        <div className="space-y-3">
+                                                            <p className="text-[10px] font-bold uppercase tracking-wider text-green-600 flex items-center gap-1">
+                                                                <SlidersHorizontal size={10}/> Campos adicionales — Bordo, Tanque, Notas
+                                                            </p>
+                                                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                                                                {(['bordo','espaciamiento'] as const).map(key => (
+                                                                    <div key={key} className="space-y-1">
+                                                                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                                                            {key === 'bordo' ? 'Bordo (m)' : 'Espac. (m)'}
+                                                                        </label>
+                                                                        <input type="text" inputMode="decimal"
+                                                                            value={nuevaFila[key]}
+                                                                            onChange={e => updateNuevaFila(key, e.target.value)}
+                                                                            placeholder="—"
+                                                                            className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
+                                                                    </div>
+                                                                ))}
+                                                                {(['tanqueInicio','litrosTanqueInicio','tanqueFin','litrosTanqueFin'] as const).map(key => (
+                                                                    <div key={key} className="space-y-1">
+                                                                        <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                                                            {key === 'tanqueInicio' ? 'CM Ini.' : key === 'litrosTanqueInicio' ? 'Lt Ini.' : key === 'tanqueFin' ? 'CM Fin' : 'Lt Fin'}
+                                                                        </label>
+                                                                        <input type="text" inputMode="decimal"
+                                                                            value={nuevaFila[key]}
+                                                                            onChange={e => updateNuevaFila(key, e.target.value)}
+                                                                            placeholder="—"
+                                                                            className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
+                                                                    </div>
+                                                                ))}
+                                                                <div className="space-y-1 col-span-full sm:col-span-1">
+                                                                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-gray-400">Notas</label>
+                                                                    <input type="text"
+                                                                        value={nuevaFila.notas}
+                                                                        onChange={e => updateNuevaFila('notas', e.target.value)}
+                                                                        placeholder="Observaciones..."
+                                                                        className="w-full h-8 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400/40"/>
+                                                                </div>
                                                             </div>
-                                                        ) : (
-                                                            <input
-                                                                ref={el => { inputRefs.current[ci] = el; }}
-                                                                type={col.type === 'date' ? 'date' : 'text'}
-                                                                inputMode={col.type === 'number' ? 'decimal' : undefined}
-                                                                value={val}
-                                                                onChange={e => updateNuevaFila(col.key, e.target.value)}
-                                                                onKeyDown={e => handleKeyDown(e, ci)}
-                                                                placeholder={col.type === 'date' ? 'DD/MM/YYYY' : '—'}
-                                                                className={`w-full h-9 px-2 text-xs border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors
-                                                                    ${isError ? 'text-red-600 border-red-300 bg-red-50' : 'border-gray-200 text-gray-800'}
-                                                                `}
-                                                            />
-                                                        )}
+                                                        </div>
                                                     </td>
-                                                );
-                                            })}
-                                            <td className="p-2 text-xs text-center border-r">
-                                                {hrs !== null
-                                                    ? <span className={`px-2 py-1 rounded font-bold ${hrs > 24 ? 'bg-red-100 text-red-700' : hrs > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{hrs}h{hrs > 24 ? ' ⚠' : ''}</span>
-                                                    : '—'}
-                                            </td>
-                                            <td className="text-center px-2 min-w-[120px] space-y-1">
-                                                {isDupe && !isEmpty ? (
-                                                    <span className="text-amber-600 font-medium text-xs block">⚠ Duplicada</span>
-                                                ) : isEmpty ? (
-                                                    <span className="text-gray-300 text-xs block">—</span>
-                                                ) : (
-                                                    <div className="flex gap-1 justify-center">
-                                                        <button onClick={saveRowAndReset} disabled={!canSave}
-                                                            className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold transition-colors ${canSave ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                                                            {savingRow ? <Loader2 size={10} className="animate-spin"/> : <CheckCircle2 size={10}/>}
-                                                            {savingRow ? '…' : 'OK'}
+                                                </tr>
+                                            )}
+
+                                            {/* Botón "▸ más campos" */}
+                                            {!nuevaFila._expanded && !isEmpty && (
+                                                <tr className="border-b border-dashed border-green-200">
+                                                    <td colSpan={colSpanTotal} className="text-center py-1">
+                                                        <button
+                                                            onClick={() => updateNuevaFila('_expanded' as any, true)}
+                                                            className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1 mx-auto py-0.5 px-2 rounded hover:bg-green-50 transition-colors">
+                                                            <ChevronDown size={12}/> más campos (bordo, tanque, notas)
                                                         </button>
-                                                        <button onClick={cancelNewRow}
-                                                            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-gray-600 transition-colors">
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                {nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio && Number(nuevaFila.horometroFin) <= Number(nuevaFila.horometroInicio) && (
-                                                    <p className="text-red-500 text-xs leading-tight mt-1">H. Fin debe ser mayor al Inicial</p>
-                                                )}
-                                                {nuevaFila && nuevaFila.horometroFin && nuevaFila.horometroInicio && (Number(nuevaFila.horometroFin) - Number(nuevaFila.horometroInicio)) > 24 && (
-                                                    <p className="text-red-500 text-xs leading-tight mt-1">⚠ Supera 24 hrs</p>
-                                                )}
-                                                {rowError && <p className="text-red-500 text-xs leading-tight mt-1">{rowError}</p>}
-                                            </td>
-                                        </tr>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </>
                                     )}
                                 </tbody>
                             </table>
@@ -1211,37 +1456,40 @@ function RegistrosDiariosInner() {
     const searchParams = useSearchParams();
     const router       = useRouter();
 
-    // Estado global
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [equipos,   setEquipos]   = useState<Equipo[]>([]);
     const [obras,     setObras]     = useState<ObraConEquipos[]>([]);
     const [loading,   setLoading]   = useState(true);
     const [error,     setError]     = useState('');
 
-    // Selecciones del wizard
-    const [obraId,     setObraId]     = useState('');
-    const [plantilla,  setPlantilla]  = useState<Plantilla | null>(null);
-    const [equipoId,   setEquipoId]   = useState('');
-    const [equipoNombre, setEquipoNombre] = useState('');
+    const [obraId,        setObraId]        = useState('');
+    const [plantilla,     setPlantilla]     = useState<Plantilla | null>(null);
+    const [equipoId,      setEquipoId]      = useState('');
+    const [equipoNombre,  setEquipoNombre]  = useState('');
 
-    // Equipos de la plantilla (cargados dinámicamente)
     const [equiposPlantilla, setEquiposPlantilla] = useState<Equipo[]>([]);
     const [loadingEquipos,   setLoadingEquipos]   = useState(false);
 
-    // Vista historial
-    const [vistaHistorial,  setVistaHistorial]  = useState(false);
-    const [filtroEquipo,    setFiltroEquipo]    = useState('todos');
-    const [filtroObra,      setFiltroObra]      = useState('todas');
-    const [filtroDesde,     setFiltroDesde]     = useState('');
-    const [filtroHasta,     setFiltroHasta]     = useState('');
-    const [filtroSemana,    setFiltroSemana]    = useState('todas');
-    const [busqueda,        setBusqueda]        = useState('');
-    const [sortKey,         setSortKey]         = useState<SortKey>('fecha');
-    const [sortDir,         setSortDir]         = useState<SortDir>('asc');
-    const [page,            setPage]            = useState(1);
+    const [vistaHistorial, setVistaHistorial] = useState(false);
+
+    // Estado de edición inline para el historial
+    const [histEditingId,   setHistEditingId]   = useState<string | null>(null);
+    const [histEditingRow,  setHistEditingRow]  = useState<EditingRow | null>(null);
+    const [histSaving,      setHistSaving]      = useState(false);
+    const [histEditError,   setHistEditError]   = useState('');
+
+    // Filtros historial
+    const [filtroEquipo, setFiltroEquipo] = useState('todos');
+    const [filtroObra,   setFiltroObra]   = useState('todas');
+    const [filtroDesde,  setFiltroDesde]  = useState('');
+    const [filtroHasta,  setFiltroHasta]  = useState('');
+    const [filtroSemana, setFiltroSemana] = useState('todas');
+    const [busqueda,     setBusqueda]     = useState('');
+    const [sortKey,      setSortKey]      = useState<SortKey>('fecha');
+    const [sortDir,      setSortDir]      = useState<SortDir>('asc');
+    const [page,         setPage]         = useState(1);
     const [registroAEliminar, setRegistroAEliminar] = useState<Registro | null>(null);
 
-    // Carga inicial
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -1264,7 +1512,6 @@ function RegistrosDiariosInner() {
         [obraSeleccionada]
     );
 
-    // Cargar avance general para mostrar en las tarjetas de plantilla
     const avancePorPlantilla = useMemo(() => {
         const regsObra = registros.filter(r => r.obra?.id === obraId);
         const regsExistentes: RegistroExistente[] = regsObra.map(r => ({
@@ -1279,11 +1526,20 @@ function RegistrosDiariosInner() {
             rentaEquipoDiaria: r.rentaEquipoDiaria,
             operadores: r.operadores,
             peones: r.peones,
+            bordo: r.bordo,
+            espaciamiento: r.espaciamiento,
+            volumenRoca: r.volumenRoca,
+            porcentajePerdida: r.porcentajePerdida,
+            porcentajeAvance: r.porcentajeAvance,
+            notas: r.notas,
+            tanqueInicio: r.tanqueInicio,
+            litrosTanqueInicio: r.litrosTanqueInicio,
+            tanqueFin: r.tanqueFin,
+            litrosTanqueFin: r.litrosTanqueFin,
         }));
         return calcularAvancePorPlantilla(regsExistentes, plantillas);
     }, [registros, obraId, plantillas]);
 
-    // Cargar equipos de la plantilla seleccionada
     useEffect(() => {
         if (!obraId || !plantilla) { setEquiposPlantilla([]); return; }
         setLoadingEquipos(true);
@@ -1297,7 +1553,6 @@ function RegistrosDiariosInner() {
                 })));
             })
             .catch(() => {
-                // Fallback: usar equipos de la obra
                 const equiposObra = obraSeleccionada?.obraEquipos?.length
                     ? equipos.filter(eq => obraSeleccionada.obraEquipos!.some(oe => oe.equipoId === eq.id))
                     : equipos;
@@ -1306,7 +1561,6 @@ function RegistrosDiariosInner() {
             .finally(() => setLoadingEquipos(false));
     }, [obraId, plantilla, obraSeleccionada, equipos]);
 
-    // Paso actual del wizard
     const paso: 1|2|3|4 = !obraId ? 1 : !plantilla ? 2 : !equipoId ? 3 : 4;
 
     const resetWizard = () => {
@@ -1314,7 +1568,6 @@ function RegistrosDiariosInner() {
         setEquiposPlantilla([]);
     };
 
-    // Historial / lista
     const handleDeleteConfirm = async () => {
         if (!registroAEliminar) return;
         try {
@@ -1324,7 +1577,112 @@ function RegistrosDiariosInner() {
         finally { setRegistroAEliminar(null); }
     };
 
-    const handleEdit      = (id: string) => router.push(`/dashboard/registros-diarios/${id}/edit`);
+    // Edición inline en historial
+    const handleStartHistEdit = (id: string) => {
+        const r = registros.find(x => x.id === id);
+        if (!r) return;
+        const re: RegistroExistente = {
+            id: r.id, fecha: r.fecha,
+            horometroInicio: r.horometroInicio,
+            horometroFin: r.horometroFin,
+            metrosLineales: r.metrosLineales,
+            barrenos: r.barrenos,
+            profundidadPromedio: r.profundidadPromedio,
+            litrosDiesel: r.litrosDiesel,
+            precioDiesel: r.precioDiesel,
+            rentaEquipoDiaria: r.rentaEquipoDiaria,
+            operadores: r.operadores,
+            peones: r.peones,
+            bordo: r.bordo,
+            espaciamiento: r.espaciamiento,
+            volumenRoca: r.volumenRoca,
+            porcentajePerdida: r.porcentajePerdida,
+            porcentajeAvance: r.porcentajeAvance,
+            notas: r.notas,
+            tanqueInicio: r.tanqueInicio,
+            litrosTanqueInicio: r.litrosTanqueInicio,
+            tanqueFin: r.tanqueFin,
+            litrosTanqueFin: r.litrosTanqueFin,
+        };
+        setHistEditingRow(editingRowFromRegistro(re));
+        setHistEditingId(id);
+        setHistEditError('');
+    };
+
+    const handleCancelHistEdit = () => {
+        setHistEditingId(null);
+        setHistEditingRow(null);
+        setHistEditError('');
+    };
+
+    const handleSaveHistEdit = async () => {
+        if (!histEditingRow) return;
+        setHistSaving(true);
+        setHistEditError('');
+        try {
+            await fetchApi(`/registros-diarios/${histEditingRow.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    barrenos:            histEditingRow.barrenos            ? Number(histEditingRow.barrenos)            : 0,
+                    metrosLineales:      histEditingRow.metrosLineales       ? Number(histEditingRow.metrosLineales)      : 0,
+                    profundidadPromedio: histEditingRow.profundidadPromedio  ? Number(histEditingRow.profundidadPromedio) : null,
+                    litrosDiesel:        histEditingRow.litrosDiesel         ? Number(histEditingRow.litrosDiesel)        : 0,
+                    precioDiesel:        histEditingRow.precioDiesel         ? Number(histEditingRow.precioDiesel)        : 0,
+                    rentaEquipoDiaria:   histEditingRow.rentaEquipoDiaria    ? Number(histEditingRow.rentaEquipoDiaria)   : null,
+                    operadores:          histEditingRow.operadores           ? Number(histEditingRow.operadores)          : 1,
+                    peones:              histEditingRow.peones               ? Number(histEditingRow.peones)              : 0,
+                    horometroInicio:     Number(histEditingRow.horometroInicio),
+                    horometroFin:        Number(histEditingRow.horometroFin),
+                    bordo:               histEditingRow.bordo               ? Number(histEditingRow.bordo)               : null,
+                    espaciamiento:       histEditingRow.espaciamiento        ? Number(histEditingRow.espaciamiento)       : null,
+                    volumenRoca:         histEditingRow.volumenRoca          ? Number(histEditingRow.volumenRoca)         : null,
+                    porcentajePerdida:   histEditingRow.porcentajePerdida    ? Number(histEditingRow.porcentajePerdida)   : null,
+                    porcentajeAvance:    histEditingRow.porcentajeAvance     ? Number(histEditingRow.porcentajeAvance)    : null,
+                    tanqueInicio:        histEditingRow.tanqueInicio         ? Number(histEditingRow.tanqueInicio)        : null,
+                    litrosTanqueInicio:  histEditingRow.litrosTanqueInicio   ? Number(histEditingRow.litrosTanqueInicio)  : null,
+                    tanqueFin:           histEditingRow.tanqueFin            ? Number(histEditingRow.tanqueFin)           : null,
+                    litrosTanqueFin:     histEditingRow.litrosTanqueFin      ? Number(histEditingRow.litrosTanqueFin)     : null,
+                    notas:               histEditingRow.notas || null,
+                }),
+            });
+            // Actualizar en memoria
+            setRegistros(prev => prev.map(r => {
+                if (r.id !== histEditingRow.id) return r;
+                const hIni = Number(histEditingRow.horometroInicio);
+                const hFin = Number(histEditingRow.horometroFin);
+                const lts  = histEditingRow.litrosDiesel ? Number(histEditingRow.litrosDiesel) : r.litrosDiesel;
+                const pu   = histEditingRow.precioDiesel  ? Number(histEditingRow.precioDiesel)  : r.precioDiesel;
+                return {
+                    ...r,
+                    barrenos:            histEditingRow.barrenos       ? Number(histEditingRow.barrenos)       : r.barrenos,
+                    metrosLineales:      histEditingRow.metrosLineales  ? Number(histEditingRow.metrosLineales) : r.metrosLineales,
+                    horometroInicio:     hIni,
+                    horometroFin:        hFin,
+                    horasTrabajadas:     hFin - hIni,
+                    litrosDiesel:        lts,
+                    precioDiesel:        pu,
+                    costoDiesel:         lts * pu,
+                    rentaEquipoDiaria:   histEditingRow.rentaEquipoDiaria   ? Number(histEditingRow.rentaEquipoDiaria)   : r.rentaEquipoDiaria,
+                    operadores:          histEditingRow.operadores          ? Number(histEditingRow.operadores)          : r.operadores,
+                    peones:              histEditingRow.peones              ? Number(histEditingRow.peones)              : r.peones,
+                    profundidadPromedio: histEditingRow.profundidadPromedio ? Number(histEditingRow.profundidadPromedio) : r.profundidadPromedio,
+                    bordo:               histEditingRow.bordo               ? Number(histEditingRow.bordo)               : r.bordo,
+                    espaciamiento:       histEditingRow.espaciamiento       ? Number(histEditingRow.espaciamiento)       : r.espaciamiento,
+                    volumenRoca:         histEditingRow.volumenRoca         ? Number(histEditingRow.volumenRoca)         : r.volumenRoca,
+                    porcentajePerdida:   histEditingRow.porcentajePerdida   ? Number(histEditingRow.porcentajePerdida)   : r.porcentajePerdida,
+                    porcentajeAvance:    histEditingRow.porcentajeAvance    ? Number(histEditingRow.porcentajeAvance)    : r.porcentajeAvance,
+                    notas:               histEditingRow.notas || r.notas,
+                    tanqueInicio:        histEditingRow.tanqueInicio        ? Number(histEditingRow.tanqueInicio)        : r.tanqueInicio,
+                    litrosTanqueInicio:  histEditingRow.litrosTanqueInicio  ? Number(histEditingRow.litrosTanqueInicio)  : r.litrosTanqueInicio,
+                    tanqueFin:           histEditingRow.tanqueFin           ? Number(histEditingRow.tanqueFin)           : r.tanqueFin,
+                    litrosTanqueFin:     histEditingRow.litrosTanqueFin     ? Number(histEditingRow.litrosTanqueFin)     : r.litrosTanqueFin,
+                };
+            }));
+            handleCancelHistEdit();
+        } catch (e: any) { setHistEditError(e.message || 'Error al guardar'); }
+        finally { setHistSaving(false); }
+    };
+
     const handleDuplicate = (r: Registro) => {
         const params = new URLSearchParams();
         const eq = equipos.find(e => e.nombre === r.equipo.nombre);
@@ -1422,13 +1780,13 @@ function RegistrosDiariosInner() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Registro Diario</h1>
-                        <p className="text-sm text-gray-500 mt-1">Control diario de operación — equivalente a la hoja Rpte del Excel.</p>
+                        <p className="text-sm text-gray-500 mt-1">Control diario de operación — Obra → Plantilla → Equipo.</p>
                     </div>
                     <button
                         onClick={() => setVistaHistorial(v => !v)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                             vistaHistorial
-                                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
                                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         }`}>
                         {vistaHistorial ? <><X size={14}/> Cerrar historial</> : <><ClipboardList size={14}/> Ver historial</>}
@@ -1440,7 +1798,6 @@ function RegistrosDiariosInner() {
                 {/* ── WIZARD DE 4 PASOS ─────────────────────────────────────── */}
                 {!vistaHistorial && (
                     <div className="space-y-4">
-                        {/* Stepper */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
                             <Stepper paso={paso}/>
                         </div>
@@ -1598,7 +1955,6 @@ function RegistrosDiariosInner() {
                 {/* ── HISTORIAL ─────────────────────────────────────────────── */}
                 {vistaHistorial && (
                     <div className="space-y-4">
-
                         {/* Filtros */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                             <div className="flex items-center gap-2">
@@ -1664,7 +2020,7 @@ function RegistrosDiariosInner() {
                             </div>
                         )}
 
-                        {/* Tabla jerárquica: agrupada por Obra → Plantilla → Equipo */}
+                        {/* Tabla jerárquica: Obra → Plantilla → Equipo */}
                         <Card>
                             {loading ? (
                                 <div className="p-10 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
@@ -1705,12 +2061,10 @@ function RegistrosDiariosInner() {
                                             </thead>
                                             <tbody>
                                                 {(() => {
-                                                    // Agrupar por Obra → Plantilla → Equipo, manteniendo orden de filtrados
                                                     const rows: React.ReactNode[] = [];
                                                     let lastObraId: string | null = null;
                                                     let lastPlantillaKey: string | null = null;
 
-                                                    // Ordenar primero por obra, luego plantilla, luego fecha
                                                     const sorted = [...paginated].sort((a, b) => {
                                                         const obraA = a.obra?.nombre || a.obraNombre || '~Sin obra';
                                                         const obraB = b.obra?.nombre || b.obraNombre || '~Sin obra';
@@ -1725,22 +2079,22 @@ function RegistrosDiariosInner() {
                                                     });
 
                                                     sorted.forEach((r, i) => {
-                                                        const obraId = r.obra?.id || 'sin-obra';
+                                                        const oId = r.obra?.id || 'sin-obra';
                                                         const obraLabel = r.obra?.nombre || r.obraNombre || 'Sin obra asignada';
-                                                        const plantillaKey = `${obraId}-p${r.plantilla?.numero ?? 'x'}`;
+                                                        const plantillaKey = `${oId}-p${r.plantilla?.numero ?? 'x'}`;
 
-                                                        // Separador de OBRA
-                                                        if (obraId !== lastObraId) {
-                                                            lastObraId = obraId;
+                                                        // Separador OBRA
+                                                        if (oId !== lastObraId) {
+                                                            lastObraId = oId;
                                                             lastPlantillaKey = null;
                                                             rows.push(
-                                                                <tr key={`obra-${obraId}-${i}`} className="bg-gray-800">
+                                                                <tr key={`obra-${oId}-${i}`} className="bg-gray-800">
                                                                     <td colSpan={11} className="pl-4 pr-3 py-2">
                                                                         <div className="flex items-center gap-2">
                                                                             <Building2 size={13} className="text-gray-300 flex-shrink-0"/>
                                                                             <span className="text-xs font-bold text-white tracking-wide uppercase">{obraLabel}</span>
                                                                             <span className="ml-auto text-[10px] text-gray-400">
-                                                                                {sorted.filter(x => (x.obra?.id || 'sin-obra') === obraId).length} registros
+                                                                                {sorted.filter(x => (x.obra?.id || 'sin-obra') === oId).length} registros
                                                                             </span>
                                                                         </div>
                                                                     </td>
@@ -1748,16 +2102,16 @@ function RegistrosDiariosInner() {
                                                             );
                                                         }
 
-                                                        // Separador de PLANTILLA
+                                                        // Separador PLANTILLA
                                                         if (plantillaKey !== lastPlantillaKey) {
                                                             lastPlantillaKey = plantillaKey;
-                                                            const regsPlantilla = sorted.filter(x =>
-                                                                (x.obra?.id || 'sin-obra') === obraId &&
+                                                            const regsP = sorted.filter(x =>
+                                                                (x.obra?.id || 'sin-obra') === oId &&
                                                                 (x.plantilla?.numero ?? 'x') === (r.plantilla?.numero ?? 'x')
                                                             );
-                                                            const totM = regsPlantilla.reduce((s, x) => s + x.metrosLineales, 0);
-                                                            const totB = regsPlantilla.reduce((s, x) => s + x.barrenos, 0);
-                                                            const totH = regsPlantilla.reduce((s, x) => s + x.horasTrabajadas, 0);
+                                                            const totM = regsP.reduce((s, x) => s + x.metrosLineales, 0);
+                                                            const totB = regsP.reduce((s, x) => s + x.barrenos, 0);
+                                                            const totH = regsP.reduce((s, x) => s + x.horasTrabajadas, 0);
                                                             rows.push(
                                                                 <tr key={`plant-${plantillaKey}-${i}`} className="bg-indigo-50 border-t border-indigo-100">
                                                                     <td colSpan={11} className="pl-6 pr-3 py-1.5">
@@ -1771,7 +2125,7 @@ function RegistrosDiariosInner() {
                                                                                 )}
                                                                             </div>
                                                                             <span className="text-gray-300">·</span>
-                                                                            <span className="text-[10px] text-indigo-500">{regsPlantilla.length} días · {totH} hrs · {totM.toFixed(1)} m · {totB} bar.</span>
+                                                                            <span className="text-[10px] text-indigo-500">{regsP.length} días · {totH} hrs · {totM.toFixed(1)} m · {totB} bar.</span>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
@@ -1783,9 +2137,16 @@ function RegistrosDiariosInner() {
                                                                 key={r.id}
                                                                 r={r}
                                                                 onDelete={setRegistroAEliminar}
-                                                                onEdit={handleEdit}
                                                                 onDuplicate={handleDuplicate}
                                                                 isLastForEquipo={lastIdByEquipo.get(r.equipo.nombre) === r.id}
+                                                                editingId={histEditingId}
+                                                                onStartEdit={handleStartHistEdit}
+                                                                onCancelEdit={handleCancelHistEdit}
+                                                                onSaveEdit={handleSaveHistEdit}
+                                                                editingRow={histEditingRow}
+                                                                onChangeEdit={(key, val) => setHistEditingRow(prev => prev ? { ...prev, [key]: val } : prev)}
+                                                                savingEdit={histSaving}
+                                                                editError={histEditError}
                                                             />
                                                         );
                                                     });
