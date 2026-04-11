@@ -188,7 +188,7 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                 if (obraIdParam) {
                     const ob = obs.find((o: ObraSimple) => o.id === obraIdParam);
                     if (ob) {
-                        const plantillaSugerida = ob.plantillas?.find(p =>
+                        const plantillaSugerida = ob.plantillas?.find((p: NonNullable<ObraSimple['plantillas']>[number]) =>
                             (!p.fechaInicio || p.fechaInicio <= hoy) &&
                             (!p.fechaFin    || p.fechaFin   >= hoy)
                         ) ?? ob.plantillas?.[0];
