@@ -598,7 +598,7 @@ function CapturaGrid({
     useEffect(() => {
         let alive = true;
         setLoadingCtx(true);
-        fetchApi(`/registros-diarios?obraId=${obraId}&equipoId=${equipoId}`)
+        fetchApi(`/registros-diarios?obraId=${obraId}&equipoId=${equipoId}&plantillaId=${plantilla.id}`)
             .then((data: any[]) => {
                 if (!alive) return;
                 setRegistrosExistentes(data.map((r: any) => ({
