@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     HardHat, Plus, Edit, Trash2, Eye,
     CheckCircle, Clock, PauseCircle, Search, X, AlertTriangle,
+    ChevronRight, ChevronLeft, Info, FileText, Layers, Wrench,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -18,11 +19,9 @@ type PlantillaObra = {
     fechaInicio: string;
     fechaFin: string;
     notas: string;
-    // equipos asignados a esta plantilla específica
     equipos: { equipoId: string; fechaInicio: string }[];
 };
 
-// Tipo extendido de Obra con plantillas
 type PlantillaObraDB = {
     id: string;
     numero: number;
@@ -38,11 +37,11 @@ type PlantillaObraDB = {
 type EquipoSeleccionado = {
     equipoId: string;
     fechaInicio: string;
-    horometroInicial: string;   // C3-A
+    horometroInicial: string;
 };
 
 type EquipoAsignado = {
-    id: string;          // id del registro ObraEquipo
+    id: string;
     equipoId: string;
     nombre: string;
     numeroEconomico: string | null;
@@ -92,7 +91,111 @@ const STATUS_ICON: Record<string, React.ReactElement> = {
     TERMINADA: <Clock size={11} />,
 };
 
-// ─── Modal confirmación eliminar ──────────────────────────────────────────────
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+function Tooltip({ text }: { text: string }) {
+    const [visible, setVisible] = useState(false);
+    return (
+        <span className="relative inline-flex items-center ml-1">
+            <button
+                type="button"
+                className="text-gray-400 hover:text-blue-500 transition-colors focus:outline-none"
+                onMouseEnter={() => setVisible(true)}
+                onMouseLeave={() => setVisible(false)}
+                onFocus={() => setVisible(true)}
+                onBlur={() => setVisible(false)}
+                aria-label="Mas informacion"
+            >
+                <Info size={13} />
+            </button>
+            {visible && (
+                <span className="absolute z-50 left-5 top-0 w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none">
+                    {text}
+                    <span className="absolute -left-1 top-2 w-2 h-2 bg-gray-900 rotate-45" />
+                </span>
+            )}
+        </span>
+    );
+}
+
+// ─── Stepper ──────────────────────────────────────────────────────────────────
+const STEPS = [
+    { id: 1, label: 'Datos generales', icon: FileText },
+    { id: 2, label: 'Contrato y malla', icon: Layers },
+    { id: 3, label: 'Plantillas y equipos', icon: Wrench },
+];
+
+function StepIndicator({ current, completed }: { current: number; completed: Set<number> }) {
+    return (
+        <div className="flex items-center gap-0 mb-6">
+            {STEPS.map((step, idx) => {
+                const Icon = step.icon;
+                const isActive = current === step.id;
+                const isDone   = completed.has(step.id);
+                return (
+                    <React.Fragment key={step.id}>
+                        <div className="flex flex-col items-center gap-1 flex-1">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all text-sm font-semibold ${
+                                isActive ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                                : isDone  ? 'bg-green-500 text-white'
+                                : 'bg-gray-100 text-gray-400'
+                            }`}>
+                                {isDone && !isActive ? <CheckCircle size={15} /> : <Icon size={14} />}
+                            </div>
+                            <span className={`text-xs text-center leading-tight transition-colors ${
+                                isActive ? 'text-blue-600 font-semibold'
+                                : isDone  ? 'text-green-600'
+                                : 'text-gray-400'
+                            }`}>
+                                {step.label}
+                            </span>
+                        </div>
+                        {idx < STEPS.length - 1 && (
+                            <div className={`flex-1 h-0.5 mx-1 mb-5 rounded transition-colors ${
+                                completed.has(step.id) ? 'bg-green-400' : 'bg-gray-200'
+                            }`} />
+                        )}
+                    </React.Fragment>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── Section wrapper ──────────────────────────────────────────────────────────
+function SectionBlock({ color, title, children }: { color: string; title: string; children: React.ReactNode }) {
+    const borderMap: Record<string, string> = {
+        blue:   'border-blue-400',
+        amber:  'border-amber-400',
+        purple: 'border-purple-400',
+        green:  'border-green-400',
+        teal:   'border-teal-400',
+    };
+    const textMap: Record<string, string> = {
+        blue:   'text-blue-600',
+        amber:  'text-amber-600',
+        purple: 'text-purple-600',
+        green:  'text-green-600',
+        teal:   'text-teal-600',
+    };
+    return (
+        <div className={`pl-3 border-l-2 ${borderMap[color] ?? 'border-gray-300'}`}>
+            <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${textMap[color] ?? 'text-gray-500'}`}>{title}</p>
+            {children}
+        </div>
+    );
+}
+
+// ─── Field error ──────────────────────────────────────────────────────────────
+function FieldError({ msg }: { msg?: string }) {
+    if (!msg) return null;
+    return (
+        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+            <AlertTriangle size={11} />{msg}
+        </p>
+    );
+}
+
+// ─── Modal confirmacion eliminar ──────────────────────────────────────────────
 function DeleteConfirmModal({
     nombre, onConfirm, onCancel, loading,
 }: {
@@ -110,11 +213,11 @@ function DeleteConfirmModal({
                     </div>
                     <div>
                         <h3 className="text-base font-bold text-gray-800">Eliminar obra</h3>
-                        <p className="text-xs text-gray-400">Esta acción no se puede deshacer</p>
+                        <p className="text-xs text-gray-400">Esta accion no se puede deshacer</p>
                     </div>
                 </div>
                 <p className="text-sm text-gray-600 mb-6">
-                    ¿Estás seguro de que deseas eliminar <strong>"{nombre}"</strong>?
+                    Seguro que deseas eliminar <strong>&quot;{nombre}&quot;</strong>?
                     Solo es posible si no tiene registros asociados.
                 </p>
                 <div className="flex gap-2">
@@ -124,7 +227,7 @@ function DeleteConfirmModal({
                     </button>
                     <button onClick={onConfirm} disabled={loading}
                         className="flex-1 py-2 text-sm bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {loading ? 'Eliminando...' : 'Sí, eliminar'}
+                        {loading ? 'Eliminando...' : 'Si, eliminar'}
                     </button>
                 </div>
             </div>
@@ -132,7 +235,7 @@ function DeleteConfirmModal({
     );
 }
 
-// ─── Modal Crear / Editar Obra ────────────────────────────────────────────────
+// ─── Modal Crear / Editar Obra (STEPPER) ──────────────────────────────────────
 function ObraModal({
     obra, clientes, equipos, onClose, onSaved,
 }: {
@@ -143,19 +246,16 @@ function ObraModal({
     onSaved: () => void;
 }) {
     const isEdit = !!obra;
+    const [step, setStep] = useState(1);
+    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
-    // C3-A: equipos con horómetro inicial (solo creación — equipo global de la obra)
+    // Equipos (creacion)
     const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
         [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
     );
-
-    // Equipos actuales en modo edición (nivel obra — solo para referencia/lectura)
     const [equiposAsignados, setEquiposAsignados] = useState<EquipoAsignado[]>([]);
     const [loadingEquipos, setLoadingEquipos] = useState(isEdit);
-    // Equipos nuevos a agregar a nivel obra en modo edición
     const [equiposNuevos, setEquiposNuevos] = useState<EquipoSeleccionado[]>([]);
-
-    // Estado para guardar qué equipos de plantilla se están asignando/desasignando (en vuelo)
     const [savingPlantillaEquipo, setSavingPlantillaEquipo] = useState(false);
 
     useEffect(() => {
@@ -175,7 +275,6 @@ function ObraModal({
             .finally(() => setLoadingEquipos(false));
     }, []);
 
-    // C1-B: plantillas — precargar desde la obra en modo edición (incluyendo equipos por plantilla)
     const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
         obra?.plantillas && obra.plantillas.length > 0
             ? obra.plantillas.map(p => ({
@@ -187,7 +286,7 @@ function ObraModal({
                 fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
                 notas:             p.notas ?? '',
                 equipos:           (p.plantillaEquipos ?? []).map(pe => ({
-                    equipoId:   pe.equipoId,
+                    equipoId:    pe.equipoId,
                     fechaInicio: '',
                 })),
             }))
@@ -206,14 +305,26 @@ function ObraModal({
         fechaInicio:       obra?.fechaInicio?.slice(0, 10)     ?? '',
         fechaFin:          obra?.fechaFin?.slice(0, 10)        ?? '',
         status:            obra?.status            ?? 'ACTIVA',
-        bordo:             obra?.bordo?.toString()         ?? '',   // C1-A
-        espaciamiento:     obra?.espaciamiento?.toString() ?? '',   // C1-A
+        bordo:             obra?.bordo?.toString()         ?? '',
+        espaciamiento:     obra?.espaciamiento?.toString() ?? '',
         notas:             obra?.notas             ?? '',
     });
 
-    const [dirty,  setDirty]  = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error,  setError]  = useState('');
+    const [touched, setTouched] = useState<Set<string>>(new Set());
+    const [dirty,   setDirty]   = useState(false);
+    const [saving,  setSaving]  = useState(false);
+    const [saveError, setSaveError] = useState('');
+
+    const touch = (key: string) => setTouched(prev => new Set(prev).add(key));
+
+    const fieldErrors: Record<string, string> = {};
+    if (touched.has('nombre')    && !form.nombre.trim())    fieldErrors.nombre    = 'El nombre de la obra es requerido';
+    if (touched.has('clienteId') && !form.clienteId)        fieldErrors.clienteId = 'Debes seleccionar un cliente';
+    if (form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio)
+        fieldErrors.fechaFin = 'La fecha fin no puede ser anterior a la fecha de inicio';
+
+    const canAdvanceStep1 = form.nombre.trim() && form.clienteId;
+    const canAdvanceStep2 = !fieldErrors.fechaFin;
 
     const handleFieldChange = (key: keyof typeof form) =>
         (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -221,17 +332,13 @@ function ObraModal({
             setDirty(true);
         };
 
-    const fechaError =
-        form.fechaInicio && form.fechaFin && form.fechaFin < form.fechaInicio
-            ? 'La fecha fin no puede ser anterior a la fecha de inicio'
-            : '';
+    const handleBlur = (key: string) => touch(key);
 
     const importeTotal =
         form.metrosContratados && form.precioUnitario
             ? Number(form.metrosContratados) * Number(form.precioUnitario)
             : null;
 
-    // C1-A: área calculada
     const areaCalculada =
         form.bordo && form.espaciamiento
             ? (Number(form.bordo) * Number(form.espaciamiento)).toFixed(2)
@@ -241,95 +348,73 @@ function ObraModal({
         n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const handleClose = () => {
-        if (dirty && !confirm('Tienes cambios sin guardar. ¿Descartar cambios?')) return;
+        if (dirty && !confirm('Tienes cambios sin guardar. Descartar cambios?')) return;
         onClose();
     };
 
-    // ── Equipos (creación) ────────────────────────────────────────────────────
+    const goToStep = (n: number) => {
+        setCompletedSteps(prev => new Set(prev).add(step));
+        setStep(n);
+        if (step === 1) {
+            setTouched(prev => new Set([...prev, 'nombre', 'clienteId']));
+        }
+    };
+
+    // Equipos helpers (creacion)
     const addEquipo = () =>
         setEquiposSeleccionados(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
-
     const removeEquipo = (idx: number) =>
         setEquiposSeleccionados(prev => prev.filter((_, i) => i !== idx));
-
     const updateEquipo = (idx: number, field: keyof EquipoSeleccionado, value: string) => {
-        setEquiposSeleccionados(prev =>
-            prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e))
-        );
+        setEquiposSeleccionados(prev => prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e)));
         setDirty(true);
     };
-
     const equiposUsados = new Set(equiposSeleccionados.map(e => e.equipoId).filter(Boolean));
 
-    // ── Equipos (edición) ─────────────────────────────────────────────────────
-    const updateEquipoAsignado = (id: string, field: 'equipoId' | 'fechaInicio' | 'fechaFin', value: string) => {
-        setEquiposAsignados(prev =>
-            prev.map(e => e.id === id ? { ...e, [field]: value } : e)
-        );
-        setDirty(true);
-    };
-
+    // Equipos helpers (edicion)
     const toggleEliminarEquipo = (id: string) => {
-        setEquiposAsignados(prev =>
-            prev.map(e => e.id === id ? { ...e, _eliminar: !e._eliminar } : e)
-        );
+        setEquiposAsignados(prev => prev.map(e => e.id === id ? { ...e, _eliminar: !e._eliminar } : e));
         setDirty(true);
     };
-
     const addEquipoNuevo = () =>
         setEquiposNuevos(prev => [...prev, { equipoId: '', fechaInicio: '', horometroInicial: '' }]);
-
     const removeEquipoNuevo = (idx: number) =>
         setEquiposNuevos(prev => prev.filter((_, i) => i !== idx));
-
     const updateEquipoNuevo = (idx: number, field: keyof EquipoSeleccionado, value: string) => {
-        setEquiposNuevos(prev =>
-            prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e))
-        );
+        setEquiposNuevos(prev => prev.map((e, i) => (i === idx ? { ...e, [field]: value } : e)));
         setDirty(true);
     };
-
     const equiposUsadosEdit = new Set([
         ...equiposAsignados.filter(e => !e._eliminar).map(e => e.equipoId),
         ...equiposNuevos.map(e => e.equipoId).filter(Boolean),
     ]);
 
-    // ── Plantillas (C1-B) ─────────────────────────────────────────────────────
+    // Plantillas helpers
     const addPlantilla = () =>
         setPlantillas(prev => [
             ...prev,
             { numero: prev.length + 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '', equipos: [] },
         ]);
-
     const removePlantilla = (idx: number) =>
         setPlantillas(prev =>
             prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, numero: i + 1 }))
         );
-
     const updatePlantilla = (idx: number, field: keyof Omit<PlantillaObra, 'equipos'>, value: string) => {
-        setPlantillas(prev =>
-            prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
-        );
+        setPlantillas(prev => prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
         setDirty(true);
     };
-
-    // Agregar equipo a una plantilla específica
     const addEquipoToPlantilla = (pIdx: number) => {
         setPlantillas(prev => prev.map((p, i) =>
             i === pIdx ? { ...p, equipos: [...p.equipos, { equipoId: '', fechaInicio: '' }] } : p
         ));
         setDirty(true);
     };
-
-    // Quitar equipo de una plantilla
     const removeEquipoFromPlantilla = (pIdx: number, eIdx: number) => {
         setPlantillas(prev => prev.map((p, i) =>
             i === pIdx ? { ...p, equipos: p.equipos.filter((_, j) => j !== eIdx) } : p
         ));
         setDirty(true);
     };
-
-    // Actualizar un equipo dentro de una plantilla
     const updateEquipoInPlantilla = (pIdx: number, eIdx: number, field: 'equipoId' | 'fechaInicio', value: string) => {
         setPlantillas(prev => prev.map((p, i) =>
             i === pIdx
@@ -339,30 +424,25 @@ function ObraModal({
         setDirty(true);
     };
 
-    // IDs de equipos ya usados en TODAS las plantillas (para deshabilitar duplicados)
-    const todosEquiposEnPlantillas = new Set(
-        plantillas.flatMap(p => p.equipos.map(e => e.equipoId).filter(Boolean))
-    );
-
-    // ── Guardar ───────────────────────────────────────────────────────────────
+    // Guardar
     const handleSave = async () => {
-        if (!form.nombre.trim()) { setError('El nombre de la obra es requerido'); return; }
-        if (!form.clienteId)     { setError('Debes seleccionar un cliente del catálogo'); return; }
-        if (fechaError)          { setError(fechaError); return; }
+        setTouched(new Set(['nombre', 'clienteId', 'fechaFin']));
+        if (!form.nombre.trim()) { setSaveError('El nombre de la obra es requerido'); return; }
+        if (!form.clienteId)     { setSaveError('Debes seleccionar un cliente del catalogo'); return; }
+        if (fieldErrors.fechaFin){ setSaveError(fieldErrors.fechaFin); return; }
 
         const equiposValidos = equiposSeleccionados.filter(e => e.equipoId);
         if (!isEdit && equiposValidos.length === 0) {
-            setError('Debes asignar al menos un equipo a la obra');
+            setSaveError('Debes asignar al menos un equipo a la obra');
             return;
         }
-
         const plantillasValidas = plantillas.filter(p => p.metrosContratados);
         if (!isEdit && plantillasValidas.length === 0) {
-            setError('Debes agregar al menos una plantilla con metros contratados');
+            setSaveError('Debes agregar al menos una plantilla con metros contratados');
             return;
         }
 
-        setSaving(true); setError('');
+        setSaving(true); setSaveError('');
         try {
             const body: Record<string, unknown> = {
                 nombre:            form.nombre.trim(),
@@ -417,9 +497,7 @@ function ObraModal({
                         fechaInicio: e.fechaInicio || null,
                         fechaFin:    e.fechaFin    || null,
                     }));
-                body.equiposEliminados = equiposAsignados
-                    .filter(e => e._eliminar)
-                    .map(e => e.id);
+                body.equiposEliminados = equiposAsignados.filter(e => e._eliminar).map(e => e.id);
                 const nuevosValidos = equiposNuevos.filter(e => e.equipoId);
                 if (nuevosValidos.length > 0) {
                     body.equiposNuevos = nuevosValidos.map(e => ({
@@ -431,30 +509,25 @@ function ObraModal({
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             }
 
-            // ── Asignar equipos a plantillas específicas (POST /plantillas/[id]/equipos) ──
-            // Lo hacemos después de guardar la obra para tener los IDs de plantilla
-            // Necesitamos recargar la obra para obtener los IDs de las plantillas recién creadas
             if (plantillasValidas.some(p => p.equipos.length > 0)) {
                 setSavingPlantillaEquipo(true);
                 try {
                     const obraActualizada: any = await fetchApi(`/obras/${obraId}`);
                     const plantillasDB: any[] = obraActualizada.plantillas ?? [];
-
                     for (const plt of plantillasValidas) {
                         const pDB = plantillasDB.find((p: any) => p.numero === plt.numero);
                         if (!pDB) continue;
-                        const equiposValidos = plt.equipos.filter(e => e.equipoId);
-                        for (const eq of equiposValidos) {
-                            // Verificar si ya está asignado para no duplicar
+                        const eqValidos = plt.equipos.filter(e => e.equipoId);
+                        for (const eq of eqValidos) {
                             const yaAsignado = (pDB.plantillaEquipos ?? []).some((pe: any) => pe.equipoId === eq.equipoId);
                             if (!yaAsignado) {
                                 await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
                                     method: 'POST',
                                     body: JSON.stringify({
-                                        equipoId:   eq.equipoId,
+                                        equipoId:    eq.equipoId,
                                         fechaInicio: eq.fechaInicio || plt.fechaInicio || null,
                                     }),
-                                }).catch(() => {}); // no bloquear si falla una asignación individual
+                                }).catch(() => {});
                             }
                         }
                     }
@@ -465,454 +538,615 @@ function ObraModal({
 
             onSaved();
         } catch (e: any) {
-            setError(e.message || 'Error al guardar');
+            setSaveError(e.message || 'Error al guardar');
         } finally {
             setSaving(false);
         }
     };
 
-    const inp = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
+    // Input helper
+    const inp = (
+        label: string,
+        key: keyof typeof form,
+        type = 'text',
+        placeholder = '',
+        tooltip?: string,
+        required = false
+    ) => (
         <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-            <input type={type} value={String(form[key])} onChange={handleFieldChange(key)}
+            <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center">
+                {label}
+                {required && <span className="text-red-500 ml-0.5">*</span>}
+                {tooltip && <Tooltip text={tooltip} />}
+            </label>
+            <input
+                type={type}
+                value={String(form[key])}
+                onChange={handleFieldChange(key)}
+                onBlur={() => handleBlur(key)}
                 placeholder={placeholder}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                    fieldErrors[key]
+                        ? 'border-red-300 focus:ring-red-500/20 focus:border-red-400 bg-red-50/30'
+                        : 'border-gray-200 focus:ring-blue-500/20 focus:border-blue-500'
+                }`}
+            />
+            <FieldError msg={fieldErrors[key]} />
         </div>
     );
 
-    return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl">
-                    <h2 className="text-lg font-bold text-gray-800">{isEdit ? 'Editar Obra' : 'Nueva Obra'}</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Contrato / proyecto de perforación</p>
-                </div>
-
-                <div className="px-6 py-5 space-y-5">
-
-                    {/* Nombre y status */}
-                    <div className="grid grid-cols-2 gap-3">
-                        {inp('Nombre de la obra *', 'nombre', 'text', 'Ej: JOVERO')}
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                            <select value={form.status} onChange={handleFieldChange('status')}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="ACTIVA">Activa</option>
-                                <option value="PAUSADA">Pausada</option>
-                                <option value="TERMINADA">Terminada</option>
-                            </select>
-                        </div>
+    // Step 1: Datos generales
+    const renderStep1 = () => (
+        <div className="space-y-5">
+            <SectionBlock color="blue" title="Identificacion">
+                <div className="grid grid-cols-2 gap-3">
+                    {inp('Nombre de la obra', 'nombre', 'text', 'Ej: Mina El Toro - Fase 2', undefined, true)}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                        <select
+                            value={form.status}
+                            onChange={handleFieldChange('status')}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        >
+                            <option value="ACTIVA">Activa</option>
+                            <option value="PAUSADA">Pausada</option>
+                            <option value="TERMINADA">Terminada</option>
+                        </select>
                     </div>
+                </div>
+                <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center">
+                        Cliente <span className="text-red-500 ml-0.5">*</span>
+                    </label>
+                    <select
+                        value={form.clienteId}
+                        onChange={handleFieldChange('clienteId')}
+                        onBlur={() => handleBlur('clienteId')}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                            fieldErrors.clienteId
+                                ? 'border-red-300 focus:ring-red-500/20 bg-red-50/30'
+                                : 'border-gray-200 focus:ring-blue-500/20'
+                        }`}
+                    >
+                        <option value="">Selecciona un cliente</option>
+                        {clientes.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                    </select>
+                    <FieldError msg={fieldErrors.clienteId} />
+                    {clientes.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                            No hay clientes en el catalogo.{' '}
+                            <a href="/dashboard/clients" className="underline">Crear cliente</a>
+                        </p>
+                    )}
+                </div>
+                <div className="mt-3">
+                    {inp('Ubicacion', 'ubicacion', 'text', 'Ej: Mun. Alamos, Sonora')}
+                </div>
+            </SectionBlock>
 
-                    {/* Cliente */}
+            <SectionBlock color="purple" title="Fechas del proyecto">
+                <div className="grid grid-cols-2 gap-3">
+                    {inp('Fecha inicio', 'fechaInicio', 'date')}
                     <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Cliente <span className="text-red-500">*</span>
+                            Fecha fin estimada
                         </label>
-                        <select value={form.clienteId} onChange={handleFieldChange('clienteId')}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                            <option value="">— Selecciona un cliente —</option>
-                            {clientes.map(c => (
-                                <option key={c.id} value={c.id}>{c.nombre}</option>
-                            ))}
-                        </select>
-                        {clientes.length === 0 && (
-                            <p className="text-xs text-amber-600 mt-1">
-                                No hay clientes en el catálogo.{' '}
-                                <a href="/dashboard/clients" className="underline">Crear cliente →</a>
-                            </p>
-                        )}
+                        <input
+                            type="date"
+                            value={form.fechaFin}
+                            onChange={handleFieldChange('fechaFin')}
+                            onBlur={() => handleBlur('fechaFin')}
+                            min={form.fechaInicio || undefined}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
+                                fieldErrors.fechaFin
+                                    ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500 bg-red-50/30'
+                                    : 'border-gray-200 focus:ring-blue-500/20 focus:border-blue-500'
+                            }`}
+                        />
+                        <FieldError msg={fieldErrors.fechaFin} />
                     </div>
+                </div>
+            </SectionBlock>
 
-                    {inp('Ubicación', 'ubicacion', 'text', 'Ej: Mun. Álamos, Sonora')}
+            <SectionBlock color="teal" title="Notas internas">
+                <textarea
+                    value={form.notas}
+                    onChange={e => { setForm(f => ({ ...f, notas: e.target.value })); setDirty(true); }}
+                    rows={2}
+                    placeholder="Observaciones generales sobre la obra..."
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                />
+            </SectionBlock>
+        </div>
+    );
 
-                    {/* Contrato */}
+    // Step 2: Contrato y malla
+    const renderStep2 = () => (
+        <div className="space-y-5">
+            <SectionBlock color="blue" title="Contrato">
+                <div className="grid grid-cols-2 gap-3">
+                    {inp(
+                        'Metros contratados totales (m)',
+                        'metrosContratados',
+                        'number',
+                        '2000',
+                        'Total de metros de perforacion comprometidos en el contrato con el cliente.'
+                    )}
+                    {inp(
+                        'Precio unitario ($/m)',
+                        'precioUnitario',
+                        'number',
+                        '24.50',
+                        'Precio pactado por cada metro perforado, en la moneda seleccionada.'
+                    )}
+                </div>
+                <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+                    <select
+                        value={form.moneda}
+                        onChange={handleFieldChange('moneda')}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                        <option value="MXN">MXN - Peso mexicano</option>
+                        <option value="USD">USD - Dolar</option>
+                    </select>
+                </div>
+                <div className={`mt-3 rounded-xl px-4 py-3 flex justify-between items-center border transition-colors ${
+                    importeTotal !== null
+                        ? 'bg-blue-50 border-blue-100'
+                        : 'bg-gray-50 border-gray-100'
+                }`}>
+                    <span className={`text-xs font-medium ${importeTotal !== null ? 'text-blue-600' : 'text-gray-400'}`}>
+                        Importe total del contrato
+                    </span>
+                    <span className={`text-sm font-bold ${importeTotal !== null ? 'text-blue-700' : 'text-gray-300'}`}>
+                        {importeTotal !== null
+                            ? `$${fmtMoney(importeTotal)} ${form.moneda}`
+                            : '—'}
+                    </span>
+                </div>
+            </SectionBlock>
+
+            <SectionBlock color="amber" title="Malla de perforacion">
+                <p className="text-xs text-gray-400 mb-3 leading-relaxed">
+                    La malla define la distribucion espacial de los barrenos. El area se calcula automaticamente a partir del bordo y el espaciamiento.
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                    {inp(
+                        'Bordo (m)',
+                        'bordo',
+                        'number',
+                        '2.7',
+                        'Distancia entre filas de barrenos, medida de centro a centro.'
+                    )}
+                    {inp(
+                        'Espaciamiento (m)',
+                        'espaciamiento',
+                        'number',
+                        '3.0',
+                        'Distancia entre barrenos dentro de la misma fila, medida de centro a centro.'
+                    )}
                     <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Contrato</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {inp('Metros contratados totales (m)', 'metrosContratados', 'number', '2000')}
-                            {inp('Precio unitario ($/m)', 'precioUnitario', 'number', '24.50')}
-                        </div>
-                        <div className="mt-3">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
-                            <select value={form.moneda} onChange={handleFieldChange('moneda')}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="MXN">MXN – Peso mexicano</option>
-                                <option value="USD">USD – Dólar</option>
-                            </select>
-                        </div>
-                        {importeTotal !== null && (
-                            <div className="mt-3 bg-blue-50 rounded-xl px-4 py-3 flex justify-between items-center">
-                                <span className="text-xs text-blue-600 font-medium">Importe total del contrato</span>
-                                <span className="text-sm font-bold text-blue-700">
-                                    ${fmtMoney(importeTotal)} {form.moneda}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* C1-A: Malla de perforación — bordo + espaciamiento + área calculada */}
-                    <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Malla de perforación</p>
-                        <div className="grid grid-cols-3 gap-3">
-                            {inp('Bordo (m)', 'bordo', 'number', '2.7')}
-                            {inp('Espaciamiento (m)', 'espaciamiento', 'number', '3.0')}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Área (m²)</label>
-                                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-                                    {areaCalculada ? areaCalculada : '—'}
-                                </div>
-                            </div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1 flex items-center">
+                            Area (m2)
+                            <Tooltip text="Calculado automaticamente: Bordo x Espaciamiento." />
+                        </label>
+                        <div className={`px-3 py-2 rounded-lg text-sm border ${
+                            areaCalculada
+                                ? 'bg-amber-50 border-amber-100 text-amber-700 font-semibold'
+                                : 'bg-gray-50 border-gray-200 text-gray-400'
+                        }`}>
+                            {areaCalculada ?? '—'}
                         </div>
                     </div>
+                </div>
+            </SectionBlock>
+        </div>
+    );
 
-                    {/* Fechas */}
-                    <div className="grid grid-cols-2 gap-3">
-                        {inp('Fecha inicio', 'fechaInicio', 'date')}
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Fecha fin estimada</label>
-                            <input type="date" value={form.fechaFin} onChange={handleFieldChange('fechaFin')}
-                                min={form.fechaInicio || undefined}
-                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
-                                    fechaError
-                                        ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-                                        : 'border-gray-200 focus:ring-blue-500/20 focus:border-blue-500'
-                                }`} />
-                        </div>
-                    </div>
-                    {fechaError && <p className="text-xs text-red-500 -mt-3">{fechaError}</p>}
+    // Step 3: Plantillas y equipos
+    const renderStep3 = () => (
+        <div className="space-y-5">
+            <SectionBlock color="green" title="Plantillas de perforacion">
+                <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4">
+                    <p className="text-xs text-green-800 leading-relaxed">
+                        Cada plantilla representa un <strong>bloque o zona de trabajo</strong> dentro de la obra, con sus propios metros contratados y equipos.
+                        Agrega mas de una si la obra se divide en fases o sectores.
+                    </p>
+                </div>
 
-                    {/* C1-B: Plantillas (creación y edición) */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                Plantillas {!isEdit && <span className="text-red-500">*</span>}
-                            </p>
-                            <button type="button" onClick={addPlantilla}
-                                className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                <Plus size={12} /> Agregar plantilla
-                            </button>
-                        </div>
-                        <div className="space-y-3">
-                            {plantillas.map((plt, idx) => {
-                                const bordoN        = Number(form.bordo);
-                                const espacN        = Number(form.espaciamiento);
-                                const metros        = Number(plt.metrosContratados);
-                                const areaPlantilla = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
-                                const volEstimado   = areaPlantilla && metros
-                                    ? (Number(areaPlantilla) * metros).toFixed(1) : null;
+                <div className="flex justify-end mb-2">
+                    <button type="button" onClick={addPlantilla}
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                        <Plus size={12} /> Agregar plantilla
+                    </button>
+                </div>
 
-                                // equipos ya usados en ESTA plantilla
-                                const equiposEnEstaPlantilla = new Set(plt.equipos.map(e => e.equipoId).filter(Boolean));
-                                // equipos usados en OTRAS plantillas
-                                const equiposEnOtras = new Set(
-                                    plantillas.flatMap((p, i) => i === idx ? [] : p.equipos.map(e => e.equipoId).filter(Boolean))
-                                );
+                <div className="space-y-3">
+                    {plantillas.map((plt, idx) => {
+                        const bordoN        = Number(form.bordo);
+                        const espacN        = Number(form.espaciamiento);
+                        const metros        = Number(plt.metrosContratados);
+                        const areaPlantilla = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
+                        const volEstimado   = areaPlantilla && metros
+                            ? (Number(areaPlantilla) * metros).toFixed(1) : null;
 
-                                return (
-                                    <div key={idx} className="border border-gray-100 rounded-xl bg-gray-50/50 overflow-hidden">
-                                        {/* Header plantilla */}
-                                        <div className="flex items-center justify-between px-3 pt-3 pb-1">
-                                            <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                                                <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
-                                                    {plt.numero}
-                                                </span>
-                                                Plantilla {plt.numero}
-                                            </span>
-                                            {plantillas.length > 1 && (
-                                                <button type="button" onClick={() => removePlantilla(idx)}
-                                                    className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
-                                                    <X size={13} />
-                                                </button>
-                                            )}
-                                        </div>
+                        const equiposEnEstaPlantilla = new Set(plt.equipos.map(e => e.equipoId).filter(Boolean));
+                        const equiposEnOtras = new Set(
+                            plantillas.flatMap((p, i) => i === idx ? [] : p.equipos.map(e => e.equipoId).filter(Boolean))
+                        );
 
-                                        <div className="px-3 pb-3 space-y-2">
-                                            {/* Metros y barrenos */}
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Metros contratados *</label>
-                                                    <input type="number" placeholder="841.50" value={plt.metrosContratados}
-                                                        onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Barrenos</label>
-                                                    <input type="number" placeholder="89" value={plt.barrenos}
-                                                        onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                            </div>
-
-                                            {/* Fechas */}
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
-                                                    <input type="date" value={plt.fechaInicio}
-                                                        onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">
-                                                        Fecha fin
-                                                        <span className="text-gray-400 font-normal ml-1">(opcional)</span>
-                                                    </label>
-                                                    <input type="date" value={plt.fechaFin}
-                                                        onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                            </div>
-
-                                            {/* Área y vol estimado */}
-                                            {(areaPlantilla || volEstimado) && (
-                                                <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
-                                                    {areaPlantilla && (
-                                                        <span className="text-blue-600">
-                                                            Área: <strong>{areaPlantilla} m²</strong>
-                                                            <span className="text-blue-400 ml-1">({form.bordo} × {form.espaciamiento})</span>
-                                                        </span>
-                                                    )}
-                                                    {volEstimado && (
-                                                        <span className="text-blue-700 font-medium">
-                                                            Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m³</strong>
-                                                            <span className="text-blue-400 ml-1">({plt.metrosContratados} m × {areaPlantilla} m²)</span>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {/* ── Equipos de esta plantilla ── */}
-                                            <div className="border-t border-gray-100 pt-2 mt-1">
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <span className="text-xs font-semibold text-gray-500">
-                                                        Equipos de esta plantilla
-                                                        <span className="text-gray-400 font-normal ml-1">
-                                                            {plt.equipos.length === 0
-                                                                ? '— sin asignar (usará los de la obra)'
-                                                                : `(${plt.equipos.length})`}
-                                                        </span>
-                                                    </span>
-                                                    <button type="button"
-                                                        onClick={() => addEquipoToPlantilla(idx)}
-                                                        className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
-                                                        <Plus size={11} /> Asignar equipo
-                                                    </button>
-                                                </div>
-
-                                                {plt.equipos.length > 0 && (
-                                                    <div className="space-y-1.5">
-                                                        {plt.equipos.map((eq, eIdx) => (
-                                                            <div key={eIdx} className="flex gap-2 items-end">
-                                                                <div className="flex-1">
-                                                                    <select
-                                                                        value={eq.equipoId}
-                                                                        onChange={e => updateEquipoInPlantilla(idx, eIdx, 'equipoId', e.target.value)}
-                                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
-                                                                        <option value="">— Selecciona equipo —</option>
-                                                                        {equipos.map(e => (
-                                                                            <option key={e.id} value={e.id}
-                                                                                disabled={
-                                                                                    equiposEnEstaPlantilla.has(e.id) && eq.equipoId !== e.id
-                                                                                }>
-                                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
-                                                                                {equiposEnOtras.has(e.id) && eq.equipoId !== e.id ? ' · también en otra plt.' : ''}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                </div>
-                                                                <button type="button"
-                                                                    onClick={() => removeEquipoFromPlantilla(idx, eIdx)}
-                                                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
-                                                                    <X size={12} />
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Equipos asignados a nivel obra (modo edición — solo para agregar equipo nuevo a la obra) */}
-                    {isEdit && (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                    Equipos de la obra
-                                    <span className="text-gray-400 font-normal ml-1 text-xs">(disponibles para todas las plantillas)</span>
-                                </p>
-                                <button type="button" onClick={addEquipoNuevo}
-                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                    <Plus size={12} /> Agregar equipo
-                                </button>
-                            </div>
-
-                            {loadingEquipos ? (
-                                <p className="text-xs text-gray-400 py-2">Cargando equipos...</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {/* Equipos ya asignados — solo lectura con opción de cerrar */}
-                                    {equiposAsignados.map(eq => (
-                                        <div key={eq.id}
-                                            className={`border rounded-xl p-3 flex items-center gap-3 transition-colors ${eq._eliminar ? 'bg-red-50 border-red-200 opacity-60' : 'bg-gray-50/50 border-gray-100'}`}>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-700 truncate">
-                                                    {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
-                                                </p>
-                                                <p className="text-xs text-gray-400">
-                                                    Desde {eq.fechaInicio || '—'}
-                                                    {eq.fechaFin ? ` · hasta ${eq.fechaFin}` : ' · activo'}
-                                                </p>
-                                            </div>
-                                            <button type="button"
-                                                onClick={() => toggleEliminarEquipo(eq.id)}
-                                                className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${eq._eliminar
-                                                    ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                                                    : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
-                                                {eq._eliminar ? 'Deshacer' : <Trash2 size={13} />}
-                                            </button>
-                                        </div>
-                                    ))}
-
-                                    {/* Equipos nuevos a agregar */}
-                                    {equiposNuevos.map((eq, idx) => (
-                                        <div key={idx} className="border border-blue-200 rounded-xl p-3 bg-blue-50/30 space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs font-semibold text-blue-600">Nuevo equipo</span>
-                                                <button type="button" onClick={() => removeEquipoNuevo(idx)}
-                                                    className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
-                                                    <X size={13} />
-                                                </button>
-                                            </div>
-                                            <div className="flex gap-2 flex-wrap items-end">
-                                                <div className="flex-1 min-w-[160px]">
-                                                    <label className="block text-xs text-gray-500 mb-1">Equipo</label>
-                                                    <select value={eq.equipoId}
-                                                        onChange={e => updateEquipoNuevo(idx, 'equipoId', e.target.value)}
-                                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                                        <option value="">— Selecciona —</option>
-                                                        {equipos.map(e => (
-                                                            <option key={e.id} value={e.id}
-                                                                disabled={equiposUsadosEdit.has(e.id) && eq.equipoId !== e.id}>
-                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>
-                                                    <input type="date" value={eq.fechaInicio}
-                                                        onChange={e => updateEquipoNuevo(idx, 'fechaInicio', e.target.value)}
-                                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs text-gray-500 mb-1">Horómetro inicial (hrs)</label>
-                                                    <input type="number" placeholder="7662" value={eq.horometroInicial}
-                                                        onChange={e => updateEquipoNuevo(idx, 'horometroInicial', e.target.value)}
-                                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    {equiposAsignados.length === 0 && equiposNuevos.length === 0 && (
-                                        <p className="text-xs text-gray-400 py-1">Sin equipos asignados a la obra.</p>
+                        return (
+                            <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden">
+                                <div className="flex items-center justify-between px-3 pt-3 pb-2 bg-gray-50">
+                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                        <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
+                                            {plt.numero}
+                                        </span>
+                                        Plantilla {plt.numero}
+                                    </span>
+                                    {plantillas.length > 1 && (
+                                        <button type="button" onClick={() => removePlantilla(idx)}
+                                            className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
+                                            <X size={13} />
+                                        </button>
                                     )}
                                 </div>
-                            )}
-                        </div>
-                    )}
 
-                    {/* C3-A: Equipos con horómetro inicial (solo en creación) */}
-                    {!isEdit && (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                    Equipos asignados <span className="text-red-500">*</span>
-                                </p>
-                                <button type="button" onClick={addEquipo}
-                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                                    <Plus size={12} /> Agregar equipo
-                                </button>
+                                <div className="px-3 pb-3 pt-2 space-y-2">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                                Metros contratados
+                                                <span className="text-red-500 ml-0.5">*</span>
+                                                <Tooltip text="Total de metros de perforacion asignados a esta plantilla especifica." />
+                                            </label>
+                                            <input type="number" placeholder="841.50" value={plt.metrosContratados}
+                                                onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
+                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                                Barrenos
+                                                <Tooltip text="Numero total de barrenos (pozos) contemplados en esta plantilla." />
+                                            </label>
+                                            <input type="number" placeholder="89" value={plt.barrenos}
+                                                onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
+                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
+                                            <input type="date" value={plt.fechaInicio}
+                                                onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
+                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">
+                                                Fecha fin <span className="text-gray-400 font-normal">(opcional)</span>
+                                            </label>
+                                            <input type="date" value={plt.fechaFin}
+                                                onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
+                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                        </div>
+                                    </div>
+
+                                    {(areaPlantilla || volEstimado) && (
+                                        <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
+                                            {areaPlantilla && (
+                                                <span className="text-blue-600">
+                                                    Area: <strong>{areaPlantilla} m2</strong>
+                                                    <span className="text-blue-400 ml-1">({form.bordo} x {form.espaciamiento})</span>
+                                                </span>
+                                            )}
+                                            {volEstimado && (
+                                                <span className="text-blue-700 font-medium">
+                                                    Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m3</strong>
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="border-t border-gray-100 pt-2 mt-1">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-xs font-semibold text-gray-500">
+                                                Equipos de esta plantilla
+                                                <span className="text-gray-400 font-normal ml-1">
+                                                    {plt.equipos.length === 0 ? '— usara los de la obra' : `(${plt.equipos.length})`}
+                                                </span>
+                                            </span>
+                                            <button type="button" onClick={() => addEquipoToPlantilla(idx)}
+                                                className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
+                                                <Plus size={11} /> Asignar equipo
+                                            </button>
+                                        </div>
+
+                                        {plt.equipos.length > 0 && (
+                                            <div className="space-y-1.5">
+                                                {plt.equipos.map((eq, eIdx) => (
+                                                    <div key={eIdx} className="flex gap-2 items-end">
+                                                        <div className="flex-1">
+                                                            <select
+                                                                value={eq.equipoId}
+                                                                onChange={e => updateEquipoInPlantilla(idx, eIdx, 'equipoId', e.target.value)}
+                                                                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
+                                                                <option value="">Selecciona equipo</option>
+                                                                {equipos.map(e => (
+                                                                    <option key={e.id} value={e.id}
+                                                                        disabled={equiposEnEstaPlantilla.has(e.id) && eq.equipoId !== e.id}>
+                                                                        {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                                        {equiposEnOtras.has(e.id) && eq.equipoId !== e.id ? ' - tambien en otra plt.' : ''}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <button type="button" onClick={() => removeEquipoFromPlantilla(idx, eIdx)}
+                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
+                                                            <X size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                {equiposSeleccionados.map((eq, idx) => (
-                                    <div key={idx} className="flex gap-2 items-end flex-wrap">
+                        );
+                    })}
+                </div>
+            </SectionBlock>
+
+            {isEdit ? (
+                <SectionBlock color="teal" title="Equipos de la obra">
+                    <p className="text-xs text-gray-400 mb-3">Equipos disponibles para todas las plantillas.</p>
+                    <div className="flex justify-end mb-2">
+                        <button type="button" onClick={addEquipoNuevo}
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <Plus size={12} /> Agregar equipo
+                        </button>
+                    </div>
+                    {loadingEquipos ? (
+                        <p className="text-xs text-gray-400 py-2">Cargando equipos...</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {equiposAsignados.map(eq => (
+                                <div key={eq.id}
+                                    className={`border rounded-xl p-3 flex items-center gap-3 transition-colors ${eq._eliminar ? 'bg-red-50 border-red-200 opacity-60' : 'bg-gray-50/50 border-gray-100'}`}>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-gray-700 truncate">
+                                            {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
+                                        </p>
+                                        <p className="text-xs text-gray-400">
+                                            Desde {eq.fechaInicio || '—'}
+                                            {eq.fechaFin ? ` hasta ${eq.fechaFin}` : ' activo'}
+                                        </p>
+                                    </div>
+                                    <button type="button" onClick={() => toggleEliminarEquipo(eq.id)}
+                                        className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${eq._eliminar
+                                            ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                            : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
+                                        {eq._eliminar ? 'Deshacer' : <Trash2 size={13} />}
+                                    </button>
+                                </div>
+                            ))}
+
+                            {equiposNuevos.map((eq, idx) => (
+                                <div key={idx} className="border border-blue-200 rounded-xl p-3 bg-blue-50/30 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-semibold text-blue-600">Nuevo equipo</span>
+                                        <button type="button" onClick={() => removeEquipoNuevo(idx)}
+                                            className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
+                                            <X size={13} />
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap items-end">
                                         <div className="flex-1 min-w-[160px]">
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Equipo</label>}
+                                            <label className="block text-xs text-gray-500 mb-1">Equipo</label>
                                             <select value={eq.equipoId}
-                                                onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
+                                                onChange={e => updateEquipoNuevo(idx, 'equipoId', e.target.value)}
                                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                                <option value="">— Selecciona —</option>
+                                                <option value="">Selecciona</option>
                                                 {equipos.map(e => (
                                                     <option key={e.id} value={e.id}
-                                                        disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
+                                                        disabled={equiposUsadosEdit.has(e.id) && eq.equipoId !== e.id}>
                                                         {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
                                                     </option>
                                                 ))}
                                             </select>
                                         </div>
                                         <div>
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Fecha asignación</label>}
+                                            <label className="block text-xs text-gray-500 mb-1">Fecha asignacion</label>
                                             <input type="date" value={eq.fechaInicio}
-                                                onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
+                                                onChange={e => updateEquipoNuevo(idx, 'fechaInicio', e.target.value)}
                                                 className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
                                         </div>
                                         <div>
-                                            {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Horómetro inicial (hrs)</label>}
+                                            <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                                Horometro inicial (hrs)
+                                                <Tooltip text="Horas acumuladas en el equipo al momento de asignarlo a esta obra." />
+                                            </label>
                                             <input type="number" placeholder="7662" value={eq.horometroInicial}
-                                                onChange={e => updateEquipo(idx, 'horometroInicial', e.target.value)}
+                                                onChange={e => updateEquipoNuevo(idx, 'horometroInicial', e.target.value)}
                                                 className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
                                         </div>
-                                        {equiposSeleccionados.length > 1 && (
-                                            <button type="button" onClick={() => removeEquipo(idx)}
-                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mb-0.5">
-                                                <X size={14} />
-                                            </button>
-                                        )}
                                     </div>
-                                ))}
-                            </div>
-                            {equipos.length === 0 && (
-                                <p className="text-xs text-amber-600 mt-1">
-                                    No hay equipos registrados.{' '}
-                                    <a href="/dashboard/equipos" className="underline">Crear equipo →</a>
-                                </p>
+                                </div>
+                            ))}
+
+                            {equiposAsignados.length === 0 && equiposNuevos.length === 0 && (
+                                <p className="text-xs text-gray-400 py-1">Sin equipos asignados a la obra.</p>
                             )}
                         </div>
                     )}
-
-                    <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                        <textarea value={form.notas}
-                            onChange={e => { setForm(f => ({ ...f, notas: e.target.value })); setDirty(true); }}
-                            rows={2}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none" />
+                </SectionBlock>
+            ) : (
+                <SectionBlock color="teal" title="Equipos asignados">
+                    <p className="text-xs text-gray-400 mb-3">
+                        Selecciona los equipos que trabajaran en esta obra. Cada equipo requiere la fecha de asignacion y su horometro de entrada.
+                    </p>
+                    <div className="flex justify-end mb-2">
+                        <button type="button" onClick={addEquipo}
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                            <Plus size={12} /> Agregar equipo
+                        </button>
                     </div>
+                    <div className="space-y-2">
+                        {equiposSeleccionados.map((eq, idx) => (
+                            <div key={idx} className="flex gap-2 items-end flex-wrap">
+                                <div className="flex-1 min-w-[160px]">
+                                    {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Equipo</label>}
+                                    <select value={eq.equipoId}
+                                        onChange={e => updateEquipo(idx, 'equipoId', e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                        <option value="">Selecciona</option>
+                                        {equipos.map(e => (
+                                            <option key={e.id} value={e.id}
+                                                disabled={equiposUsados.has(e.id) && eq.equipoId !== e.id}>
+                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    {idx === 0 && <label className="block text-xs text-gray-500 mb-1">Fecha asignacion</label>}
+                                    <input type="date" value={eq.fechaInicio}
+                                        onChange={e => updateEquipo(idx, 'fechaInicio', e.target.value)}
+                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                </div>
+                                <div>
+                                    {idx === 0 && (
+                                        <label className="block text-xs text-gray-500 mb-1 flex items-center">
+                                            Horometro inicial (hrs)
+                                            <Tooltip text="Horas acumuladas en el equipo al momento de asignarlo a esta obra." />
+                                        </label>
+                                    )}
+                                    <input type="number" placeholder="7662" value={eq.horometroInicial}
+                                        onChange={e => updateEquipo(idx, 'horometroInicial', e.target.value)}
+                                        className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                </div>
+                                {equiposSeleccionados.length > 1 && (
+                                    <button type="button" onClick={() => removeEquipo(idx)}
+                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mb-0.5">
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    {equipos.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                            No hay equipos registrados.{' '}
+                            <a href="/dashboard/equipos" className="underline">Crear equipo</a>
+                        </p>
+                    )}
+                </SectionBlock>
+            )}
+        </div>
+    );
+
+    // Footer con navegacion y razon de bloqueo
+    const renderFooter = () => {
+        const isLastStep = step === 3;
+        const isSaveDisabled = saving || savingPlantillaEquipo || !!fieldErrors.fechaFin;
+
+        let blockReason = '';
+        if (step === 1 && !canAdvanceStep1) {
+            if (!form.nombre.trim() && !form.clienteId) blockReason = 'Completa el nombre y selecciona un cliente para continuar';
+            else if (!form.nombre.trim()) blockReason = 'El nombre de la obra es requerido';
+            else blockReason = 'Debes seleccionar un cliente para continuar';
+        }
+        if (step === 2 && !canAdvanceStep2) blockReason = fieldErrors.fechaFin || '';
+        if (isLastStep && isSaveDisabled && !saving && !savingPlantillaEquipo) {
+            blockReason = 'Corrige los errores arriba para continuar';
+        }
+
+        return (
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl">
+                {saveError && (
+                    <p className="text-xs text-red-500 mb-3 flex items-center gap-1">
+                        <AlertTriangle size={12} />{saveError}
+                    </p>
+                )}
+                {blockReason && !saveError && (
+                    <p className="text-xs text-amber-600 mb-3 flex items-center gap-1">
+                        <AlertTriangle size={12} />{blockReason}
+                    </p>
+                )}
+                <div className="flex gap-2">
+                    {step > 1 ? (
+                        <button onClick={() => setStep(s => s - 1)}
+                            className="flex items-center gap-1 px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                            <ChevronLeft size={14} /> Anterior
+                        </button>
+                    ) : (
+                        <button onClick={handleClose}
+                            className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                            Cancelar
+                        </button>
+                    )}
+
+                    {!isLastStep ? (
+                        <button
+                            onClick={() => {
+                                if (step === 1) {
+                                    setTouched(prev => new Set([...prev, 'nombre', 'clienteId']));
+                                    if (!canAdvanceStep1) return;
+                                }
+                                if (step === 2 && !canAdvanceStep2) return;
+                                goToStep(step + 1);
+                            }}
+                            disabled={(step === 1 && !canAdvanceStep1) || (step === 2 && !canAdvanceStep2)}
+                            className="flex-1 flex items-center justify-center gap-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Siguiente <ChevronRight size={14} />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaveDisabled}
+                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {savingPlantillaEquipo ? 'Asignando equipos...' : saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear obra'}
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col">
+                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl z-10">
+                    <div className="flex items-start justify-between mb-4">
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-800">{isEdit ? 'Editar Obra' : 'Nueva Obra'}</h2>
+                            <p className="text-xs text-gray-400 mt-0.5">Contrato / proyecto de perforacion</p>
+                        </div>
+                        <button onClick={handleClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <StepIndicator current={step} completed={completedSteps} />
                 </div>
 
-                {error && <p className="text-xs text-red-500 px-6 pb-2">{error}</p>}
-
-                <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2">
-                    <button onClick={handleClose}
-                        className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSave} disabled={saving || savingPlantillaEquipo || !!fechaError}
-                        className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {savingPlantillaEquipo ? 'Asignando equipos...' : saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear obra'}
-                    </button>
+                <div className="px-6 py-5 flex-1 overflow-y-auto">
+                    {step === 1 && renderStep1()}
+                    {step === 2 && renderStep2()}
+                    {step === 3 && renderStep3()}
                 </div>
+
+                {renderFooter()}
             </div>
         </div>
     );
 }
 
-// ─── Página principal ─────────────────────────────────────────────────────────
+// ─── Pagina principal ─────────────────────────────────────────────────────────
 export default function ObrasPage() {
     const [obras,    setObras]    = useState<Obra[]>([]);
     const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -982,12 +1216,10 @@ export default function ObrasPage() {
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
-
-            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Obras</h1>
-                    <p className="text-sm text-gray-500 mt-1">Contratos de perforación activos e históricos.</p>
+                    <p className="text-sm text-gray-500 mt-1">Contratos de perforacion activos e historicos.</p>
                 </div>
                 <button onClick={() => setModal({ open: true })}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
@@ -997,7 +1229,6 @@ export default function ObrasPage() {
 
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-            {/* KPIs */}
             {!loading && (
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
@@ -1015,7 +1246,6 @@ export default function ObrasPage() {
                 </div>
             )}
 
-            {/* Filtros + búsqueda */}
             <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex gap-2 flex-wrap">
                     {(['TODAS', 'ACTIVA', 'PAUSADA', 'TERMINADA'] as const).map(f => (
@@ -1043,7 +1273,6 @@ export default function ObrasPage() {
                 </div>
             </div>
 
-            {/* Tabla */}
             <Card>
                 {loading ? (
                     <div className="p-10 text-center text-gray-400 text-sm">Cargando obras...</div>
@@ -1056,7 +1285,7 @@ export default function ObrasPage() {
                                 : filtro === 'TODAS' ? 'No hay obras registradas' : `No hay obras con status "${filtro}"`}
                         </p>
                         <p className="text-xs text-gray-400 mt-1">
-                            {busqueda ? 'Intenta con otro término de búsqueda.' : 'Crea la primera obra con el botón de arriba.'}
+                            {busqueda ? 'Intenta con otro termino de busqueda.' : 'Crea la primera obra con el boton de arriba.'}
                         </p>
                     </div>
                 ) : (
