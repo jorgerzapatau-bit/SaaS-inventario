@@ -41,6 +41,8 @@ type RegistroDisponible = {
     barrenos: number;
     metrosLineales: number;
     equipo: { nombre: string; numeroEconomico: string | null };
+    plantillaId: string | null;
+    plantillaNumero: number | null;
 };
 
 type RegistroDiario = {
@@ -286,8 +288,59 @@ function CorteModal({
         }
     };
 
-    // ── PASO 1: Selector de registros ─────────────────────────────────────────
-    const renderPaso1 = () => (
+    // ── PASO 1: Selector de registros (agrupado por Plantilla → Equipo) ──────────
+    const renderPaso1 = () => {
+        // Agrupar: plantillaKey → equipoKey → registros
+        type Grupo = {
+            plantillaId: string | null;
+            plantillaLabel: string;
+            equipos: {
+                equipoKey: string;
+                equipoLabel: string;
+                registros: RegistroDisponible[];
+            }[];
+        };
+
+        const gruposMap: Map<string, Grupo> = new Map();
+        for (const r of registrosDisponibles) {
+            const pKey = r.plantillaId ?? '__sin_plantilla__';
+            const pLabel = r.plantillaNumero != null ? `Plantilla ${r.plantillaNumero}` : 'Sin plantilla';
+            if (!gruposMap.has(pKey)) {
+                gruposMap.set(pKey, { plantillaId: r.plantillaId, plantillaLabel: pLabel, equipos: [] });
+            }
+            const grupo = gruposMap.get(pKey)!;
+            const eKey = r.equipo.nombre + (r.equipo.numeroEconomico ?? '');
+            let eq = grupo.equipos.find(e => e.equipoKey === eKey);
+            if (!eq) {
+                const label = r.equipo.nombre + (r.equipo.numeroEconomico ? ` (${r.equipo.numeroEconomico})` : '');
+                eq = { equipoKey: eKey, equipoLabel: label, registros: [] };
+                grupo.equipos.push(eq);
+            }
+            eq.registros.push(r);
+        }
+        const grupos = Array.from(gruposMap.values());
+
+        // Toggle todos los registros de un equipo
+        const toggleEquipo = (ids: string[]) => {
+            const allChecked = ids.every(id => seleccionados.has(id));
+            setSeleccionados(prev => {
+                const next = new Set(prev);
+                ids.forEach(id => allChecked ? next.delete(id) : next.add(id));
+                return next;
+            });
+        };
+
+        // Toggle todos los de una plantilla
+        const togglePlantilla = (ids: string[]) => {
+            const allChecked = ids.every(id => seleccionados.has(id));
+            setSeleccionados(prev => {
+                const next = new Set(prev);
+                ids.forEach(id => allChecked ? next.delete(id) : next.add(id));
+                return next;
+            });
+        };
+
+        return (
         <div className="px-6 py-5 space-y-4">
             <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -309,28 +362,94 @@ function CorteModal({
                     <p className="text-xs text-gray-400 mt-1">Todos los registros de esta obra ya tienen corte asignado.</p>
                 </div>
             ) : (
-                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                    {registrosDisponibles.map(r => {
-                        const checked = seleccionados.has(r.id);
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {grupos.map(grupo => {
+                        const plantillaIds = grupo.equipos.flatMap(e => e.registros.map(r => r.id));
+                        const plantillaCheckedCount = plantillaIds.filter(id => seleccionados.has(id)).length;
+                        const plantillaAllChecked = plantillaCheckedCount === plantillaIds.length;
+                        const plantillaSomeChecked = plantillaCheckedCount > 0 && !plantillaAllChecked;
+
                         return (
-                            <label key={r.id}
-                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                                    checked ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100 hover:border-gray-200'
-                                }`}>
-                                <input type="checkbox" checked={checked}
-                                    onChange={() => toggleRegistro(r.id)}
-                                    className="w-4 h-4 accent-blue-600 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-sm font-semibold text-gray-700">{fDate(r.fecha)}</span>
-                                        <span className="text-xs text-gray-400">{r.equipo.nombre}</span>
+                            <div key={grupo.plantillaId ?? '__sin_plantilla__'} className="border border-gray-100 rounded-xl overflow-hidden">
+                                {/* Header de plantilla */}
+                                <div className="flex items-center justify-between bg-gray-50 px-3 py-2 border-b border-gray-100">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={plantillaAllChecked}
+                                            ref={el => { if (el) el.indeterminate = plantillaSomeChecked; }}
+                                            onChange={() => togglePlantilla(plantillaIds)}
+                                            className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"
+                                        />
+                                        <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                            <FileText size={11} className="text-purple-500" />
+                                            {grupo.plantillaLabel}
+                                        </span>
                                     </div>
-                                    <div className="flex gap-4 mt-0.5 text-xs text-gray-500">
-                                        <span>{r.barrenos} barrenos</span>
-                                        <span>{r.metrosLineales.toFixed(1)} m</span>
-                                    </div>
+                                    <span className="text-xs text-gray-400">
+                                        {plantillaCheckedCount}/{plantillaIds.length} seleccionados
+                                    </span>
                                 </div>
-                            </label>
+
+                                {/* Equipos dentro de la plantilla */}
+                                <div className="divide-y divide-gray-50">
+                                    {grupo.equipos.map(eq => {
+                                        const eqIds = eq.registros.map(r => r.id);
+                                        const eqChecked = eqIds.every(id => seleccionados.has(id));
+                                        const eqSome = eqIds.some(id => seleccionados.has(id)) && !eqChecked;
+                                        const eqMetros = eq.registros.reduce((s, r) => s + r.metrosLineales, 0);
+                                        const eqBarrenos = eq.registros.reduce((s, r) => s + r.barrenos, 0);
+
+                                        return (
+                                            <div key={eq.equipoKey} className="bg-white">
+                                                {/* Sub-header del equipo */}
+                                                <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50/50">
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={eqChecked}
+                                                            ref={el => { if (el) el.indeterminate = eqSome; }}
+                                                            onChange={() => toggleEquipo(eqIds)}
+                                                            className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"
+                                                        />
+                                                        <span className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                                                            <Wrench size={10} />
+                                                            {eq.equipoLabel}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-xs text-gray-400">
+                                                        {eqBarrenos} bar · {eqMetros.toFixed(1)} m
+                                                    </span>
+                                                </div>
+
+                                                {/* Registros del equipo */}
+                                                <div className="px-3 py-1 space-y-1">
+                                                    {eq.registros.map(r => {
+                                                        const checked = seleccionados.has(r.id);
+                                                        return (
+                                                            <label key={r.id}
+                                                                className={`flex items-center gap-3 px-2 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                                                                    checked ? 'bg-blue-50 border-blue-200' : 'bg-white border-transparent hover:border-gray-200'
+                                                                }`}>
+                                                                <input type="checkbox" checked={checked}
+                                                                    onChange={() => toggleRegistro(r.id)}
+                                                                    className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0" />
+                                                                <div className="flex-1 flex items-center justify-between gap-2">
+                                                                    <span className="text-xs font-semibold text-gray-700">{fDate(r.fecha)}</span>
+                                                                    <div className="flex gap-3 text-xs text-gray-400">
+                                                                        <span>{r.barrenos} bar</span>
+                                                                        <span>{r.metrosLineales.toFixed(1)} m</span>
+                                                                    </div>
+                                                                </div>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         );
                     })}
                 </div>
@@ -349,6 +468,7 @@ function CorteModal({
             )}
         </div>
     );
+    };
 
     // ── PASO 2: Dimensiones y facturación ─────────────────────────────────────
     const renderPaso2 = () => (
@@ -929,9 +1049,7 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                                         ))}
                                     </div>
                                 )}
-                                <p className="text-xs text-gray-400 mt-2">
-                                    Para asignar equipos a esta plantilla, usa el endpoint <code className="bg-gray-100 px-1 rounded">POST /api/obras/{obra.id}/plantillas/{p.id}/equipos</code>
-                                </p>
+
                             </div>
                         </div>
                     );
