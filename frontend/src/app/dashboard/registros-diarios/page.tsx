@@ -25,6 +25,8 @@ type Registro = {
     cliente: { nombre: string } | null;
     obra: { id: string; nombre: string } | null;
     obraNombre: string | null;
+    plantilla: { id: string; numero: number } | null;
+    plantillaId: string | null;
     horometroInicio: number; horometroFin: number; horasTrabajadas: number;
     barrenos: number; metrosLineales: number;
     litrosDiesel: number; precioDiesel: number; costoDiesel: number;
@@ -322,7 +324,7 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fila de lista general (historial)
+// Fila de lista general (historial) — con jerarquía visual
 // ─────────────────────────────────────────────────────────────────────────────
 function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     r: Registro;
@@ -336,102 +338,165 @@ function RegistroRow({ r, onDelete, onEdit, onDuplicate, isLastForEquipo }: {
     const fecha = new Date(yr, mo - 1, dy).toLocaleDateString('es-MX', {
         weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
     });
-    const nombreObra = r.obra?.nombre || r.obraNombre || r.cliente?.nombre || '—';
 
     return (
         <>
-            <tr className="hover:bg-blue-50/30 transition-colors group cursor-pointer" onClick={() => setExpanded(v => !v)}>
-                <td className="p-3">
-                    <p className="text-sm font-semibold text-gray-700">{fecha}</p>
-                    {r.semanaNum && <p className="text-xs text-gray-400">Sem. {r.semanaNum} / {r.anoNum}</p>}
+            <tr className="hover:bg-slate-50/80 transition-colors group cursor-pointer border-b border-gray-100" onClick={() => setExpanded(v => !v)}>
+                {/* Fecha + semana */}
+                <td className="pl-4 pr-2 py-3 w-36">
+                    <p className="text-sm font-semibold text-gray-800">{fecha.split(', ')[1] ?? fecha}</p>
+                    <p className="text-xs text-gray-400 capitalize">{fecha.split(', ')[0]}</p>
+                    {r.semanaNum && <p className="text-[10px] text-gray-300 mt-0.5">Sem. {r.semanaNum}/{r.anoNum}</p>}
                 </td>
-                <td className="p-3 text-sm text-gray-600">{r.equipo.nombre}</td>
-                <td className="p-3">
-                    <span className={`text-sm ${r.obra ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>{nombreObra}</span>
-                    {r.corte && (
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded font-semibold ${
+
+                {/* Equipo con chip */}
+                <td className="px-2 py-3">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <Wrench size={11} className="text-blue-600"/>
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-gray-800 leading-tight">{r.equipo.nombre}</p>
+                            {r.equipo.numeroEconomico && (
+                                <p className="text-[10px] text-gray-400">{r.equipo.numeroEconomico}</p>
+                            )}
+                        </div>
+                    </div>
+                </td>
+
+                {/* Plantilla chip */}
+                <td className="px-2 py-3 w-20 text-center">
+                    {r.plantilla ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                            <Layers size={9}/> P{r.plantilla.numero}
+                        </span>
+                    ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                    )}
+                </td>
+
+                {/* Corte */}
+                <td className="px-2 py-3 w-24 text-center">
+                    {r.corte ? (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                             r.corte.status === 'COBRADO'   ? 'bg-green-100 text-green-700' :
                             r.corte.status === 'FACTURADO' ? 'bg-blue-100 text-blue-700'   :
                             'bg-gray-100 text-gray-500'
-                        }`}>Corte #{r.corte.numero}</span>
+                        }`}>#{r.corte.numero}</span>
+                    ) : (
+                        <span className="text-gray-200 text-xs">—</span>
                     )}
                 </td>
-                <td className="p-3 text-right font-bold text-gray-700">
-                    {r.horasTrabajadas}<span className="text-xs font-normal text-gray-400"> hrs</span>
+
+                {/* Horómetro compacto */}
+                <td className="px-2 py-3 text-center">
+                    <p className="text-xs font-mono text-gray-600">
+                        {r.horometroInicio.toLocaleString('es-MX')}
+                        <span className="text-gray-300 mx-0.5">→</span>
+                        {r.horometroFin.toLocaleString('es-MX')}
+                    </p>
+                    <p className="text-[10px] text-gray-400">{r.horasTrabajadas} hrs</p>
                 </td>
-                <td className="p-3 text-right text-gray-700">{r.barrenos}</td>
-                <td className="p-3 text-right text-gray-700">
-                    {Number(r.metrosLineales).toFixed(1)}<span className="text-xs text-gray-400"> m</span>
+
+                {/* Producción */}
+                <td className="px-2 py-3 text-right">
+                    <p className="text-sm font-bold text-gray-800">{r.barrenos}</p>
+                    <p className="text-[10px] text-gray-400">bar.</p>
                 </td>
-                <td className="p-3 text-right font-semibold text-blue-600">
-                    {r.litrosDiesel}<span className="text-xs font-normal text-gray-400"> lt</span>
+                <td className="px-2 py-3 text-right">
+                    <p className="text-sm font-bold text-gray-800">{Number(r.metrosLineales).toFixed(1)}</p>
+                    <p className="text-[10px] text-gray-400">m</p>
                 </td>
-                <td className="p-3 text-right font-semibold text-gray-700">
-                    ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+
+                {/* Diésel + Costo */}
+                <td className="px-2 py-3 text-right">
+                    <p className="text-sm font-semibold text-blue-600">{r.litrosDiesel}</p>
+                    <p className="text-[10px] text-gray-400">lt</p>
                 </td>
-                <td className="p-3 text-right">
-                    <div className="flex justify-end items-center gap-1">
+                <td className="px-2 py-3 text-right">
+                    <p className="text-sm font-semibold text-gray-700">${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                    <p className="text-[10px] text-gray-400">diésel</p>
+                </td>
+                {/* Renta */}
+                <td className="px-2 py-3 text-right">
+                    {r.rentaEquipoDiaria != null ? (
+                        <>
+                            <p className="text-sm font-semibold text-emerald-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className="text-[10px] text-gray-400">renta</p>
+                        </>
+                    ) : <span className="text-gray-200 text-xs">—</span>}
+                </td>
+
+                {/* Acciones */}
+                <td className="pr-3 py-3 text-right">
+                    <div className="flex justify-end items-center gap-0.5">
                         {isLastForEquipo ? (
                             <button onClick={e => { e.stopPropagation(); onDuplicate(r); }}
                                 title="Duplicar como nuevo registro"
-                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                                className="p-1.5 text-gray-300 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                                 <Copy size={13}/>
                             </button>
-                        ) : (
-                            <span className="p-1.5 w-[28px]"/>
-                        )}
+                        ) : <span className="p-1.5 w-[28px]"/>}
                         <button onClick={e => { e.stopPropagation(); onEdit(r.id); }}
-                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                            className="p-1.5 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                             <Pencil size={13}/>
                         </button>
                         <button onClick={e => { e.stopPropagation(); onDelete(r); }}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                            className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
                             <Trash2 size={13}/>
                         </button>
-                        {expanded ? <ChevronUp size={14} className="text-gray-400"/> : <ChevronDown size={14} className="text-gray-400"/>}
+                        {expanded
+                            ? <ChevronUp size={13} className="text-gray-400 ml-1"/>
+                            : <ChevronDown size={13} className="text-gray-400 ml-1"/>}
                     </div>
                 </td>
             </tr>
             {expanded && (
-                <tr className="bg-blue-50/20">
-                    <td colSpan={9} className="px-6 py-4 space-y-3">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                            <div>
-                                <p className="text-xs text-gray-400 mb-1">Horómetro</p>
-                                <p className="font-semibold text-gray-700">{r.horometroInicio.toLocaleString()} → {r.horometroFin.toLocaleString()} hrs</p>
+                <tr className="bg-slate-50/60">
+                    <td colSpan={11} className="px-6 py-4 space-y-3 border-b border-gray-100">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
+                                <p className="text-sm font-bold text-gray-700 font-mono">
+                                    {r.horometroInicio.toLocaleString('es-MX')} → {r.horometroFin.toLocaleString('es-MX')}
+                                </p>
+                                <p className="text-xs text-gray-400">{r.horasTrabajadas} hrs efectivas</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-400 mb-1">Personal</p>
-                                <p className="font-semibold text-gray-700">{r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}</p>
+                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</p>
+                                <p className="text-sm font-bold text-gray-700">{r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}</p>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Gauge size={11}/> KPIs</p>
-                                <p className="text-xs text-gray-600">Lt/hr: <span className="font-bold">{r.kpi.litrosPorHora ?? 'N/A'}</span></p>
-                                <p className="text-xs text-gray-600">Lt/mt: <span className="font-bold">{r.kpi.litrosPorMetro ?? 'N/A'}</span></p>
-                                <p className="text-xs text-gray-600">Mt/hr: <span className="font-bold">{r.kpi.metrosPorHora ?? 'N/A'}</span></p>
+                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-1">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Gauge size={10}/> KPIs</p>
+                                <div className="grid grid-cols-3 gap-1 text-center">
+                                    <div><p className="text-[10px] text-gray-400">Lt/hr</p><p className="text-xs font-bold text-gray-700">{r.kpi.litrosPorHora ?? '—'}</p></div>
+                                    <div><p className="text-[10px] text-gray-400">Lt/m</p><p className="text-xs font-bold text-gray-700">{r.kpi.litrosPorMetro ?? '—'}</p></div>
+                                    <div><p className="text-[10px] text-gray-400">m/hr</p><p className="text-xs font-bold text-gray-700">{r.kpi.metrosPorHora ?? '—'}</p></div>
+                                </div>
                             </div>
-                            <div>
-                                <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Droplets size={11}/> Diésel</p>
+                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Droplets size={10}/> Diésel</p>
                                 <p className="text-xs text-gray-600">{r.litrosDiesel} lt × ${r.precioDiesel}/lt</p>
-                                <p className="text-xs font-bold text-gray-700">= ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                                <p className="text-sm font-bold text-gray-700">= ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
                             </div>
                         </div>
                         {r.notas && (
-                            <div className="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2 text-xs text-yellow-800">
-                                <span className="font-semibold">Notas: </span>{r.notas}
+                            <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800 flex gap-2 items-start">
+                                <span className="font-semibold flex-shrink-0">📝 Notas:</span>
+                                <span>{r.notas}</span>
                             </div>
                         )}
                         {(r.bordo != null || r.espaciamiento != null || r.profundidadPromedio != null || r.volumenRoca != null || r.porcentajePerdida != null || r.porcentajeAvance != null || r.rentaEquipoDiaria != null) && (
                             <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
-                                <p className="text-xs font-semibold text-indigo-400 mb-2 flex items-center gap-1"><Drill size={11}/> Perforación</p>
-                                <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 text-xs">
-                                    {r.bordo != null && <div><p className="text-indigo-300 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{r.bordo} m</p></div>}
-                                    {r.espaciamiento != null && <div><p className="text-indigo-300 mb-0.5">Espaciam.</p><p className="font-bold text-indigo-700">{r.espaciamiento} m</p></div>}
-                                    {r.profundidadPromedio != null && <div><p className="text-indigo-300 mb-0.5">Prof. prom.</p><p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p></div>}
-                                    {r.volumenRoca != null && <div><p className="text-indigo-300 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
-                                    {r.porcentajePerdida != null && <div><p className="text-indigo-300 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p></div>}
-                                    {r.porcentajeAvance != null && <div><p className="text-indigo-300 mb-0.5">% Avance</p><p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p></div>}
-                                    {r.rentaEquipoDiaria != null && <div><p className="text-indigo-300 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p></div>}
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-1"><Drill size={10}/> Datos de perforación</p>
+                                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3 text-xs">
+                                    {r.bordo != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{r.bordo} m</p></div>}
+                                    {r.espaciamiento != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Espa.</p><p className="font-bold text-indigo-700">{r.espaciamiento} m</p></div>}
+                                    {r.profundidadPromedio != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p></div>}
+                                    {r.volumenRoca != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
+                                    {r.porcentajePerdida != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p></div>}
+                                    {r.porcentajeAvance != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">% Avance</p><p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p></div>}
+                                    {r.rentaEquipoDiaria != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>}
                                 </div>
                             </div>
                         )}
@@ -1533,6 +1598,7 @@ function RegistrosDiariosInner() {
                 {/* ── HISTORIAL ─────────────────────────────────────────────── */}
                 {vistaHistorial && (
                     <div className="space-y-4">
+
                         {/* Filtros */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                             <div className="flex items-center gap-2">
@@ -1583,25 +1649,27 @@ function RegistrosDiariosInner() {
                         {!loading && filtrados.length > 0 && (
                             <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                                 {[
-                                    { label: 'Registros',      value: String(filtrados.length),                                               unit: '' },
-                                    { label: 'Horas totales',  value: totalHoras.toFixed(1),                                                  unit: 'hrs' },
-                                    { label: 'Metros totales', value: totalMetros.toFixed(1),                                                 unit: 'm' },
-                                    { label: 'Diésel total',   value: totalLitros.toLocaleString('es-MX'),                                    unit: 'lt' },
-                                    { label: 'Costo diésel',   value: `$${totalCosto.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '' },
-                                    { label: 'Lt/hr prom.',    value: promLtHr,                                                               unit: '' },
+                                    { label: 'Registros',      value: String(filtrados.length),                                               unit: '',    color: 'text-gray-800' },
+                                    { label: 'Horas totales',  value: totalHoras.toFixed(1),                                                  unit: 'hrs', color: 'text-gray-800' },
+                                    { label: 'Metros totales', value: totalMetros.toFixed(1),                                                 unit: 'm',   color: 'text-blue-700' },
+                                    { label: 'Diésel total',   value: totalLitros.toLocaleString('es-MX'),                                    unit: 'lt',  color: 'text-blue-600' },
+                                    { label: 'Costo diésel',   value: `$${totalCosto.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '',    color: 'text-gray-800' },
+                                    { label: 'Lt/hr prom.',    value: promLtHr,                                                               unit: '',    color: 'text-gray-800' },
                                 ].map(k => (
                                     <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                                         <p className="text-xs text-gray-400 mb-1">{k.label}</p>
-                                        <p className="text-xl font-bold text-gray-800">{k.value} <span className="text-sm font-normal text-gray-400">{k.unit}</span></p>
+                                        <p className={`text-xl font-bold ${k.color}`}>{k.value} <span className="text-sm font-normal text-gray-400">{k.unit}</span></p>
                                     </div>
                                 ))}
                             </div>
                         )}
 
-                        {/* Tabla de historial */}
+                        {/* Tabla jerárquica: agrupada por Obra → Plantilla → Equipo */}
                         <Card>
                             {loading ? (
-                                <div className="p-10 text-center text-gray-400 text-sm">Cargando registros...</div>
+                                <div className="p-10 text-center text-gray-400 text-sm flex items-center justify-center gap-2">
+                                    <Loader2 size={16} className="animate-spin"/> Cargando registros...
+                                </div>
                             ) : filtrados.length === 0 ? (
                                 <div className="p-10 text-center">
                                     <ClipboardList size={36} className="text-gray-300 mx-auto mb-3"/>
@@ -1613,34 +1681,116 @@ function RegistrosDiariosInner() {
                             ) : (
                                 <>
                                     <div className="overflow-x-auto">
-                                        <table className="w-full text-left border-collapse">
+                                        <table className="w-full border-collapse text-sm" style={{ minWidth: 900 }}>
                                             <thead>
-                                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer select-none hover:text-gray-600 transition-colors"
+                                                <tr className="bg-gray-50 border-b-2 border-gray-200">
+                                                    <th className="pl-4 pr-2 py-2.5 text-left cursor-pointer select-none hover:text-gray-700 transition-colors"
                                                         onClick={() => handleSort('fecha')}>
-                                                        <span className="flex items-center gap-1">Fecha
-                                                            {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={11} className="text-blue-500"/> : <ArrowDown size={11} className="text-blue-500"/>)
-                                                                : <ArrowUpDown size={11} className="opacity-30"/>}
+                                                        <span className="flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                                            Fecha
+                                                            {sortKey === 'fecha' ? (sortDir === 'asc' ? <ArrowUp size={10} className="text-blue-500"/> : <ArrowDown size={10} className="text-blue-500"/>) : <ArrowUpDown size={10} className="opacity-30"/>}
                                                         </span>
                                                     </th>
-                                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo</th>
-                                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra</th>
-                                                    <SortTh label="Horas"     sortKey="horas"     current={sortKey} dir={sortDir} onSort={handleSort}/>
-                                                    <SortTh label="Barrenos"  sortKey="barrenos"  current={sortKey} dir={sortDir} onSort={handleSort}/>
-                                                    <SortTh label="Metros"    sortKey="metros"    current={sortKey} dir={sortDir} onSort={handleSort}/>
-                                                    <SortTh label="Diésel"    sortKey="diesel"    current={sortKey} dir={sortDir} onSort={handleSort}/>
-                                                    <SortTh label="Costo"     sortKey="costo"     current={sortKey} dir={sortDir} onSort={handleSort}/>
-                                                    <th className="p-3 w-28"/>
+                                                    <th className="px-2 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipo</th>
+                                                    <th className="px-2 py-2.5 text-center text-xs font-semibold text-indigo-400 uppercase tracking-wider">Plant.</th>
+                                                    <th className="px-2 py-2.5 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Corte</th>
+                                                    <th className="px-2 py-2.5 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Horómetro</th>
+                                                    <SortTh label="Bar." sortKey="barrenos" current={sortKey} dir={sortDir} onSort={handleSort} className="text-right"/>
+                                                    <SortTh label="Metros" sortKey="metros" current={sortKey} dir={sortDir} onSort={handleSort} className="text-right"/>
+                                                    <SortTh label="Diésel" sortKey="diesel" current={sortKey} dir={sortDir} onSort={handleSort} className="text-right"/>
+                                                    <SortTh label="Costo" sortKey="costo" current={sortKey} dir={sortDir} onSort={handleSort} className="text-right"/>
+                                                    <th className="px-2 py-2.5 text-right text-xs font-semibold text-emerald-500 uppercase tracking-wider">Renta/Día</th>
+                                                    <th className="pr-3 py-2.5 w-28"/>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-gray-50">
-                                                {paginated.map(r => (
-                                                    <RegistroRow key={r.id} r={r}
-                                                        onDelete={setRegistroAEliminar}
-                                                        onEdit={handleEdit}
-                                                        onDuplicate={handleDuplicate}
-                                                        isLastForEquipo={lastIdByEquipo.get(r.equipo.nombre) === r.id}/>
-                                                ))}
+                                            <tbody>
+                                                {(() => {
+                                                    // Agrupar por Obra → Plantilla → Equipo, manteniendo orden de filtrados
+                                                    const rows: React.ReactNode[] = [];
+                                                    let lastObraId: string | null = null;
+                                                    let lastPlantillaKey: string | null = null;
+
+                                                    // Ordenar primero por obra, luego plantilla, luego fecha
+                                                    const sorted = [...paginated].sort((a, b) => {
+                                                        const obraA = a.obra?.nombre || a.obraNombre || '~Sin obra';
+                                                        const obraB = b.obra?.nombre || b.obraNombre || '~Sin obra';
+                                                        if (obraA !== obraB) return obraA.localeCompare(obraB);
+                                                        const pA = a.plantilla?.numero ?? 999;
+                                                        const pB = b.plantilla?.numero ?? 999;
+                                                        if (pA !== pB) return pA - pB;
+                                                        const eA = a.equipo.nombre;
+                                                        const eB = b.equipo.nombre;
+                                                        if (eA !== eB) return eA.localeCompare(eB);
+                                                        return a.fecha.localeCompare(b.fecha);
+                                                    });
+
+                                                    sorted.forEach((r, i) => {
+                                                        const obraId = r.obra?.id || 'sin-obra';
+                                                        const obraLabel = r.obra?.nombre || r.obraNombre || 'Sin obra asignada';
+                                                        const plantillaKey = `${obraId}-p${r.plantilla?.numero ?? 'x'}`;
+
+                                                        // Separador de OBRA
+                                                        if (obraId !== lastObraId) {
+                                                            lastObraId = obraId;
+                                                            lastPlantillaKey = null;
+                                                            rows.push(
+                                                                <tr key={`obra-${obraId}-${i}`} className="bg-gray-800">
+                                                                    <td colSpan={11} className="pl-4 pr-3 py-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <Building2 size={13} className="text-gray-300 flex-shrink-0"/>
+                                                                            <span className="text-xs font-bold text-white tracking-wide uppercase">{obraLabel}</span>
+                                                                            <span className="ml-auto text-[10px] text-gray-400">
+                                                                                {sorted.filter(x => (x.obra?.id || 'sin-obra') === obraId).length} registros
+                                                                            </span>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        }
+
+                                                        // Separador de PLANTILLA
+                                                        if (plantillaKey !== lastPlantillaKey) {
+                                                            lastPlantillaKey = plantillaKey;
+                                                            const regsPlantilla = sorted.filter(x =>
+                                                                (x.obra?.id || 'sin-obra') === obraId &&
+                                                                (x.plantilla?.numero ?? 'x') === (r.plantilla?.numero ?? 'x')
+                                                            );
+                                                            const totM = regsPlantilla.reduce((s, x) => s + x.metrosLineales, 0);
+                                                            const totB = regsPlantilla.reduce((s, x) => s + x.barrenos, 0);
+                                                            const totH = regsPlantilla.reduce((s, x) => s + x.horasTrabajadas, 0);
+                                                            rows.push(
+                                                                <tr key={`plant-${plantillaKey}-${i}`} className="bg-indigo-50 border-t border-indigo-100">
+                                                                    <td colSpan={11} className="pl-6 pr-3 py-1.5">
+                                                                        <div className="flex items-center gap-3 flex-wrap">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <Layers size={11} className="text-indigo-500"/>
+                                                                                {r.plantilla ? (
+                                                                                    <span className="text-xs font-bold text-indigo-700">Plantilla {r.plantilla.numero}</span>
+                                                                                ) : (
+                                                                                    <span className="text-xs font-semibold text-gray-400 italic">Sin plantilla</span>
+                                                                                )}
+                                                                            </div>
+                                                                            <span className="text-gray-300">·</span>
+                                                                            <span className="text-[10px] text-indigo-500">{regsPlantilla.length} días · {totH} hrs · {totM.toFixed(1)} m · {totB} bar.</span>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        }
+
+                                                        rows.push(
+                                                            <RegistroRow
+                                                                key={r.id}
+                                                                r={r}
+                                                                onDelete={setRegistroAEliminar}
+                                                                onEdit={handleEdit}
+                                                                onDuplicate={handleDuplicate}
+                                                                isLastForEquipo={lastIdByEquipo.get(r.equipo.nombre) === r.id}
+                                                            />
+                                                        );
+                                                    });
+                                                    return rows;
+                                                })()}
                                             </tbody>
                                         </table>
                                     </div>
