@@ -69,6 +69,7 @@ type Obra = {
     obraEquipos: { equipoId: string; equipo: { nombre: string; numeroEconomico: string | null } }[];
     metricas: {
         metrosPerforados: number;
+        metrosContratadosEfectivos: number;
         horasTotales: number;
         barrenos: number;
         pctAvance: number | null;
@@ -1175,7 +1176,9 @@ export default function ObrasPage() {
                             {fmt(obra.metricas?.metrosPerforados ?? 0)} m perforados
                         </span>
                         <span className="text-xs text-gray-400">
-                            {obra.metrosContratados ? `${fmt(obra.metrosContratados)} m contratados` : '—'}
+                            {obra.metricas?.metrosContratadosEfectivos
+                                ? `${fmt(obra.metricas.metrosContratadosEfectivos)} m contratados`
+                                : '—'}
                         </span>
                     </div>
                 </div>
@@ -1381,7 +1384,9 @@ export default function ObrasPage() {
                         </div>
                         <p className="text-[10px] text-gray-400 mt-0.5">
                             {fmt(obra.metricas?.metrosPerforados ?? 0)} m
-                            {obra.metrosContratados ? ` / ${fmt(obra.metrosContratados)} m` : ''}
+                            {obra.metricas?.metrosContratadosEfectivos
+                                ? ` / ${fmt(obra.metricas.metrosContratadosEfectivos)} m`
+                                : ''}
                         </p>
                     </td>
                     {/* Facturado */}

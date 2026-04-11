@@ -44,8 +44,18 @@ export async function GET(req: NextRequest) {
             });
 
             const metrosPerforados = Number(agg._sum.metrosLineales ?? 0);
-            const pctAvance = obra.metrosContratados && Number(obra.metrosContratados) > 0
-                ? (metrosPerforados / Number(obra.metrosContratados)) * 100
+
+            // Denominador: metros del campo raíz de la obra, o bien la suma
+            // de los metros de sus plantillas (cuando los metros se definen
+            // por plantilla y el campo raíz queda en null).
+            const metrosRaiz = obra.metrosContratados ? Number(obra.metrosContratados) : 0;
+            const metrosPlantillas = obra.plantillas.reduce(
+                (sum, p) => sum + (p.metrosContratados ? Number(p.metrosContratados) : 0), 0
+            );
+            const metrosDenominador = metrosRaiz > 0 ? metrosRaiz : metrosPlantillas;
+
+            const pctAvance = metrosDenominador > 0
+                ? (metrosPerforados / metrosDenominador) * 100
                 : null;
 
             const cortesAgg = await prisma.corteFacturacion.aggregate({
@@ -71,6 +81,7 @@ export async function GET(req: NextRequest) {
                 })),
                 metricas: {
                     metrosPerforados,
+                    metrosContratadosEfectivos: metrosDenominador,
                     horasTotales:   Number(agg._sum.horasTrabajadas ?? 0),
                     litrosDiesel:   Number(agg._sum.litrosDiesel    ?? 0),
                     barrenos:       Number(agg._sum.barrenos        ?? 0),
