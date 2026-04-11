@@ -18,6 +18,8 @@ type PlantillaObra = {
     fechaInicio: string;
     fechaFin: string;
     notas: string;
+    // equipos asignados a esta plantilla específica
+    equipos: { equipoId: string; fechaInicio: string }[];
 };
 
 // Tipo extendido de Obra con plantillas
@@ -29,6 +31,8 @@ type PlantillaObraDB = {
     fechaInicio: string | null;
     fechaFin: string | null;
     notas: string | null;
+    status: string;
+    plantillaEquipos?: { equipoId: string; equipo: { id: string; nombre: string; numeroEconomico: string | null } }[];
 };
 
 type EquipoSeleccionado = {
@@ -63,7 +67,7 @@ type Obra = {
     notas: string | null;
     plantillas: PlantillaObraDB[];
     _count: { registrosDiarios: number; cortesFacturacion: number };
-    obraEquipos: { equipo: { nombre: string; numeroEconomico: string | null } }[];
+    obraEquipos: { equipoId: string; equipo: { nombre: string; numeroEconomico: string | null } }[];
     metricas: {
         metrosPerforados: number;
         horasTotales: number;
@@ -140,16 +144,19 @@ function ObraModal({
 }) {
     const isEdit = !!obra;
 
-    // C3-A: equipos con horómetro inicial (solo creación)
+    // C3-A: equipos con horómetro inicial (solo creación — equipo global de la obra)
     const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
         [{ equipoId: '', fechaInicio: '', horometroInicial: '' }]
     );
 
-    // Equipos actuales en modo edición
+    // Equipos actuales en modo edición (nivel obra — solo para referencia/lectura)
     const [equiposAsignados, setEquiposAsignados] = useState<EquipoAsignado[]>([]);
     const [loadingEquipos, setLoadingEquipos] = useState(isEdit);
-    // Equipos nuevos a agregar en modo edición
+    // Equipos nuevos a agregar a nivel obra en modo edición
     const [equiposNuevos, setEquiposNuevos] = useState<EquipoSeleccionado[]>([]);
+
+    // Estado para guardar qué equipos de plantilla se están asignando/desasignando (en vuelo)
+    const [savingPlantillaEquipo, setSavingPlantillaEquipo] = useState(false);
 
     useEffect(() => {
         if (!isEdit || !obra) return;
@@ -168,7 +175,7 @@ function ObraModal({
             .finally(() => setLoadingEquipos(false));
     }, []);
 
-    // C1-B: plantillas — precargar desde la obra en modo edición
+    // C1-B: plantillas — precargar desde la obra en modo edición (incluyendo equipos por plantilla)
     const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
         obra?.plantillas && obra.plantillas.length > 0
             ? obra.plantillas.map(p => ({
@@ -179,8 +186,12 @@ function ObraModal({
                 fechaInicio:       p.fechaInicio ? p.fechaInicio.slice(0, 10) : '',
                 fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
                 notas:             p.notas ?? '',
+                equipos:           (p.plantillaEquipos ?? []).map(pe => ({
+                    equipoId:   pe.equipoId,
+                    fechaInicio: '',
+                })),
             }))
-            : [{ numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' }]
+            : [{ numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '', equipos: [] }]
     );
 
     const [form, setForm] = useState({
@@ -287,7 +298,7 @@ function ObraModal({
     const addPlantilla = () =>
         setPlantillas(prev => [
             ...prev,
-            { numero: prev.length + 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '' },
+            { numero: prev.length + 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '', equipos: [] },
         ]);
 
     const removePlantilla = (idx: number) =>
@@ -295,12 +306,43 @@ function ObraModal({
             prev.filter((_, i) => i !== idx).map((p, i) => ({ ...p, numero: i + 1 }))
         );
 
-    const updatePlantilla = (idx: number, field: keyof PlantillaObra, value: string) => {
+    const updatePlantilla = (idx: number, field: keyof Omit<PlantillaObra, 'equipos'>, value: string) => {
         setPlantillas(prev =>
             prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p))
         );
         setDirty(true);
     };
+
+    // Agregar equipo a una plantilla específica
+    const addEquipoToPlantilla = (pIdx: number) => {
+        setPlantillas(prev => prev.map((p, i) =>
+            i === pIdx ? { ...p, equipos: [...p.equipos, { equipoId: '', fechaInicio: '' }] } : p
+        ));
+        setDirty(true);
+    };
+
+    // Quitar equipo de una plantilla
+    const removeEquipoFromPlantilla = (pIdx: number, eIdx: number) => {
+        setPlantillas(prev => prev.map((p, i) =>
+            i === pIdx ? { ...p, equipos: p.equipos.filter((_, j) => j !== eIdx) } : p
+        ));
+        setDirty(true);
+    };
+
+    // Actualizar un equipo dentro de una plantilla
+    const updateEquipoInPlantilla = (pIdx: number, eIdx: number, field: 'equipoId' | 'fechaInicio', value: string) => {
+        setPlantillas(prev => prev.map((p, i) =>
+            i === pIdx
+                ? { ...p, equipos: p.equipos.map((e, j) => j === eIdx ? { ...e, [field]: value } : e) }
+                : p
+        ));
+        setDirty(true);
+    };
+
+    // IDs de equipos ya usados en TODAS las plantillas (para deshabilitar duplicados)
+    const todosEquiposEnPlantillas = new Set(
+        plantillas.flatMap(p => p.equipos.map(e => e.equipoId).filter(Boolean))
+    );
 
     // ── Guardar ───────────────────────────────────────────────────────────────
     const handleSave = async () => {
@@ -332,19 +374,19 @@ function ObraModal({
                 fechaInicio:       form.fechaInicio       || null,
                 fechaFin:          form.fechaFin          || null,
                 status:            form.status,
-                bordo:             form.bordo         ? Number(form.bordo)         : null,   // C1-A
-                espaciamiento:     form.espaciamiento ? Number(form.espaciamiento) : null,   // C1-A
+                bordo:             form.bordo         ? Number(form.bordo)         : null,
+                espaciamiento:     form.espaciamiento ? Number(form.espaciamiento) : null,
                 notas:             form.notas         || null,
             };
 
+            let obraId = obra?.id ?? '';
+
             if (!isEdit) {
-                // C3-A: equipos con horometroInicial
                 body.equipos = equiposValidos.map(e => ({
                     equipoId:         e.equipoId,
                     fechaInicio:      e.fechaInicio || form.fechaInicio || undefined,
                     horometroInicial: e.horometroInicial ? Number(e.horometroInicial) : null,
                 }));
-                // C1-B: plantillas
                 body.plantillas = plantillasValidas.map(p => ({
                     numero:            p.numero,
                     metrosContratados: Number(p.metrosContratados),
@@ -353,6 +395,8 @@ function ObraModal({
                     fechaFin:          p.fechaFin   || null,
                     notas:             p.notas      || null,
                 }));
+                const created: any = await fetchApi('/obras', { method: 'POST', body: JSON.stringify(body) });
+                obraId = created.id;
             }
 
             if (isEdit) {
@@ -365,7 +409,6 @@ function ObraModal({
                     fechaFin:          p.fechaFin   || null,
                     notas:             p.notas      || null,
                 }));
-                // Equipos: actualizaciones + eliminaciones + nuevos
                 body.equiposActualizados = equiposAsignados
                     .filter(e => !e._eliminar)
                     .map(e => ({
@@ -386,9 +429,40 @@ function ObraModal({
                     }));
                 }
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
-            } else {
-                await fetchApi('/obras', { method: 'POST', body: JSON.stringify(body) });
             }
+
+            // ── Asignar equipos a plantillas específicas (POST /plantillas/[id]/equipos) ──
+            // Lo hacemos después de guardar la obra para tener los IDs de plantilla
+            // Necesitamos recargar la obra para obtener los IDs de las plantillas recién creadas
+            if (plantillasValidas.some(p => p.equipos.length > 0)) {
+                setSavingPlantillaEquipo(true);
+                try {
+                    const obraActualizada: any = await fetchApi(`/obras/${obraId}`);
+                    const plantillasDB: any[] = obraActualizada.plantillas ?? [];
+
+                    for (const plt of plantillasValidas) {
+                        const pDB = plantillasDB.find((p: any) => p.numero === plt.numero);
+                        if (!pDB) continue;
+                        const equiposValidos = plt.equipos.filter(e => e.equipoId);
+                        for (const eq of equiposValidos) {
+                            // Verificar si ya está asignado para no duplicar
+                            const yaAsignado = (pDB.plantillaEquipos ?? []).some((pe: any) => pe.equipoId === eq.equipoId);
+                            if (!yaAsignado) {
+                                await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        equipoId:   eq.equipoId,
+                                        fechaInicio: eq.fechaInicio || plt.fechaInicio || null,
+                                    }),
+                                }).catch(() => {}); // no bloquear si falla una asignación individual
+                            }
+                        }
+                    }
+                } finally {
+                    setSavingPlantillaEquipo(false);
+                }
+            }
+
             onSaved();
         } catch (e: any) {
             setError(e.message || 'Error al guardar');
@@ -521,17 +595,30 @@ function ObraModal({
                         </div>
                         <div className="space-y-3">
                             {plantillas.map((plt, idx) => {
-                                // Mejora 1: área y volumen estimado heredados de la malla de la obra
-                                const bordoN         = Number(form.bordo);
-                                const espacN         = Number(form.espaciamiento);
-                                const metros         = Number(plt.metrosContratados);
-                                const areaPlantilla  = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
-                                const volEstimado    = areaPlantilla && metros
+                                const bordoN        = Number(form.bordo);
+                                const espacN        = Number(form.espaciamiento);
+                                const metros        = Number(plt.metrosContratados);
+                                const areaPlantilla = bordoN && espacN ? (bordoN * espacN).toFixed(2) : null;
+                                const volEstimado   = areaPlantilla && metros
                                     ? (Number(areaPlantilla) * metros).toFixed(1) : null;
+
+                                // equipos ya usados en ESTA plantilla
+                                const equiposEnEstaPlantilla = new Set(plt.equipos.map(e => e.equipoId).filter(Boolean));
+                                // equipos usados en OTRAS plantillas
+                                const equiposEnOtras = new Set(
+                                    plantillas.flatMap((p, i) => i === idx ? [] : p.equipos.map(e => e.equipoId).filter(Boolean))
+                                );
+
                                 return (
-                                    <div key={idx} className="border border-gray-100 rounded-xl p-3 bg-gray-50/50 space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-semibold text-gray-600">Plantilla {plt.numero}</span>
+                                    <div key={idx} className="border border-gray-100 rounded-xl bg-gray-50/50 overflow-hidden">
+                                        {/* Header plantilla */}
+                                        <div className="flex items-center justify-between px-3 pt-3 pb-1">
+                                            <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                                <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
+                                                    {plt.numero}
+                                                </span>
+                                                Plantilla {plt.numero}
+                                            </span>
                                             {plantillas.length > 1 && (
                                                 <button type="button" onClick={() => removePlantilla(idx)}
                                                     className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
@@ -539,61 +626,124 @@ function ObraModal({
                                                 </button>
                                             )}
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Metros contratados *</label>
-                                                <input type="number" placeholder="841.50" value={plt.metrosContratados}
-                                                    onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+
+                                        <div className="px-3 pb-3 space-y-2">
+                                            {/* Metros y barrenos */}
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Metros contratados *</label>
+                                                    <input type="number" placeholder="841.50" value={plt.metrosContratados}
+                                                        onChange={e => updatePlantilla(idx, 'metrosContratados', e.target.value)}
+                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Barrenos</label>
+                                                    <input type="number" placeholder="89" value={plt.barrenos}
+                                                        onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
+                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Barrenos</label>
-                                                <input type="number" placeholder="89" value={plt.barrenos}
-                                                    onChange={e => updatePlantilla(idx, 'barrenos', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+
+                                            {/* Fechas */}
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
+                                                    <input type="date" value={plt.fechaInicio}
+                                                        onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
+                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">
+                                                        Fecha fin
+                                                        <span className="text-gray-400 font-normal ml-1">(opcional)</span>
+                                                    </label>
+                                                    <input type="date" value={plt.fechaFin}
+                                                        onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
+                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
-                                                <input type="date" value={plt.fechaInicio}
-                                                    onChange={e => updatePlantilla(idx, 'fechaInicio', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Fecha fin</label>
-                                                <input type="date" value={plt.fechaFin}
-                                                    onChange={e => updatePlantilla(idx, 'fechaFin', e.target.value)}
-                                                    className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+
+                                            {/* Área y vol estimado */}
+                                            {(areaPlantilla || volEstimado) && (
+                                                <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
+                                                    {areaPlantilla && (
+                                                        <span className="text-blue-600">
+                                                            Área: <strong>{areaPlantilla} m²</strong>
+                                                            <span className="text-blue-400 ml-1">({form.bordo} × {form.espaciamiento})</span>
+                                                        </span>
+                                                    )}
+                                                    {volEstimado && (
+                                                        <span className="text-blue-700 font-medium">
+                                                            Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m³</strong>
+                                                            <span className="text-blue-400 ml-1">({plt.metrosContratados} m × {areaPlantilla} m²)</span>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* ── Equipos de esta plantilla ── */}
+                                            <div className="border-t border-gray-100 pt-2 mt-1">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="text-xs font-semibold text-gray-500">
+                                                        Equipos de esta plantilla
+                                                        <span className="text-gray-400 font-normal ml-1">
+                                                            {plt.equipos.length === 0
+                                                                ? '— sin asignar (usará los de la obra)'
+                                                                : `(${plt.equipos.length})`}
+                                                        </span>
+                                                    </span>
+                                                    <button type="button"
+                                                        onClick={() => addEquipoToPlantilla(idx)}
+                                                        className="text-xs text-blue-600 hover:underline flex items-center gap-0.5">
+                                                        <Plus size={11} /> Asignar equipo
+                                                    </button>
+                                                </div>
+
+                                                {plt.equipos.length > 0 && (
+                                                    <div className="space-y-1.5">
+                                                        {plt.equipos.map((eq, eIdx) => (
+                                                            <div key={eIdx} className="flex gap-2 items-end">
+                                                                <div className="flex-1">
+                                                                    <select
+                                                                        value={eq.equipoId}
+                                                                        onChange={e => updateEquipoInPlantilla(idx, eIdx, 'equipoId', e.target.value)}
+                                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
+                                                                        <option value="">— Selecciona equipo —</option>
+                                                                        {equipos.map(e => (
+                                                                            <option key={e.id} value={e.id}
+                                                                                disabled={
+                                                                                    equiposEnEstaPlantilla.has(e.id) && eq.equipoId !== e.id
+                                                                                }>
+                                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
+                                                                                {equiposEnOtras.has(e.id) && eq.equipoId !== e.id ? ' · también en otra plt.' : ''}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <button type="button"
+                                                                    onClick={() => removeEquipoFromPlantilla(idx, eIdx)}
+                                                                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0">
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        {/* Mejora 1: área y volumen estimado */}
-                                        {(areaPlantilla || volEstimado) && (
-                                            <div className="flex gap-4 bg-blue-50 rounded-lg px-3 py-2 text-xs">
-                                                {areaPlantilla && (
-                                                    <span className="text-blue-600">
-                                                        Área: <strong>{areaPlantilla} m²</strong>
-                                                        <span className="text-blue-400 ml-1">({form.bordo} × {form.espaciamiento})</span>
-                                                    </span>
-                                                )}
-                                                {volEstimado && (
-                                                    <span className="text-blue-700 font-medium">
-                                                        Vol. estimado: <strong>{Number(volEstimado).toLocaleString('es-MX')} m³</strong>
-                                                        <span className="text-blue-400 ml-1">({plt.metrosContratados} m × {areaPlantilla} m²)</span>
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* Equipos asignados (modo edición) */}
+                    {/* Equipos asignados a nivel obra (modo edición — solo para agregar equipo nuevo a la obra) */}
                     {isEdit && (
                         <div>
                             <div className="flex items-center justify-between mb-2">
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                    Equipos asignados
+                                    Equipos de la obra
+                                    <span className="text-gray-400 font-normal ml-1 text-xs">(disponibles para todas las plantillas)</span>
                                 </p>
                                 <button type="button" onClick={addEquipoNuevo}
                                     className="text-xs text-blue-600 hover:underline flex items-center gap-1">
@@ -605,51 +755,26 @@ function ObraModal({
                                 <p className="text-xs text-gray-400 py-2">Cargando equipos...</p>
                             ) : (
                                 <div className="space-y-2">
-                                    {/* Equipos ya asignados */}
+                                    {/* Equipos ya asignados — solo lectura con opción de cerrar */}
                                     {equiposAsignados.map(eq => (
                                         <div key={eq.id}
-                                            className={`border rounded-xl p-3 space-y-2 transition-colors ${eq._eliminar ? 'bg-red-50 border-red-200 opacity-60' : 'bg-gray-50/50 border-gray-100'}`}>
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <label className="block text-xs text-gray-500 mb-1">Equipo</label>
-                                                    <select
-                                                        value={eq.equipoId}
-                                                        disabled={eq._eliminar}
-                                                        onChange={e => updateEquipoAsignado(eq.id, 'equipoId', e.target.value)}
-                                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-gray-100 disabled:text-gray-400">
-                                                        {equipos.map(e => (
-                                                            <option key={e.id} value={e.id}
-                                                                disabled={equiposUsadosEdit.has(e.id) && eq.equipoId !== e.id}>
-                                                                {e.nombre}{e.numeroEconomico ? ` (${e.numeroEconomico})` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <button type="button"
-                                                    onClick={() => toggleEliminarEquipo(eq.id)}
-                                                    className={`mt-5 px-2 py-1.5 rounded-lg transition-colors text-xs font-medium flex items-center gap-1 ${eq._eliminar
-                                                        ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                                                        : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}
-                                                    title={eq._eliminar ? 'Deshacer eliminación' : 'Quitar equipo'}>
-                                                    {eq._eliminar ? 'Deshacer' : <Trash2 size={14} />}
-                                                </button>
+                                            className={`border rounded-xl p-3 flex items-center gap-3 transition-colors ${eq._eliminar ? 'bg-red-50 border-red-200 opacity-60' : 'bg-gray-50/50 border-gray-100'}`}>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-700 truncate">
+                                                    {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
+                                                </p>
+                                                <p className="text-xs text-gray-400">
+                                                    Desde {eq.fechaInicio || '—'}
+                                                    {eq.fechaFin ? ` · hasta ${eq.fechaFin}` : ' · activo'}
+                                                </p>
                                             </div>
-                                            {!eq._eliminar && (
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
-                                                        <input type="date" value={eq.fechaInicio}
-                                                            onChange={e => updateEquipoAsignado(eq.id, 'fechaInicio', e.target.value)}
-                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs text-gray-500 mb-1">Fecha fin</label>
-                                                        <input type="date" value={eq.fechaFin ?? ''}
-                                                            onChange={e => updateEquipoAsignado(eq.id, 'fechaFin', e.target.value)}
-                                                            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
-                                                    </div>
-                                                </div>
-                                            )}
+                                            <button type="button"
+                                                onClick={() => toggleEliminarEquipo(eq.id)}
+                                                className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${eq._eliminar
+                                                    ? 'bg-red-100 text-red-600 hover:bg-red-200'
+                                                    : 'text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
+                                                {eq._eliminar ? 'Deshacer' : <Trash2 size={13} />}
+                                            </button>
                                         </div>
                                     ))}
 
@@ -695,7 +820,7 @@ function ObraModal({
                                     ))}
 
                                     {equiposAsignados.length === 0 && equiposNuevos.length === 0 && (
-                                        <p className="text-xs text-gray-400 py-1">Sin equipos asignados.</p>
+                                        <p className="text-xs text-gray-400 py-1">Sin equipos asignados a la obra.</p>
                                     )}
                                 </div>
                             )}
@@ -777,9 +902,9 @@ function ObraModal({
                         className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
                         Cancelar
                     </button>
-                    <button onClick={handleSave} disabled={saving || !!fechaError}
+                    <button onClick={handleSave} disabled={saving || savingPlantillaEquipo || !!fechaError}
                         className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear obra'}
+                        {savingPlantillaEquipo ? 'Asignando equipos...' : saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear obra'}
                     </button>
                 </div>
             </div>
