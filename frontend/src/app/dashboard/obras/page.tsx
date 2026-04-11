@@ -248,6 +248,7 @@ function ObraModal({
     const isEdit = !!obra;
     const [step, setStep] = useState(1);
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+    const [loadingDetalle, setLoadingDetalle] = useState(isEdit);
 
     // Equipos (creacion)
     const [equiposSeleccionados, setEquiposSeleccionados] = useState<EquipoSeleccionado[]>(
@@ -255,23 +256,39 @@ function ObraModal({
     );
     const [savingPlantillaEquipo, setSavingPlantillaEquipo] = useState(false);
 
+    const mapPlantillas = (pList: PlantillaObraDB[]): PlantillaObra[] =>
+        pList.map(p => ({
+            id:                p.id,
+            numero:            p.numero,
+            metrosContratados: String(p.metrosContratados),
+            barrenos:          String(p.barrenos ?? ''),
+            fechaInicio:       p.fechaInicio ? p.fechaInicio.slice(0, 10) : '',
+            fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
+            notas:             p.notas ?? '',
+            equipos:           (p.plantillaEquipos ?? []).map(pe => ({
+                equipoId:    pe.equipoId,
+                fechaInicio: '',
+            })),
+        }));
+
     const [plantillas, setPlantillas] = useState<PlantillaObra[]>(
         obra?.plantillas && obra.plantillas.length > 0
-            ? obra.plantillas.map(p => ({
-                id:                p.id,
-                numero:            p.numero,
-                metrosContratados: String(p.metrosContratados),
-                barrenos:          String(p.barrenos ?? ''),
-                fechaInicio:       p.fechaInicio ? p.fechaInicio.slice(0, 10) : '',
-                fechaFin:          p.fechaFin    ? p.fechaFin.slice(0, 10)    : '',
-                notas:             p.notas ?? '',
-                equipos:           (p.plantillaEquipos ?? []).map(pe => ({
-                    equipoId:    pe.equipoId,
-                    fechaInicio: '',
-                })),
-            }))
+            ? mapPlantillas(obra.plantillas)
             : [{ numero: 1, metrosContratados: '', barrenos: '', fechaInicio: '', fechaFin: '', notas: '', equipos: [] }]
     );
+
+    // En edicion, re-fetch el detalle completo para obtener plantillaEquipos (el listado general no los incluye)
+    useEffect(() => {
+        if (!isEdit || !obra) { setLoadingDetalle(false); return; }
+        fetchApi(`/obras/${obra.id}`)
+            .then((data: any) => {
+                if (data?.plantillas?.length > 0) {
+                    setPlantillas(mapPlantillas(data.plantillas));
+                }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingDetalle(false));
+    }, []);
 
     const [form, setForm] = useState({
         nombre:            obra?.nombre            ?? '',
@@ -700,6 +717,12 @@ function ObraModal({
     // Step 3: Plantillas y equipos
     const renderStep3 = () => (
         <div className="space-y-5">
+            {loadingDetalle && (
+                <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                    <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                    Cargando datos de plantillas...
+                </div>
+            )}
             <SectionBlock color="green" title="Plantillas de perforacion">
                 <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4">
                     <p className="text-xs text-green-800 leading-relaxed">
