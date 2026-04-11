@@ -100,6 +100,8 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
 
     const [equipos, setEquipos] = useState<Equipo[]>([]);
     const [obras, setObras] = useState<ObraSimple[]>([]);
+    const [obraDetalleCache, setObraDetalleCache] = useState<Record<string, ObraSimple>>({});
+    const [loadingObra, setLoadingObra] = useState(false);
     const [almacenId, setAlmacenId] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -195,23 +197,24 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                     setHorometroFuente(tieneHorometroDesCopia ? null : 'equipo');
                 }
                 if (obraIdParam) {
-                    const ob = obs.find((o: ObraSimple) => o.id === obraIdParam);
-                    if (ob) {
-                        const plantillaSugerida = ob.plantillas?.find((p: NonNullable<ObraSimple['plantillas']>[number]) =>
+                    // Fetch detalle completo para tener plantillaEquipos
+                    fetchApi(`/obras/${obraIdParam}`).then((ob: ObraSimple) => {
+                        setObraDetalleCache(prev => ({ ...prev, [obraIdParam]: ob }));
+                        setObras(prev => prev.map(o => o.id === obraIdParam ? { ...o, ...ob } : o));
+                        const plantillaSugerida = ob.plantillas?.find(p =>
                             (!p.fechaInicio || p.fechaInicio <= hoy) &&
                             (!p.fechaFin    || p.fechaFin   >= hoy)
                         ) ?? ob.plantillas?.[0];
                         setForm(f => ({
                             ...f,
-                            obraId: ob.id,
+                            obraId: obraIdParam,
                             bordo: ob.bordo != null ? String(ob.bordo) : f.bordo,
                             espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
                             plantillaId: plantillaSugerida?.id ?? '',
                         }));
-                        // Solo buscar horómetro de la obra/equipo si no viene de copia
                         if (targetId && !tieneHorometroDesCopia) fetchHorometroObraEquipo(obraIdParam, targetId);
                         fetchAvancePlantilla(obraIdParam);
-                    }
+                    }).catch(() => {});
                 }
             } else {
                 // Modo edición: si hay obra precargada, cargar su avance
@@ -227,31 +230,48 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
         if (form.obraId && equipoId) fetchHorometroObraEquipo(form.obraId, equipoId);
     };
 
-    const handleObraChange = (obraId: string) => {
-        const ob = obras.find(o => o.id === obraId);
-        const equiposNuevosIds = ob?.obraEquipos?.map(oe => oe.equipoId) ?? [];
-        const equipoSigueValido = !ob?.obraEquipos?.length || equiposNuevosIds.includes(form.equipoId);
-        const nuevoEquipoId = equipoSigueValido ? form.equipoId : '';
-        // Auto-sugerir plantilla activa según la fecha actual
+    const fetchObraDetalle = async (obraId: string): Promise<ObraSimple | undefined> => {
+        if (!obraId) return undefined;
+        if (obraDetalleCache[obraId]) return obraDetalleCache[obraId];
+        setLoadingObra(true);
+        try {
+            const data: ObraSimple = await fetchApi(`/obras/${obraId}`);
+            setObraDetalleCache(prev => ({ ...prev, [obraId]: data }));
+            // Actualizar tambien el listado para que obraSeleccionada tenga plantillaEquipos
+            setObras(prev => prev.map(o => o.id === obraId ? { ...o, ...data } : o));
+            return data;
+        } catch {
+            return undefined;
+        } finally {
+            setLoadingObra(false);
+        }
+    };
+
+    const handleObraChange = async (obraId: string) => {
+        // Reset equipo y plantilla al cambiar obra
+        setForm(f => ({ ...f, obraId, equipoId: '', plantillaId: '' }));
+        setHorometroFuente(null);
+        if (!obraId) return;
+
+        // Fetch detalle completo para obtener plantillaEquipos
+        const ob = await fetchObraDetalle(obraId);
+        if (!ob) return;
+
         const fechaRef = form.fecha || hoy;
-        const plantillaSugerida = ob?.plantillas?.find(p =>
+        const plantillaSugerida = ob.plantillas?.find(p =>
             p.status !== 'TERMINADA' &&
             (!p.fechaInicio || p.fechaInicio <= fechaRef) &&
             (!p.fechaFin    || p.fechaFin   >= fechaRef)
-        ) ?? ob?.plantillas?.find(p => p.status !== 'TERMINADA') ?? ob?.plantillas?.[0];
+        ) ?? ob.plantillas?.find(p => p.status !== 'TERMINADA') ?? ob.plantillas?.[0];
+
         setForm(f => ({
             ...f,
             obraId,
-            equipoId: nuevoEquipoId,
-            bordo: ob?.bordo != null ? String(ob.bordo) : f.bordo,
-            espaciamiento: ob?.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
+            equipoId: '',
+            bordo: ob.bordo != null ? String(ob.bordo) : f.bordo,
+            espaciamiento: ob.espaciamiento != null ? String(ob.espaciamiento) : f.espaciamiento,
             plantillaId: plantillaSugerida?.id ?? '',
         }));
-        if (!equipoSigueValido) {
-            setHorometroFuente(null);
-            setForm(f => ({ ...f, horometroInicio: '' }));
-        }
-        if (obraId && nuevoEquipoId) fetchHorometroObraEquipo(obraId, nuevoEquipoId);
         fetchAvancePlantilla(obraId);
     };
 
@@ -439,6 +459,7 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                             Obra del catálogo <span className="text-red-500">*</span>
                         </label>
+                        <div className="relative">
                         <select value={form.obraId} onChange={e => handleObraChange(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                             <option value="">— Selecciona una obra —</option>
@@ -454,6 +475,13 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                                 </>
                             )}
                         </select>
+                        {loadingObra && (
+                            <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs text-blue-500 pointer-events-none">
+                                <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                Cargando...
+                            </div>
+                        )}
+                        </div>
                     </div>
 
                     {/* Selector de plantilla */}
