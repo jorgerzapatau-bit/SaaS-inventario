@@ -52,6 +52,8 @@ type RegistroDiario = {
     metrosLineales: number;
     litrosDiesel: number;
     precioDiesel: number;
+    horometroInicio: number | null;
+    horometroFin: number | null;
 };
 
 type ObraEquipo = {
@@ -539,8 +541,106 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
 
     if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Cargando registros...</div>;
 
+    // ── Mini-resumen de plantillas ────────────────────────────────────────────
+    const plantillas = obra.plantillas ?? [];
+    const metrosPerf = obra.metricas?.metrosPerforados ?? 0;
+    const barrenosPerf = obra.metricas?.barrenos ?? 0;
+
+    // Determinar a qué plantilla pertenecen los metros según avance acumulado
+    const plantillasConAvance = plantillas.map((p, idx) => {
+        const prevMetros = plantillas.slice(0, idx).reduce((s, pp) => s + pp.metrosContratados, 0);
+        const metrosEstaPlantilla = Math.max(0, Math.min(p.metrosContratados, metrosPerf - prevMetros));
+        const pctM = p.metrosContratados > 0 ? Math.min(100, (metrosEstaPlantilla / p.metrosContratados) * 100) : 0;
+        const prevBarr = plantillas.slice(0, idx).reduce((s, pp) => s + pp.barrenos, 0);
+        const barrEstaPlantilla = Math.max(0, Math.min(p.barrenos, barrenosPerf - prevBarr));
+        const pctB = p.barrenos > 0 ? Math.min(100, (barrEstaPlantilla / p.barrenos) * 100) : 0;
+        const completa = metrosEstaPlantilla >= p.metrosContratados && (p.barrenos === 0 || barrEstaPlantilla >= p.barrenos);
+        const enProgreso = !completa && metrosEstaPlantilla > 0;
+        return { ...p, metrosEstaPlantilla, pctM, barrEstaPlantilla, pctB, completa, enProgreso };
+    });
+
     return (
         <div className="space-y-4">
+
+            {/* Mini-resumen de plantillas */}
+            {plantillasConAvance.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {plantillasConAvance.map(p => (
+                        <div key={p.id} className={`rounded-xl border p-4 ${
+                            p.completa
+                                ? 'border-green-200 bg-green-50/50'
+                                : p.enProgreso
+                                    ? 'border-blue-200 bg-blue-50/30'
+                                    : 'border-gray-100 bg-gray-50/50'
+                        }`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                                        p.completa ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        P{p.numero}
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-800">Plantilla {p.numero}</p>
+                                        {(p.fechaInicio || p.fechaFin) && (
+                                            <p className="text-xs text-gray-400">
+                                                {p.fechaInicio && fDate(p.fechaInicio)} {p.fechaFin && `→ ${fDate(p.fechaFin)}`}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                    p.completa
+                                        ? 'bg-green-100 text-green-700'
+                                        : p.enProgreso
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-gray-100 text-gray-500'
+                                }`}>
+                                    {p.completa ? '✓ Completa' : p.enProgreso ? 'En progreso' : 'Pendiente'}
+                                </span>
+                            </div>
+
+                            {/* Metros */}
+                            <div className="space-y-2">
+                                <div>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span className="text-gray-500">Metros</span>
+                                        <span className={`font-semibold ${p.completa ? 'text-green-600' : 'text-blue-600'}`}>
+                                            {p.metrosEstaPlantilla.toFixed(1)} / {p.metrosContratados} m
+                                        </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all ${p.pctM >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                            style={{ width: `${p.pctM}%` }} />
+                                    </div>
+                                    {!p.completa && p.pctM < 100 && (
+                                        <p className="text-xs text-orange-500 mt-0.5">
+                                            Faltan {(p.metrosContratados - p.metrosEstaPlantilla).toFixed(1)} m · {p.pctM.toFixed(1)}% completado
+                                        </p>
+                                    )}
+                                </div>
+
+                                {p.barrenos > 0 && (
+                                    <div>
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-gray-500">Barrenos</span>
+                                            <span className={`font-semibold ${p.pctB >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                                {p.barrEstaPlantilla} / {p.barrenos}
+                                                {p.pctB < 100 && <span className="text-gray-400 font-normal"> (faltan {p.barrenos - p.barrEstaPlantilla})</span>}
+                                            </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all ${p.pctB >= 100 ? 'bg-green-500' : 'bg-purple-500'}`}
+                                                style={{ width: `${p.pctB}%` }} />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Equipos asignados */}
             {obra.obraEquipos.length > 0 && (
                 <div className="bg-blue-50 rounded-xl p-4">
@@ -579,39 +679,70 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
                             <tr className="bg-gray-50 border-b border-gray-100">
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase">Fecha</th>
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase">Equipo</th>
+                                <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">H. Ini</th>
+                                <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">H. Fin</th>
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">Horas</th>
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">Barrenos</th>
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">Metros</th>
+                                <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">Prof./Bar.</th>
                                 <th className="p-3 text-xs font-semibold text-gray-400 uppercase text-right">Diésel</th>
                                 <th className="p-3 w-8"></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {registros.map(r => (
-                                <>
-                                    <tr key={r.id} className="hover:bg-blue-50/30 cursor-pointer transition-colors"
-                                        onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
-                                        <td className="p-3 text-gray-700 font-medium">{fDate(r.fecha)}</td>
-                                        <td className="p-3 text-gray-500">{r.equipo.nombre}</td>
-                                        <td className="p-3 text-right font-semibold text-gray-700">{r.horasTrabajadas} hrs</td>
-                                        <td className="p-3 text-right text-gray-700">{r.barrenos}</td>
-                                        <td className="p-3 text-right text-gray-700">{r.metrosLineales.toFixed(1)} m</td>
-                                        <td className="p-3 text-right text-blue-600">{r.litrosDiesel} lt</td>
-                                        <td className="p-3 text-gray-400">
-                                            {expanded === r.id ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                                        </td>
-                                    </tr>
-                                    {expanded === r.id && (
-                                        <tr key={`${r.id}-exp`} className="bg-blue-50/20">
-                                            <td colSpan={7} className="px-6 py-3 text-xs text-gray-600">
-                                                Costo diésel: <span className="font-bold">${fmt((r.litrosDiesel * r.precioDiesel))}</span>
-                                                {' '}({r.litrosDiesel} lt × ${r.precioDiesel}/lt)
+                            {registros.map(r => {
+                                const profProm = r.barrenos > 0 ? (r.metrosLineales / r.barrenos) : null;
+                                return (
+                                    <>
+                                        <tr key={r.id} className="hover:bg-blue-50/30 cursor-pointer transition-colors"
+                                            onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                                            <td className="p-3 text-gray-700 font-medium">{fDate(r.fecha)}</td>
+                                            <td className="p-3 text-gray-500">{r.equipo.nombre}</td>
+                                            <td className="p-3 text-right text-gray-500 font-mono text-xs">{r.horometroInicio ?? '—'}</td>
+                                            <td className="p-3 text-right text-gray-500 font-mono text-xs">{r.horometroFin ?? '—'}</td>
+                                            <td className="p-3 text-right font-semibold text-gray-700">{r.horasTrabajadas} hrs</td>
+                                            <td className="p-3 text-right text-gray-700">{r.barrenos}</td>
+                                            <td className="p-3 text-right text-gray-700">{r.metrosLineales.toFixed(1)} m</td>
+                                            <td className="p-3 text-right text-gray-500 text-xs">{profProm ? `${profProm.toFixed(2)} m` : '—'}</td>
+                                            <td className="p-3 text-right text-blue-600">{r.litrosDiesel} lt</td>
+                                            <td className="p-3 text-gray-400">
+                                                {expanded === r.id ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                                             </td>
                                         </tr>
-                                    )}
-                                </>
-                            ))}
+                                        {expanded === r.id && (
+                                            <tr key={`${r.id}-exp`} className="bg-blue-50/20">
+                                                <td colSpan={10} className="px-6 py-3 text-xs text-gray-600">
+                                                    Costo diésel: <span className="font-bold">${fmt((r.litrosDiesel * r.precioDiesel))}</span>
+                                                    {' '}({r.litrosDiesel} lt × ${r.precioDiesel}/lt)
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
+                                );
+                            })}
                         </tbody>
+                        {/* Totales */}
+                        <tfoot>
+                            <tr className="border-t-2 border-gray-200 bg-gray-50">
+                                <td colSpan={4} className="p-3 text-xs font-semibold text-gray-500">
+                                    Totales: {registros.length} registros
+                                </td>
+                                <td className="p-3 text-right text-xs font-bold text-gray-700">
+                                    {registros.reduce((s, r) => s + r.horasTrabajadas, 0)} hrs
+                                </td>
+                                <td className="p-3 text-right text-xs font-bold text-gray-700">
+                                    {registros.reduce((s, r) => s + r.barrenos, 0)}
+                                </td>
+                                <td className="p-3 text-right text-xs font-bold text-gray-700">
+                                    {registros.reduce((s, r) => s + r.metrosLineales, 0).toFixed(1)} m
+                                </td>
+                                <td className="p-3"></td>
+                                <td className="p-3 text-right text-xs font-bold text-blue-600">
+                                    {registros.reduce((s, r) => s + r.litrosDiesel, 0).toLocaleString()} lt
+                                </td>
+                                <td className="p-3"></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             )}
@@ -944,7 +1075,6 @@ export default function ObraDetallePage() {
         </div>
     );
 
-    const pct = obra.metricas?.pctAvance;
     const fmt2Local = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     return (
@@ -988,35 +1118,109 @@ export default function ObraDetallePage() {
                 </div>
 
                 {/* KPIs */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">Metros perforados</p>
-                        <p className="text-lg font-bold text-gray-800">{fmt(obra.metricas?.metrosPerforados ?? 0)} m</p>
-                        {obra.metrosContratados && (
-                            <p className="text-xs text-gray-400">de {fmt(obra.metrosContratados)} contratados</p>
-                        )}
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">% Avance</p>
-                        {pct !== null && pct !== undefined ? (
-                            <>
-                                <p className="text-lg font-bold text-blue-600">{pct.toFixed(1)}%</p>
-                                <div className="w-full h-1.5 bg-gray-200 rounded-full mt-1">
-                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
+                {(() => {
+                    const metrosPerf = obra.metricas?.metrosPerforados ?? 0;
+                    const metrosTotales = obra.plantillas?.reduce((s, p) => s + p.metrosContratados, 0) ?? obra.metrosContratados ?? 0;
+                    const barrenosPerf = obra.metricas?.barrenos ?? 0;
+                    const barrTotales = obra.plantillas?.reduce((s, p) => s + p.barrenos, 0) ?? 0;
+                    const pctMetros = metrosTotales > 0 ? Math.min(100, (metrosPerf / metrosTotales) * 100) : null;
+                    const pctBarr = barrTotales > 0 ? Math.min(100, (barrenosPerf / barrTotales) * 100) : null;
+                    const equiposActivos = obra.obraEquipos.filter(e => !e.fechaFin).length;
+                    const diasTranscurridos = obra.fechaInicio
+                        ? Math.floor((Date.now() - new Date(obra.fechaInicio).getTime()) / 86400000)
+                        : null;
+
+                    return (
+                        <>
+                            {/* Info extra en el header */}
+                            <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-400">
+                                {equiposActivos > 0 && (
+                                    <span className="flex items-center gap-1">
+                                        <Wrench size={11} className="text-blue-400"/>
+                                        {equiposActivos} equipo{equiposActivos !== 1 ? 's' : ''} activo{equiposActivos !== 1 ? 's' : ''}
+                                    </span>
+                                )}
+                                {diasTranscurridos !== null && (
+                                    <span className="flex items-center gap-1">
+                                        <Clock size={11} className="text-gray-400"/>
+                                        {diasTranscurridos} días transcurridos
+                                    </span>
+                                )}
+                                {obra.plantillas?.length > 0 && (
+                                    <span className="flex items-center gap-1">
+                                        <FileText size={11} className="text-purple-400"/>
+                                        {obra.plantillas.length} plantilla{obra.plantillas.length !== 1 ? 's' : ''} de contrato
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                                {/* Metros perforados con barra */}
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Metros perforados</p>
+                                    <p className="text-lg font-bold text-gray-800">{fmt(metrosPerf)} m</p>
+                                    {metrosTotales > 0 && (
+                                        <>
+                                            <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${pctMetros! >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                                    style={{ width: `${pctMetros}%` }}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-gray-400 mt-1">{fmt(metrosPerf)} / {fmt(metrosTotales)} m</p>
+                                        </>
+                                    )}
                                 </div>
-                            </>
-                        ) : <p className="text-lg font-bold text-gray-400">—</p>}
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">Horas totales</p>
-                        <p className="text-lg font-bold text-gray-800">{fmt2Local(obra.metricas?.horasTotales ?? 0)} hrs</p>
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">Monto facturado</p>
-                        <p className="text-lg font-bold text-green-700">${fmt(obra.metricas?.montoFacturado ?? 0)}</p>
-                        <p className="text-xs text-gray-400">{obra.moneda}</p>
-                    </div>
-                </div>
+
+                                {/* % Avance */}
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                    <p className="text-xs text-gray-400 mb-1">% Avance</p>
+                                    {pctMetros !== null ? (
+                                        <>
+                                            <p className={`text-lg font-bold ${pctMetros >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                                {pctMetros.toFixed(1)}%
+                                            </p>
+                                            <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${pctMetros >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                                                    style={{ width: `${Math.min(pctMetros, 100)}%` }}
+                                                />
+                                            </div>
+                                            {pctMetros < 100 && metrosTotales > 0 && (
+                                                <p className="text-xs text-orange-500 mt-1">Faltan {fmt(metrosTotales - metrosPerf)} m</p>
+                                            )}
+                                            {pctMetros >= 100 && <p className="text-xs text-green-600 mt-1">✓ Completado</p>}
+                                        </>
+                                    ) : <p className="text-lg font-bold text-gray-400">—</p>}
+                                </div>
+
+                                {/* Barrenos */}
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Barrenos</p>
+                                    <p className="text-lg font-bold text-gray-800">{fmt(barrenosPerf)}</p>
+                                    {barrTotales > 0 && (
+                                        <>
+                                            <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${pctBarr! >= 100 ? 'bg-green-500' : 'bg-purple-500'}`}
+                                                    style={{ width: `${pctBarr}%` }}
+                                                />
+                                            </div>
+                                            <p className="text-xs text-gray-400 mt-1">{barrenosPerf} / {barrTotales}</p>
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Horas + Monto */}
+                                <div className="bg-gray-50 rounded-xl p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Horas / Facturado</p>
+                                    <p className="text-lg font-bold text-gray-800">{fmt2Local(obra.metricas?.horasTotales ?? 0)} hrs</p>
+                                    <p className="text-sm font-semibold text-green-700 mt-0.5">${fmt(obra.metricas?.montoFacturado ?? 0)} <span className="text-xs font-normal text-gray-400">{obra.moneda}</span></p>
+                                </div>
+                            </div>
+                        </>
+                    );
+                })()}
             </div>
 
             {/* Tabs */}
