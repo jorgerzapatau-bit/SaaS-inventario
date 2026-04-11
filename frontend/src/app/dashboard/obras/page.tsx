@@ -1037,6 +1037,7 @@ function ObraModal({
     );
 }
 
+
 // ─── Pagina principal ─────────────────────────────────────────────────────────
 export default function ObrasPage() {
     const [obras,    setObras]    = useState<Obra[]>([]);
@@ -1049,6 +1050,8 @@ export default function ObrasPage() {
     const [modal,    setModal]    = useState<{ open: boolean; obra?: Obra }>({ open: false });
     const [deleteModal, setDeleteModal] = useState<{ open: boolean; id: string; nombre: string } | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const [vista,    setVista]    = useState<'tarjetas' | 'lista'>('tarjetas');
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
     const load = async () => {
         setLoading(true);
@@ -1084,6 +1087,14 @@ export default function ObrasPage() {
         }
     };
 
+    const toggleRow = (id: string) => {
+        setExpandedRows(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
     const obrasFiltradas = obras
         .filter(o => filtro === 'TODAS' || o.status === filtro)
         .filter(o => {
@@ -1095,207 +1106,566 @@ export default function ObrasPage() {
             );
         });
 
-    const activas    = obras.filter(o => o.status === 'ACTIVA').length;
-    const pausadas   = obras.filter(o => o.status === 'PAUSADA').length;
-    const terminadas = obras.filter(o => o.status === 'TERMINADA').length;
+    const activas        = obras.filter(o => o.status === 'ACTIVA').length;
+    const pausadas       = obras.filter(o => o.status === 'PAUSADA').length;
+    const terminadas     = obras.filter(o => o.status === 'TERMINADA').length;
     const totalFacturado = obras.reduce((a, o) => a + (o.metricas?.montoFacturado ?? 0), 0);
-    const metrosTotales  = obras
-        .filter(o => o.status === 'ACTIVA')
-        .reduce((a, o) => a + (o.metricas?.metrosPerforados ?? 0), 0);
+    const metrosTotales  = obras.filter(o => o.status === 'ACTIVA').reduce((a, o) => a + (o.metricas?.metrosPerforados ?? 0), 0);
+    const totalPlantillas = obras.reduce((a, o) => a + (o.plantillas?.length ?? 0), 0);
+    const totalEquipos   = obras.reduce((a, o) => a + (o.obraEquipos?.length ?? 0), 0);
 
     const fmt = (n: number) => n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
 
+    // ─── KPI Cards ──────────────────────────────────────────────────────────
+    const kpis = [
+        { label: 'Activas',            value: activas,                        sub: `${pausadas} pausada${pausadas !== 1 ? 's' : ''}`,  color: 'text-green-600'  },
+        { label: 'Terminadas',         value: terminadas,                     sub: `${obras.length} obras totales`,                    color: 'text-gray-500'   },
+        { label: 'Plantillas totales', value: totalPlantillas,                sub: `en ${activas} obra${activas !== 1 ? 's' : ''} activa${activas !== 1 ? 's' : ''}`,  color: 'text-blue-600'   },
+        { label: 'Equipos desplegados',value: totalEquipos,                   sub: 'obras activas',                                    color: 'text-purple-600' },
+        { label: 'Total facturado',    value: `$${fmt(totalFacturado)}`,      sub: 'MXN',                                              color: 'text-blue-600'   },
+        { label: 'Metros perforados',  value: `${fmt(metrosTotales)} m`,      sub: 'obras activas',                                    color: 'text-purple-600' },
+    ];
+
+    // ─── Tarjeta de obra ────────────────────────────────────────────────────
+    const ObraCard = ({ obra }: { obra: Obra }) => {
+        const pct = obra.metricas?.pctAvance ?? 0;
+        const statusStyle = STATUS_STYLE[obra.status];
+        const statusIcon  = STATUS_ICON[obra.status];
+
+        return (
+            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 flex flex-col">
+                {/* Header */}
+                <div className="flex items-start gap-3 p-4 border-b border-gray-50">
+                    <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                        <HardHat size={16} className="text-orange-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <Link
+                            href={`/dashboard/obras/${obra.id}`}
+                            className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors leading-tight block truncate"
+                        >
+                            {obra.nombre}
+                        </Link>
+                        <p className="text-xs text-gray-400 mt-0.5 truncate">
+                            {obra.cliente?.nombre ?? obra.ubicacion ?? '—'}
+                        </p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${statusStyle}`}>
+                        {statusIcon}
+                        {obra.status.charAt(0) + obra.status.slice(1).toLowerCase()}
+                    </span>
+                </div>
+
+                {/* Progreso */}
+                <div className="px-4 py-3 border-b border-gray-50">
+                    <div className="flex justify-between items-baseline mb-1.5">
+                        <span className="text-xs text-gray-400">Avance general</span>
+                        <span className="text-sm font-semibold text-gray-700">
+                            {pct !== null && pct !== undefined ? `${pct.toFixed(1)}%` : '—'}
+                        </span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                            className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                            style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+                        />
+                    </div>
+                    <div className="flex justify-between mt-1.5">
+                        <span className="text-xs text-gray-400">
+                            {fmt(obra.metricas?.metrosPerforados ?? 0)} m perforados
+                        </span>
+                        <span className="text-xs text-gray-400">
+                            {obra.metrosContratados ? `${fmt(obra.metrosContratados)} m contratados` : '—'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Jerarquía: Plantillas → Equipos */}
+                <div className="px-4 py-3 border-b border-gray-50 flex-1">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                        Plantillas · Equipos asignados
+                    </p>
+                    {(obra.plantillas && obra.plantillas.length > 0) ? (
+                        <div className="space-y-2">
+                            {obra.plantillas.slice(0, 3).map((plt) => {
+                                const equiposDePlantilla = plt.plantillaEquipos ?? [];
+                                return (
+                                    <div key={plt.id} className="flex items-start gap-2">
+                                        <span className="w-5 h-5 rounded bg-blue-50 text-blue-600 text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            {plt.numero}
+                                        </span>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-xs text-gray-600">
+                                                    {fmt(plt.metrosContratados)} m
+                                                </span>
+                                                {equiposDePlantilla.length > 0 ? (
+                                                    equiposDePlantilla.map((pe, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                                                        >
+                                                            {pe.equipo.nombre}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-[10px] text-gray-300 italic">sin equipo</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {obra.plantillas.length > 3 && (
+                                <p className="text-[10px] text-gray-400">
+                                    +{obra.plantillas.length - 3} plantilla{obra.plantillas.length - 3 > 1 ? 's' : ''} más
+                                </p>
+                            )}
+                        </div>
+                    ) : (
+                        /* Sin plantillas: mostrar equipos de la obra directamente */
+                        obra.obraEquipos && obra.obraEquipos.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                                {obra.obraEquipos.map((oe, i) => (
+                                    <span
+                                        key={i}
+                                        className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                                    >
+                                        {oe.equipo.nombre}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-xs text-gray-300 italic">Sin plantillas ni equipos asignados</p>
+                        )
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div>
+                            <p className="text-xs font-semibold text-gray-700">
+                                ${fmt(obra.metricas?.montoFacturado ?? 0)}
+                            </p>
+                            <p className="text-[10px] text-gray-400">Facturado {obra.moneda}</p>
+                        </div>
+                        {obra.cliente?.nombre && (
+                            <>
+                                <div className="w-px h-6 bg-gray-100" />
+                                <div>
+                                    <p className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">
+                                        {obra.cliente.nombre}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400">Cliente</p>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <div className="flex gap-1">
+                        <Link
+                            href={`/dashboard/obras/${obra.id}`}
+                            className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Ver detalle"
+                        >
+                            <Eye size={14} />
+                        </Link>
+                        <button
+                            onClick={() => setModal({ open: true, obra })}
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Editar"
+                        >
+                            <Edit size={14} />
+                        </button>
+                        <button
+                            onClick={() => setDeleteModal({ open: true, id: obra.id, nombre: obra.nombre })}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // ─── Fila expandible (vista lista) ──────────────────────────────────────
+    const ObraRow = ({ obra }: { obra: Obra }) => {
+        const pct = obra.metricas?.pctAvance ?? 0;
+        const isExpanded = expandedRows.has(obra.id);
+
+        return (
+            <>
+                <tr
+                    className="hover:bg-blue-50/30 transition-colors cursor-pointer"
+                    onClick={() => toggleRow(obra.id)}
+                >
+                    {/* Obra */}
+                    <td className="p-3">
+                        <div className="flex items-center gap-2">
+                            <ChevronRight
+                                size={13}
+                                className={`text-gray-300 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                            />
+                            <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                                <HardHat size={12} className="text-orange-500" />
+                            </div>
+                            <div>
+                                <Link
+                                    href={`/dashboard/obras/${obra.id}`}
+                                    onClick={e => e.stopPropagation()}
+                                    className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors"
+                                >
+                                    {obra.nombre}
+                                </Link>
+                                {obra.ubicacion && (
+                                    <p className="text-xs text-gray-400">{obra.ubicacion}</p>
+                                )}
+                            </div>
+                        </div>
+                    </td>
+                    {/* Cliente */}
+                    <td className="p-3 text-sm text-gray-500">{obra.cliente?.nombre ?? '—'}</td>
+                    {/* Plantillas */}
+                    <td className="p-3">
+                        {obra.plantillas && obra.plantillas.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                                {obra.plantillas.map(p => (
+                                    <span
+                                        key={p.id}
+                                        className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                                    >
+                                        Plt {p.numero}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                        )}
+                    </td>
+                    {/* Equipos */}
+                    <td className="p-3">
+                        {obra.obraEquipos && obra.obraEquipos.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                                {obra.obraEquipos.slice(0, 2).map((oe, i) => (
+                                    <span
+                                        key={i}
+                                        className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100 font-medium"
+                                    >
+                                        {oe.equipo.nombre}
+                                    </span>
+                                ))}
+                                {obra.obraEquipos.length > 2 && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+                                        +{obra.obraEquipos.length - 2}
+                                    </span>
+                                )}
+                            </div>
+                        ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                        )}
+                    </td>
+                    {/* Avance */}
+                    <td className="p-3">
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden min-w-[48px]">
+                                <div
+                                    className="h-full bg-blue-500 rounded-full"
+                                    style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+                                />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-700 w-10 text-right flex-shrink-0">
+                                {pct !== null && pct !== undefined ? `${pct.toFixed(1)}%` : '—'}
+                            </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                            {fmt(obra.metricas?.metrosPerforados ?? 0)} m
+                            {obra.metrosContratados ? ` / ${fmt(obra.metrosContratados)} m` : ''}
+                        </p>
+                    </td>
+                    {/* Facturado */}
+                    <td className="p-3 text-right">
+                        <span className="text-sm font-semibold text-gray-700">
+                            ${fmt(obra.metricas?.montoFacturado ?? 0)}
+                        </span>
+                        <p className="text-[10px] text-gray-400">{obra.moneda}</p>
+                    </td>
+                    {/* Status */}
+                    <td className="p-3 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLE[obra.status]}`}>
+                            {STATUS_ICON[obra.status]}
+                            {obra.status.charAt(0) + obra.status.slice(1).toLowerCase()}
+                        </span>
+                    </td>
+                    {/* Acciones */}
+                    <td className="p-3">
+                        <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                            <Link
+                                href={`/dashboard/obras/${obra.id}`}
+                                className="p-1.5 text-blue-400 hover:bg-blue-50 rounded-md transition-colors inline-flex"
+                                title="Ver detalle"
+                            >
+                                <Eye size={14} />
+                            </Link>
+                            <button
+                                onClick={() => setModal({ open: true, obra })}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                title="Editar"
+                            >
+                                <Edit size={14} />
+                            </button>
+                            <button
+                                onClick={() => setDeleteModal({ open: true, id: obra.id, nombre: obra.nombre })}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                title="Eliminar"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+
+                {/* Fila expandida: detalle plantillas */}
+                {isExpanded && (
+                    <tr className="bg-blue-50/20">
+                        <td colSpan={8} className="px-4 pb-3 pt-2">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 ml-12">
+                                Plantillas y equipos
+                            </p>
+                            {obra.plantillas && obra.plantillas.length > 0 ? (
+                                <div className="ml-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                    {obra.plantillas.map(plt => {
+                                        const equiposDePlt = plt.plantillaEquipos ?? [];
+                                        return (
+                                            <div
+                                                key={plt.id}
+                                                className="bg-white border border-blue-100 rounded-xl px-3 py-2.5"
+                                            >
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className="w-5 h-5 rounded bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center">
+                                                        {plt.numero}
+                                                    </span>
+                                                    <span className="text-xs font-semibold text-gray-700">
+                                                        Plantilla {plt.numero}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 ml-auto">
+                                                        {fmt(plt.metrosContratados)} m
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {equiposDePlt.length > 0 ? (
+                                                        equiposDePlt.map((pe, i) => (
+                                                            <span
+                                                                key={i}
+                                                                className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
+                                                            >
+                                                                {pe.equipo.nombre}
+                                                                {pe.equipo.numeroEconomico ? ` (${pe.equipo.numeroEconomico})` : ''}
+                                                            </span>
+                                                        ))
+                                                    ) : (
+                                                        <span className="text-[10px] text-gray-300 italic">
+                                                            Sin equipo asignado
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {plt.fechaInicio && (
+                                                    <p className="text-[10px] text-gray-400 mt-1.5">
+                                                        Inicio: {plt.fechaInicio.slice(0, 10)}
+                                                        {plt.fechaFin ? ` · Fin: ${plt.fechaFin.slice(0, 10)}` : ''}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <p className="ml-12 text-xs text-gray-400 italic">
+                                    Sin plantillas. Los equipos están asignados directamente a la obra.
+                                </p>
+                            )}
+                        </td>
+                    </tr>
+                )}
+            </>
+        );
+    };
+
+    // ─── Render ─────────────────────────────────────────────────────────────
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
+            {/* Encabezado */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Obras</h1>
-                    <p className="text-sm text-gray-500 mt-1">Contratos de perforacion activos e historicos.</p>
+                    <p className="text-sm text-gray-500 mt-1">Contratos de perforación activos e históricos.</p>
                 </div>
-                <button onClick={() => setModal({ open: true })}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
+                <button
+                    onClick={() => setModal({ open: true })}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm"
+                >
                     <Plus size={16} /> Nueva Obra
                 </button>
             </div>
 
-            {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
+            {error && (
+                <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>
+            )}
 
+            {/* KPIs — 6 métricas incluyendo Plantillas y Equipos */}
             {!loading && (
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                    {[
-                        { label: 'Activas',    value: activas,    color: 'text-green-600' },
-                        { label: 'Pausadas',   value: pausadas,   color: 'text-yellow-600' },
-                        { label: 'Terminadas', value: terminadas, color: 'text-gray-500' },
-                        { label: 'Total facturado',             value: `$${fmt(totalFacturado)}`, color: 'text-blue-600' },
-                        { label: 'Metros perforados (activas)', value: `${fmt(metrosTotales)} m`, color: 'text-purple-600' },
-                    ].map(k => (
+                <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+                    {kpis.map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                             <p className="text-xs text-gray-400 mb-1">{k.label}</p>
-                            <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
+                            <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{k.sub}</p>
                         </div>
                     ))}
                 </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-3">
+            {/* Barra de filtros + toggle de vista */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                 <div className="flex gap-2 flex-wrap">
                     {(['TODAS', 'ACTIVA', 'PAUSADA', 'TERMINADA'] as const).map(f => (
-                        <button key={f} onClick={() => setFiltro(f)}
+                        <button
+                            key={f}
+                            onClick={() => setFiltro(f)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                                 filtro === f
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-                            }`}>
+                            }`}
+                        >
                             {f === 'TODAS' ? 'Todas' : f.charAt(0) + f.slice(1).toLowerCase()}
                         </button>
                     ))}
                 </div>
-                <div className="relative sm:ml-auto">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
-                        placeholder="Buscar obra o cliente..."
-                        className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-52" />
-                    {busqueda && (
-                        <button onClick={() => setBusqueda('')}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                            <X size={13} />
+
+                <div className="sm:ml-auto flex items-center gap-2">
+                    {/* Toggle tarjetas / lista */}
+                    <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+                        <button
+                            onClick={() => setVista('tarjetas')}
+                            title="Vista tarjetas"
+                            className={`px-2.5 py-1.5 flex items-center gap-1 text-xs transition-colors ${
+                                vista === 'tarjetas'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                            <Layers size={13} />
+                            <span className="hidden sm:inline">Tarjetas</span>
                         </button>
-                    )}
+                        <button
+                            onClick={() => setVista('lista')}
+                            title="Vista lista"
+                            className={`px-2.5 py-1.5 flex items-center gap-1 text-xs transition-colors border-l border-gray-200 ${
+                                vista === 'lista'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                            }`}
+                        >
+                            <FileText size={13} />
+                            <span className="hidden sm:inline">Lista</span>
+                        </button>
+                    </div>
+
+                    {/* Buscador */}
+                    <div className="relative">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="text"
+                            value={busqueda}
+                            onChange={e => setBusqueda(e.target.value)}
+                            placeholder="Buscar obra o cliente..."
+                            className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-52"
+                        />
+                        {busqueda && (
+                            <button
+                                onClick={() => setBusqueda('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={13} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <Card>
-                {loading ? (
-                    <div className="p-10 text-center text-gray-400 text-sm">Cargando obras...</div>
-                ) : obrasFiltradas.length === 0 ? (
-                    <div className="p-10 text-center">
-                        <HardHat size={36} className="text-gray-300 mx-auto mb-3" />
-                        <p className="text-sm font-semibold text-gray-600">
-                            {busqueda
-                                ? `Sin resultados para "${busqueda}"`
-                                : filtro === 'TODAS' ? 'No hay obras registradas' : `No hay obras con status "${filtro}"`}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                            {busqueda ? 'Intenta con otro termino de busqueda.' : 'Crea la primera obra con el boton de arriba.'}
-                        </p>
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipos activos</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Avance</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Facturado</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center">Status</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {obrasFiltradas.map(obra => {
-                                    const pct = obra.metricas?.pctAvance;
-                                    const equiposActivos = obra.obraEquipos;
-                                    return (
-                                        <tr key={obra.id} className="hover:bg-blue-50/30 transition-colors">
-                                            <td className="p-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-                                                        <HardHat size={14} className="text-orange-600" />
-                                                    </div>
-                                                    <div>
-                                                        <Link href={`/dashboard/obras/${obra.id}`}
-                                                            className="text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors">
-                                                            {obra.nombre}
-                                                        </Link>
-                                                        {obra.ubicacion && (
-                                                            <p className="text-xs text-gray-400">{obra.ubicacion}</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="p-3 text-sm text-gray-500">
-                                                {obra.cliente?.nombre ?? '—'}
-                                            </td>
-                                            <td className="p-3">
-                                                {equiposActivos.length === 0 ? (
-                                                    <span className="text-xs text-gray-300">—</span>
-                                                ) : (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {equiposActivos.slice(0, 2).map((oe, i) => (
-                                                            <span key={i} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                                                                {oe.equipo.nombre}
-                                                            </span>
-                                                        ))}
-                                                        {equiposActivos.length > 2 && (
-                                                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">
-                                                                +{equiposActivos.length - 2}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                {pct !== null && pct !== undefined ? (
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                                            <div className="h-full bg-blue-500 rounded-full"
-                                                                style={{ width: `${Math.min(pct, 100)}%` }} />
-                                                        </div>
-                                                        <span className="text-xs font-semibold text-gray-700 w-10 text-right">
-                                                            {pct.toFixed(1)}%
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-gray-300">—</span>
-                                                )}
-                                                <p className="text-xs text-gray-400 mt-0.5 text-right">
-                                                    {fmt(obra.metricas?.metrosPerforados ?? 0)} m
-                                                    {obra.metrosContratados ? ` / ${fmt(obra.metrosContratados)} m` : ''}
-                                                </p>
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                <span className="text-sm font-semibold text-gray-700">
-                                                    ${fmt(obra.metricas?.montoFacturado ?? 0)}
-                                                </span>
-                                                <p className="text-xs text-gray-400">{obra.moneda}</p>
-                                            </td>
-                                            <td className="p-3 text-center">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[obra.status]}`}>
-                                                    {STATUS_ICON[obra.status]}
-                                                    {obra.status.charAt(0) + obra.status.slice(1).toLowerCase()}
-                                                </span>
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                <div className="flex justify-end gap-1">
-                                                    <Link href={`/dashboard/obras/${obra.id}`}
-                                                        className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md transition-colors inline-flex"
-                                                        title="Ver detalle">
-                                                        <Eye size={15} />
-                                                    </Link>
-                                                    <button onClick={() => setModal({ open: true, obra })}
-                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                                        title="Editar">
-                                                        <Edit size={15} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setDeleteModal({ open: true, id: obra.id, nombre: obra.nombre })}
-                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                                        title="Eliminar">
-                                                        <Trash2 size={15} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </Card>
+            {/* ── Vista Tarjetas ── */}
+            {vista === 'tarjetas' && (
+                <>
+                    {loading ? (
+                        <div className="p-10 text-center text-gray-400 text-sm">Cargando obras...</div>
+                    ) : obrasFiltradas.length === 0 ? (
+                        <div className="p-10 text-center">
+                            <HardHat size={36} className="text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm font-semibold text-gray-600">
+                                {busqueda
+                                    ? `Sin resultados para "${busqueda}"`
+                                    : filtro === 'TODAS' ? 'No hay obras registradas' : `No hay obras con status "${filtro}"`}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                                {busqueda ? 'Intenta con otro término de búsqueda.' : 'Crea la primera obra con el botón de arriba.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {obrasFiltradas.map(obra => (
+                                <ObraCard key={obra.id} obra={obra} />
+                            ))}
+                        </div>
+                    )}
+                </>
+            )}
 
+            {/* ── Vista Lista (tabla expandible) ── */}
+            {vista === 'lista' && (
+                <Card>
+                    {loading ? (
+                        <div className="p-10 text-center text-gray-400 text-sm">Cargando obras...</div>
+                    ) : obrasFiltradas.length === 0 ? (
+                        <div className="p-10 text-center">
+                            <HardHat size={36} className="text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm font-semibold text-gray-600">
+                                {busqueda
+                                    ? `Sin resultados para "${busqueda}"`
+                                    : filtro === 'TODAS' ? 'No hay obras registradas' : `No hay obras con status "${filtro}"`}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                                {busqueda ? 'Intenta con otro término de búsqueda.' : 'Crea la primera obra con el botón de arriba.'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50/50 border-b border-gray-100">
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Plantillas</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Equipos activos</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Avance</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Facturado</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-center">Status</th>
+                                        <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {obrasFiltradas.map(obra => (
+                                        <ObraRow key={obra.id} obra={obra} />
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </Card>
+            )}
+
+            {/* Modales */}
             {modal.open && (
                 <ObraModal
                     obra={modal.obra}
