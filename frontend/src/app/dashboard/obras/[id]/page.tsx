@@ -544,21 +544,29 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
     const plantillas = obra.plantillas ?? [];
 
     // ── Agrupar registros por plantilla según rango de fechas ────────────────
-    const grupos: { plantilla: PlantillaObraDetalle | null; regs: RegistroDiario[] }[] = plantillas.map(p => ({
-        plantilla: p,
-        regs: registros.filter(r => {
-            const d = new Date(r.fecha + 'T12:00:00');
+    // Cada registro se asigna a UNA sola plantilla (la primera que lo cubra).
+    const plantillasOrdenadas = [...plantillas].sort((a, b) => a.numero - b.numero);
+    const asignadoMap = new Map<string, string>(); // registroId -> plantillaId
+    for (const r of registros) {
+        const d = new Date(r.fecha + 'T12:00:00');
+        for (const p of plantillasOrdenadas) {
             const ini = p.fechaInicio ? new Date(p.fechaInicio + 'T00:00:00') : null;
             const fin = p.fechaFin    ? new Date(p.fechaFin    + 'T23:59:59') : null;
-            if (ini && d < ini) return false;
-            if (fin && d > fin) return false;
-            return true;
-        }),
+            const dentroIni = ini ? d >= ini : true;
+            const dentroFin = fin ? d <= fin : true;
+            if (dentroIni && dentroFin) {
+                asignadoMap.set(r.id, p.id);
+                break;
+            }
+        }
+    }
+    const grupos: { plantilla: PlantillaObraDetalle | null; regs: RegistroDiario[] }[] = plantillasOrdenadas.map(p => ({
+        plantilla: p,
+        regs: registros.filter(r => asignadoMap.get(r.id) === p.id),
     }));
 
-    // Registros que no caen en ninguna plantilla
-    const asignados = new Set(grupos.flatMap(g => g.regs.map(r => r.id)));
-    const sinPlantilla = registros.filter(r => !asignados.has(r.id));
+    // Registros que no cayeron en ninguna plantilla
+    const sinPlantilla = registros.filter(r => !asignadoMap.has(r.id));
     if (sinPlantilla.length > 0) grupos.push({ plantilla: null, regs: sinPlantilla });
 
     // ── Tabla de registros reutilizable ──────────────────────────────────────
