@@ -91,10 +91,11 @@ function NewPurchasePageInner() {
     const total = detalles.reduce((acc, d) => acc + Number(d.precioUnitario) * Number(d.cantidad), 0);
 
     const handleSubmit = async () => {
+        console.log("🟡 handleSubmit iniciado");
         setLoading(true);
         setError("");
         try {
-            // Validaciones manuales (ya no dependemos del HTML del form nativo)
+            // Validaciones manuales
             if (!formData.referencia?.trim())
                 throw new Error("La referencia (Folio/Ticket) es obligatoria.");
             if (!formData.fecha)
@@ -104,30 +105,59 @@ function NewPurchasePageInner() {
             if (detalles.some(d => !d.productoId || Number(d.cantidad) <= 0))
                 throw new Error("Por favor completa correctamente todas las líneas.");
 
-            await fetchApi("/purchases", {
+            const payload = {
+                tipo:        formData.tipo,
+                referencia:  formData.referencia || undefined,
+                proveedorId: formData.proveedorId || undefined,
+                moneda:      formData.moneda,
+                tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
+                fecha:       formData.fecha ? new Date(formData.fecha + "T12:00:00Z").toISOString() : undefined,
+                detalles:    detalles.map(d => ({
+                    productoId:     d.productoId,
+                    cantidad:       Number(d.cantidad),
+                    precioUnitario: Number(d.precioUnitario),
+                    moneda:         d.moneda ?? formData.moneda,
+                })),
+                total,
+                status: esAjuste ? "COMPLETADA" : formData.estado,
+            };
+
+            console.log("🟡 Payload a enviar:", JSON.stringify(payload, null, 2));
+
+            // Llamada directa con fetch para ver la respuesta RAW
+            const token = localStorage.getItem("token");
+            const userStr = localStorage.getItem("user");
+            const empresaId = userStr ? JSON.parse(userStr).empresaId : null;
+
+            console.log("🟡 Token existe:", !!token);
+            console.log("🟡 EmpresaId:", empresaId);
+
+            const rawRes = await fetch("/api/purchases", {
                 method: "POST",
-                body: JSON.stringify({
-                    tipo:        formData.tipo,
-                    referencia:  formData.referencia || undefined,
-                    proveedorId: formData.proveedorId || undefined,
-                    moneda:      formData.moneda,
-                    tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
-                    fecha:       formData.fecha ? new Date(formData.fecha + "T12:00:00Z").toISOString() : undefined,
-                    detalles:    detalles.map(d => ({
-                        productoId:     d.productoId,
-                        cantidad:       Number(d.cantidad),
-                        precioUnitario: Number(d.precioUnitario),
-                        moneda:         d.moneda ?? formData.moneda,
-                    })),
-                    total,
-                    // Los ajustes siempre se completan inmediatamente
-                    status: esAjuste ? "COMPLETADA" : formData.estado,
-                }),
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                    ...(empresaId ? { "X-Empresa-Id": empresaId } : {}),
+                },
+                body: JSON.stringify(payload),
             });
 
+            const rawText = await rawRes.text();
+            console.log("🔴 Status:", rawRes.status);
+            console.log("🔴 Respuesta RAW:", rawText);
+            console.log("🔴 Content-Type:", rawRes.headers.get("content-type"));
+
+            if (!rawRes.ok) {
+                let msg = "Error al registrar la entrada";
+                try { msg = JSON.parse(rawText).error || msg; } catch {}
+                throw new Error(`[${rawRes.status}] ${msg}`);
+            }
+
+            console.log("✅ Guardado exitoso");
             router.push("/dashboard/purchases");
             router.refresh();
         } catch (err: any) {
+            console.error("🔴 Error capturado:", err);
             setError(err.message || "Error al registrar la entrada");
             setLoading(false);
         }
