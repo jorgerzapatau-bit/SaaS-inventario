@@ -154,8 +154,9 @@ function NewPurchasePageInner() {
             }
 
             console.log("✅ Guardado exitoso");
-            router.push("/dashboard/purchases");
-            router.refresh();
+            // Usamos window.location para forzar recarga completa de la página de lista
+            // router.push no remonta el componente si ya estaba en caché
+            window.location.href = "/dashboard/purchases";
         } catch (err: any) {
             console.error("🔴 Error capturado:", err);
             setError(err.message || "Error al registrar la entrada");

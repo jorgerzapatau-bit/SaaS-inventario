@@ -91,11 +91,12 @@ function PurchasesPageInner() {
     }, [searchParams]);
 
     useEffect(() => {
+        setLoading(true);
         fetchApi('/purchases')
             .then(setCompras)
             .catch((err: any) => setError(err.message || 'Error al cargar compras'))
             .finally(() => setLoading(false));
-    }, []);
+    }, [searchParams]);
 
     // ── Proveedores únicos para el select ─────────────────────────────────────
     const proveedoresUnicos = useMemo(() => {
