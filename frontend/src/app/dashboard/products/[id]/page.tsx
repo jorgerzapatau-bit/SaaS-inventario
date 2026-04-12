@@ -147,7 +147,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const startEdit=()=>{
         if(!product)return;
-        setEditData({sku:product?.sku??'',nombre:product?.nombre??'',descripcion:(product as any)?.descripcion||'',categoriaId:product?.categoria?.id||'',stockMinimo:String(product?.stockMinimo??5),unidad:product?.unidad??'pieza',imagen:product?.imagen??null,activo:product?.activo??true});
+        setEditData({sku:product?.sku??'',nombre:product?.nombre??'',descripcion:(product as any)?.descripcion||'',categoriaId:product?.categoria?.id||'',stockMinimo:String(product?.stockMinimo??5),unidad:product?.unidad??'pieza',imagen:product?.imagen??null,activo:product?.activo??true,precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):''});
         setEditing(true);setSaveError('');setImgError('');
     };
 
