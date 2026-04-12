@@ -281,6 +281,47 @@ function NewPurchasePageInner() {
                                 <span>Ajuste positivo: incrementa el stock sin registrar una compra formal. Útil para correcciones de inventario o altas por inventario físico.</span>
                             </div>
                         )}
+
+                        {/* Moneda — siempre visible */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-semibold text-gray-700">Moneda de la operación</label>
+                            <div className="flex gap-2">
+                                {[
+                                    { value: 'MXN', label: 'MXN — Peso mexicano' },
+                                    { value: 'USD', label: 'USD — Dólar' },
+                                ].map(m => (
+                                    <button
+                                        key={m.value}
+                                        type="button"
+                                        onClick={() => setFormData(prev => ({ ...prev, moneda: m.value }))}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors cursor-pointer
+                                            ${formData.moneda === m.value
+                                                ? 'bg-blue-50 border-blue-400 text-blue-700'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                                    >
+                                        {m.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {formData.moneda === 'USD' && (
+                                <div className="space-y-1">
+                                    <label className="text-sm font-semibold text-gray-700">Tipo de cambio (USD → MXN)</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            name="tipoCambio"
+                                            value={formData.tipoCambio}
+                                            onChange={handleChange}
+                                            placeholder="Ej: 17.50"
+                                            className="w-full pl-7 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        />
+                                    </div>
+                                    <p className="text-xs text-gray-400">Los totales se registrarán en MXN usando este tipo de cambio.</p>
+                                </div>
+                            )}
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -293,9 +334,9 @@ function NewPurchasePageInner() {
                     <CardContent className="space-y-4">
                         <div className="hidden sm:grid grid-cols-12 gap-4 pb-2 border-b border-gray-100 text-sm font-semibold text-gray-500">
                             <div className="col-span-5">Producto</div>
-                            <div className="col-span-2">Costo Unitario</div>
+                            <div className="col-span-2">Costo ({formData.moneda})</div>
                             <div className="col-span-2">Cantidad</div>
-                            <div className="col-span-2 text-right">Costo Total</div>
+                            <div className="col-span-2 text-right">Subtotal</div>
                             <div className="col-span-1"></div>
                         </div>
 
@@ -313,10 +354,12 @@ function NewPurchasePageInner() {
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-blue-500 select-none">
+                                            {formData.moneda}
+                                        </span>
                                         <input type="number" step="0.01" value={detalle.precioUnitario}
                                             onChange={e => handleDetalleChange(index, "precioUnitario", e.target.value)}
-                                            className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                                         />
                                     </div>
                                 </div>
@@ -351,8 +394,18 @@ function NewPurchasePageInner() {
                                 <Plus size={18}/> Añadir Línea
                             </button>
                             <div className="text-right">
-                                <span className="text-gray-500 mr-4">Total {esAjuste ? "Ajuste" : "Compra"}:</span>
-                                <span className="text-2xl font-bold text-gray-900">${total.toFixed(2)}</span>
+                                <p className="text-xs text-gray-400 mb-1">
+                                    {detalles.filter(d => d.productoId).length} {detalles.filter(d => d.productoId).length === 1 ? 'producto' : 'productos'}
+                                    {' · '}
+                                    {detalles.reduce((a, d) => a + Number(d.cantidad), 0)} uds
+                                </p>
+                                <div className="flex items-baseline gap-2">
+                                    <span className="text-gray-500 text-sm">Total {esAjuste ? 'Ajuste' : 'Compra'}:</span>
+                                    <span className="text-2xl font-bold text-gray-900">${total.toFixed(2)}</span>
+                                    <span className="text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">
+                                        {formData.moneda}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </CardContent>

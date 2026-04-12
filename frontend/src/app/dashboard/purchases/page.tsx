@@ -449,10 +449,23 @@ function PurchasesPageInner() {
                                                 {new Date(compra.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">
-                                                {compra.detalles?.length ?? 0} {compra.detalles?.length === 1 ? 'producto' : 'productos'} · {totalItems} uds
+                                                {compra.detalles?.length === 1 ? (
+                                                    <span>
+                                                        <span className="text-gray-800 font-medium">{compra.detalles[0].producto?.nombre}</span>
+                                                        {' · '}
+                                                        <span className="font-semibold text-gray-900">{totalItems}</span>
+                                                        {' '}
+                                                        <span className="text-gray-500">{compra.detalles[0].producto?.unidad ?? 'uds'}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span>
+                                                        {compra.detalles?.length ?? 0} productos · {totalItems} uds
+                                                    </span>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-3 text-sm font-bold text-gray-800">
+                                            <td className="px-4 py-3 text-sm font-bold text-gray-800 whitespace-nowrap">
                                                 ${Number(compra.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                                <span className="ml-1 text-[10px] font-normal text-gray-400">MXN</span>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${st.cls}`}>
@@ -513,6 +526,9 @@ function PurchasesPageInner() {
                                     <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full ${statusConfig[detalle.status]?.cls}`}>
                                         {statusConfig[detalle.status]?.label}
                                     </span>
+                                    <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-50 text-blue-600 border border-blue-100">
+                                        MXN
+                                    </span>
                                 </div>
                                 {detalle.esHuerfana && (
                                     <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 inline-block">
@@ -546,26 +562,47 @@ function PurchasesPageInner() {
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Productos recibidos</p>
                                 <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
                                     {detalle.detalles?.map((d, i) => (
-                                        <div key={d.id ?? i} className="flex items-center justify-between px-4 py-2.5">
+                                        <div key={d.id ?? i} className="flex items-center justify-between px-4 py-3">
                                             <div>
                                                 <p className="text-sm font-medium text-gray-800">{d.producto?.nombre}</p>
-                                                <p className="text-xs text-gray-400">{d.producto?.sku} · {d.cantidad} {d.producto?.unidad}</p>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    {d.producto?.sku}
+                                                    {' · '}
+                                                    <span className="font-semibold text-gray-700">{d.cantidad} {d.producto?.unidad ?? 'uds'}</span>
+                                                    {' a '}
+                                                    ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}/{d.producto?.unidad ?? 'u'}
+                                                </p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-sm font-bold text-gray-800">
                                                     ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                                    <span className="ml-1 text-[10px] font-normal text-gray-400">MXN</span>
                                                 </p>
-                                                <p className="text-xs text-gray-400">${Number(d.precioUnitario).toLocaleString()} c/u</p>
+                                                <p className="text-xs text-gray-400">
+                                                    {d.cantidad} × ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                                </p>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                <span className="text-sm font-semibold text-gray-700">Total facturado</span>
-                                <span className="text-xl font-bold text-gray-900">
-                                    ${Number(detalle.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                </span>
+                                <div>
+                                    <span className="text-sm font-semibold text-gray-700">Total facturado</span>
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                        {detalle.detalles?.length ?? 0} {detalle.detalles?.length === 1 ? 'producto' : 'productos'}
+                                        {' · '}
+                                        {detalle.detalles?.reduce((a, d) => a + d.cantidad, 0) ?? 0}
+                                        {' '}
+                                        {detalle.detalles?.length === 1 ? (detalle.detalles[0].producto?.unidad ?? 'uds') : 'uds'}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-xl font-bold text-gray-900">
+                                        ${Number(detalle.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                    </span>
+                                    <p className="text-xs text-gray-400 mt-0.5">MXN</p>
+                                </div>
                             </div>
                         </div>
                         <div className="px-6 pb-5 space-y-3">
