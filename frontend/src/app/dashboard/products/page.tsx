@@ -9,7 +9,8 @@ import { Card } from '@/components/ui/Card';
 import {
     Search, Plus, Edit, Trash2, AlertTriangle, LayoutGrid, List,
     ChevronUp, ChevronDown, ChevronsUpDown, Download, Upload,
-    ArrowUpCircle, ArrowDownCircle, X, Check, BarChart2, Filter
+    ArrowUpCircle, ArrowDownCircle, X, Check, BarChart2, Filter,
+    TrendingUp, Package, Zap,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
@@ -31,6 +32,22 @@ function ProductImage({ imagen, nombre, categoria, size = 40 }: { imagen?: strin
     );
 }
 
+// ── Mini stock bar ────────────────────────────────────────────────────────────
+function StockBar({ stock, stockMinimo }: { stock: number; stockMinimo: number }) {
+    const max = Math.max(stockMinimo * 2, stock, 1);
+    const pct = Math.min((stock / max) * 100, 100);
+    const color = stock === 0 ? '#dc2626' : stock <= stockMinimo ? '#ea580c' : '#16a34a';
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 48, height: 5, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.3s' }} />
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 600, color }}>{stock}</span>
+            <span style={{ fontSize: 11, color: '#9ca3af' }}>/ {stockMinimo}</span>
+        </div>
+    );
+}
+
 function StockBadge({ stock, stockMinimo }: { stock: number; stockMinimo: number }) {
     if (stock === 0) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700"><AlertTriangle size={10} /> Sin stock</span>;
     if (stock <= stockMinimo) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700"><AlertTriangle size={10} /> Bajo mín.</span>;
@@ -45,18 +62,14 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
     return sortDir === 'asc' ? <ChevronUp size={12} className="text-blue-500 ml-1 inline" /> : <ChevronDown size={12} className="text-blue-500 ml-1 inline" />;
 }
 
-// ── Pill de filtro activo ─────────────────────────────────────────────────────
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
     return (
         <span className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
             {label}
-            <button onClick={onRemove} className="p-0.5 hover:bg-blue-200 rounded-full transition-colors">
-                <X size={11} />
-            </button>
+            <button onClick={onRemove} className="p-0.5 hover:bg-blue-200 rounded-full transition-colors"><X size={11} /></button>
         </span>
     );
 }
-
 
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
 function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -104,7 +117,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                 ok++;
             } catch { fail++; }
         }
-        setResult(`${ok} productos importados${fail > 0 ? `, ${fail} fallaron` : ' correctamente'}.`);
+        setResult(`${ok} insumos importados${fail > 0 ? `, ${fail} fallaron` : ' correctamente'}.`);
         setImporting(false);
         if (ok > 0) setTimeout(() => { onDone(); }, 1500);
     };
@@ -114,8 +127,8 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-4">
                     <div>
-                        <p className="font-semibold text-gray-800">Importar productos desde CSV</p>
-                        <p className="text-xs text-gray-400 mt-0.5">El archivo debe tener columnas: sku, nombre, unidad, preciocompra, precioventa, stockminimo</p>
+                        <p className="font-semibold text-gray-800">Importar insumos desde CSV</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Columnas: sku, nombre, unidad, costounitario, stockminimo</p>
                     </div>
                     <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
                 </div>
@@ -123,7 +136,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     const csv = 'sku,nombre,unidad,costounitario,stockminimo\nPRD-001,Insumo ejemplo,litro,100,5';
                     const blob = new Blob([csv], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = 'plantilla_productos.csv'; a.click();
+                    const a = document.createElement('a'); a.href = url; a.download = 'plantilla_insumos.csv'; a.click();
                 }} className="flex items-center gap-2 text-xs text-blue-500 hover:underline mb-4">
                     <Download size={13} /> Descargar plantilla CSV
                 </button>
@@ -132,7 +145,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     className="w-full border-2 border-dashed border-gray-200 rounded-xl py-8 flex flex-col items-center gap-2 cursor-pointer hover:border-blue-400 hover:bg-blue-50/20 transition-all mb-4">
                     <Upload size={24} className="text-gray-400" />
                     <p className="text-sm text-gray-500">Haz clic o arrastra tu archivo CSV</p>
-                    {rows.length > 0 && <p className="text-xs text-green-600 font-medium">{rows.length} productos listos para importar</p>}
+                    {rows.length > 0 && <p className="text-xs text-green-600 font-medium">{rows.length} insumos listos para importar</p>}
                 </div>
                 <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
                 {err && <p className="text-xs text-red-500 mb-3">{err}</p>}
@@ -142,7 +155,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                         <p className="text-xs font-semibold text-gray-500 mb-2">Vista previa:</p>
                         {rows.slice(0, 5).map((r, i) => (
                             <div key={i} className="text-xs text-gray-600 py-1 border-b border-gray-100 last:border-0">
-                                <span className="font-mono text-gray-400 mr-2">{r.sku}</span>{r.nombre} · {r.unidad || 'pieza'} · ${r.preciocompra||r['precio compra']||0} / ${r.precioventa||r['precio venta']||0}
+                                <span className="font-mono text-gray-400 mr-2">{r.sku}</span>{r.nombre} · {r.unidad || 'pieza'} · ${r.costounitario || 0}
                             </div>
                         ))}
                         {rows.length > 5 && <p className="text-xs text-gray-400 mt-1">...y {rows.length - 5} más</p>}
@@ -152,10 +165,86 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
                     <button onClick={handleImport} disabled={rows.length === 0 || importing}
                         className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50">
-                        {importing ? 'Importando...' : `Importar ${rows.length} productos`}
+                        {importing ? 'Importando...' : `Importar ${rows.length} insumos`}
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ── MEJORA 1: Banner de alerta inteligente ────────────────────────────────────
+function AlertBanner({ productos, onFilter }: { productos: any[]; onFilter: () => void }) {
+    const criticos = productos.filter(p => p.stock === 0);
+    const bajos = productos.filter(p => p.stock > 0 && p.stock <= p.stockMinimo);
+    const total = criticos.length + bajos.length;
+    if (total === 0) return null;
+
+    const nombres = [...criticos, ...bajos].slice(0, 3).map(p => p.nombre).join(', ');
+    const hayMas = total > 3;
+
+    return (
+        <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3.5">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg flex-shrink-0">
+                    <AlertTriangle size={16} className="text-red-600" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-red-700">
+                        {criticos.length > 0 && `${criticos.length} sin stock`}
+                        {criticos.length > 0 && bajos.length > 0 && ' · '}
+                        {bajos.length > 0 && `${bajos.length} bajo mínimo`}
+                        {' — requieren atención'}
+                    </p>
+                    <p className="text-xs text-red-500 mt-0.5">
+                        {nombres}{hayMas ? ` y ${total - 3} más` : ''}
+                    </p>
+                </div>
+            </div>
+            <button
+                onClick={onFilter}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+            >
+                <Filter size={13} /> Ver críticos
+            </button>
+        </div>
+    );
+}
+
+// ── MEJORA 3: Acciones rápidas ────────────────────────────────────────────────
+function QuickActions() {
+    return (
+        <div className="grid grid-cols-3 gap-3">
+            <Link href="/dashboard/purchases/new"
+                className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-green-200 transition-all group">
+                <div className="w-9 h-9 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0 group-hover:bg-green-100 transition-colors">
+                    <ArrowUpCircle size={18} className="text-green-600" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-gray-800">Registrar entrada</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Compra o abastecimiento</p>
+                </div>
+            </Link>
+            <Link href="/dashboard/sales/new"
+                className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-orange-200 transition-all group">
+                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0 group-hover:bg-orange-100 transition-colors">
+                    <ArrowDownCircle size={18} className="text-orange-500" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-gray-800">Registrar consumo</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Salida hacia obra</p>
+                </div>
+            </Link>
+            <Link href="/dashboard/inventory"
+                className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                    <TrendingUp size={18} className="text-blue-600" />
+                </div>
+                <div>
+                    <p className="text-sm font-semibold text-gray-800">Ver movimientos</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Kardex completo</p>
+                </div>
+            </Link>
         </div>
     );
 }
@@ -182,7 +271,6 @@ function ProductsPageInner() {
 
     const searchParams = useSearchParams();
 
-    // Leer parámetros de URL al montar (ej: ?stock=bajo, ?sinMovimiento=1 desde el dashboard)
     useEffect(() => {
         if (searchParams.get('stock') === 'bajo')    setFilterStock('Bajo mínimo');
         if (searchParams.get('stock') === 'sinStock') setFilterStock('Sin stock');
@@ -220,18 +308,18 @@ function ProductsPageInner() {
     });
     const toggleAll = () => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(p => p.id)));
 
-    // ── Limpiar todos los filtros ─────────────────────────────────────────────
     const clearAllFilters = () => {
-        setSearch('');
-        setFilterCat('Todas');
-        setFilterStock('Todos');
-        setFilterSinMovimiento(false);
-        setSinMovimientoDesde('');
-        setSinMovimientoHasta('');
+        setSearch(''); setFilterCat('Todas'); setFilterStock('Todos');
+        setFilterSinMovimiento(false); setSinMovimientoDesde(''); setSinMovimientoHasta('');
     };
     const hayFiltrosActivos = search !== '' || filterCat !== 'Todas' || filterStock !== 'Todos' || filterSinMovimiento;
 
-    // ── CSV Export ────────────────────────────────────────────────────────────
+    // MEJORA 1: filtrar críticos desde el banner
+    const handleFilterCriticos = () => {
+        clearAllFilters();
+        setFilterStock('Bajo mínimo');
+    };
+
     const exportCSV = () => {
         const toExport = selected.size > 0 ? sorted.filter(p => selected.has(p.id)) : sorted;
         const header = 'SKU,Nombre,Categoría,Stock,Costo Unitario,Valor Almacén,Nivel Reorden';
@@ -256,7 +344,6 @@ function ProductsPageInner() {
         const matchSearch = !search || p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || (p.categoria?.nombre || '').toLowerCase().includes(q);
         const matchCat    = filterCat === 'Todas' || p.categoria?.nombre === filterCat;
         const matchStock  = filterStock === 'Todos' || (filterStock === 'Bajo mínimo' && p.stock <= p.stockMinimo) || (filterStock === 'Sin stock' && p.stock === 0);
-        // Filtro "sin movimiento" — solo productos que no tuvieron movimientos en el período dado
         let matchSinMov = true;
         if (filterSinMovimiento) {
             const desde = sinMovimientoDesde ? new Date(sinMovimientoDesde + 'T00:00:00') : new Date(0);
@@ -269,34 +356,39 @@ function ProductsPageInner() {
 
     const sorted = [...filtered].sort((a, b) => {
         let va: any, vb: any;
-        if (sortKey === 'stock')        { va = a.stock ?? 0; vb = b.stock ?? 0; }
-        else if (sortKey === 'precioCompra') { va = Number(a.ultimoPrecioCompra??0); vb = Number(b.ultimoPrecioCompra??0); }
+        if (sortKey === 'stock')            { va = a.stock ?? 0; vb = b.stock ?? 0; }
+        else if (sortKey === 'precioCompra') { va = Number(a.ultimoPrecioCompra ?? 0); vb = Number(b.ultimoPrecioCompra ?? 0); }
         else { va = (a[sortKey] || '').toLowerCase(); vb = (b[sortKey] || '').toLowerCase(); }
         if (va < vb) return sortDir === 'asc' ? -1 : 1;
         if (va > vb) return sortDir === 'asc' ? 1 : -1;
         return 0;
     });
 
-
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const totalValor = allMovements.reduce((a, m) => {
         const qty = Number(m.cantidad || 0), costo = Number(m.costoUnitario || 0);
-        if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
-        if (['SALIDA','AJUSTE_NEGATIVO','CONSUMO_INTERNO'].includes(m.tipoMovimiento))  return a - qty * costo;
+        if (['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
+        if (['SALIDA', 'AJUSTE_NEGATIVO', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento)) return a - qty * costo;
         return a;
     }, 0);
+
     const costoPromUnitario = filtered.length > 0
-        ? filtered.reduce((a, p) => a + Number(p.ultimoPrecioCompra ?? 0), 0) / filtered.filter(p => p.ultimoPrecioCompra).length || 0
+        ? filtered.reduce((a, p) => a + Number(p.ultimoPrecioCompra ?? 0), 0) / (filtered.filter(p => p.ultimoPrecioCompra).length || 1)
         : 0;
-    const bajosStock  = filtered.filter(p => p.stock <= p.stockMinimo).length;
-    const catsActivas = new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean)).size;
+
+    const bajosStock = filtered.filter(p => p.stock <= p.stockMinimo).length;
+
+    // MEJORA 2: consumo últimos 30 días (reemplaza KPI de categorías)
+    const hace30d = new Date(Date.now() - 30 * 86400000);
+    const consumo30d = allMovements
+        .filter(m => ['SALIDA', 'CONSUMO_INTERNO', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
+        .reduce((a, m) => a + Number(m.cantidad || 0) * Number(m.costoUnitario || 0), 0);
 
     // ── Category stats ────────────────────────────────────────────────────────
     const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
         const prods = products.filter(p => p.categoria?.nombre === cat);
         const valor = prods.reduce((a, p) => a + (p.stock * Number(p.ultimoPrecioCompra ?? 0)), 0);
-        const costoMedUSD = prods.some(p => p.moneda === 'USD');
-        return { cat, count: prods.length, valor, costoMedUSD };
+        return { cat, count: prods.length, valor };
     }).sort((a, b) => b.valor - a.valor);
     const maxCatValor = catStats.length > 0 ? catStats[0].valor : 1;
 
@@ -305,13 +397,20 @@ function ProductsPageInner() {
         ? allMovements
         : allMovements.filter(m => filteredProductIds.has(m.productoId));
 
+    // MEJORA 4: consumo 30d por producto
+    const consumo30dPorProducto = (productoId: string) => {
+        return allMovements
+            .filter(m => m.productoId === productoId && ['SALIDA', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
+            .reduce((a, m) => a + Number(m.cantidad || 0), 0);
+    };
+
     const thClass = (key: SortKey) =>
         `p-3 text-xs font-semibold uppercase tracking-wider cursor-pointer select-none hover:text-blue-600 transition-colors whitespace-nowrap ${sortKey === key ? 'text-blue-600' : 'text-gray-400'}`;
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
 
-            {/* ── Header ─────────────────────────────────────────────── */}
+            {/* ── Header ────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Insumos</h1>
@@ -332,7 +431,15 @@ function ProductsPageInner() {
 
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-            {/* ── KPIs ───────────────────────────────────────────────── */}
+            {/* ── MEJORA 1: Banner de alerta inteligente ────────────────── */}
+            {!loading && (
+                <AlertBanner productos={products} onFilter={handleFilterCriticos} />
+            )}
+
+            {/* ── MEJORA 3: Acciones rápidas ───────────────────────────── */}
+            {!loading && <QuickActions />}
+
+            {/* ── KPIs ─────────────────────────────────────────────────── */}
             {!loading && (
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -359,38 +466,40 @@ function ProductsPageInner() {
                         <p className="text-2xl font-bold text-gray-800">${costoPromUnitario.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</p>
                         <p className="text-xs text-gray-400 mt-1">insumos visibles</p>
                     </div>
-                    {/* FIX: Stock bajo mínimo ahora es clickeable para activar el filtro */}
+
+                    {/* MEJORA 2: KPI stock bajo con color urgente */}
                     <button
                         onClick={() => setFilterStock(filterStock === 'Bajo mínimo' ? 'Todos' : 'Bajo mínimo')}
-                        className={`rounded-xl border shadow-sm p-4 text-left transition-all hover:shadow-md ${bajosStock > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'} ${filterStock === 'Bajo mínimo' ? 'ring-2 ring-orange-400' : ''}`}
+                        className={`rounded-xl border shadow-sm p-4 text-left transition-all hover:shadow-md ${bajosStock > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'} ${filterStock === 'Bajo mínimo' ? 'ring-2 ring-red-400' : ''}`}
                     >
                         <div className="flex items-center gap-1 mb-1">
-                            <p className={`text-xs ${bajosStock > 0 ? 'text-orange-500' : 'text-gray-400'}`}>Stock bajo mínimo</p>
-                            <InfoTooltip text="Haz clic para filtrar solo estos productos." position="bottom" />
+                            <p className={`text-xs ${bajosStock > 0 ? 'text-red-500' : 'text-gray-400'}`}>Stock bajo mínimo</p>
+                            <InfoTooltip text="Haz clic para filtrar solo estos insumos." position="bottom" />
                         </div>
-                        <p className={`text-2xl font-bold ${bajosStock > 0 ? 'text-orange-600' : 'text-gray-800'}`}>{bajosStock}</p>
-                        <p className={`text-xs mt-1 ${bajosStock > 0 ? 'text-orange-400' : 'text-gray-400'}`}>
+                        <p className={`text-2xl font-bold ${bajosStock > 0 ? 'text-red-600' : 'text-gray-800'}`}>{bajosStock}</p>
+                        <p className={`text-xs mt-1 ${bajosStock > 0 ? 'text-red-400' : 'text-gray-400'}`}>
                             {filterStock === 'Bajo mínimo' ? '✓ Filtro activo — clic para quitar' : bajosStock > 0 ? 'clic para filtrar' : 'todo en orden'}
                         </p>
                     </button>
+
+                    {/* MEJORA 2: KPI Consumo 30 días */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Categorías</p>
-                            <InfoTooltip text="Categorías distintas en los productos visibles." position="bottom" />
+                            <p className="text-xs text-gray-400">Consumo últimos 30d</p>
+                            <InfoTooltip text="Valor total de salidas e insumos consumidos en obra en los últimos 30 días." position="bottom" />
                         </div>
-                        <p className="text-2xl font-bold text-gray-800">{catsActivas}</p>
-                        <p className="text-xs text-gray-400 mt-1">en selección actual</p>
+                        <p className="text-2xl font-bold text-gray-800">${consumo30d.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-xs text-gray-400 mt-1">en todas las obras</p>
                     </div>
                 </div>
             )}
 
-            {/* ── Distribución por categoría ──────────────────────────── */}
+            {/* ── Distribución por categoría (CONSERVADA) ─────────────── */}
             {!loading && catStats.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-gray-700">Distribución por categoría</p>
-                            {/* FIX: indicador de filtro activo visible en el encabezado */}
                             {filterCat !== 'Todas' && (
                                 <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                                     style={{ background: getCatColor(filterCat) + '20', color: getCatColor(filterCat) }}>
@@ -417,12 +526,9 @@ function ProductsPageInner() {
                                     className={`text-left rounded-xl p-3 border transition-all cursor-pointer relative ${isActive ? 'border-2 shadow-md' : 'border hover:shadow-sm'}`}
                                     style={{ borderColor: isActive ? color : color + '30', background: color + '08' }}
                                 >
-                                    {/* FIX: ícono X visible cuando está activo */}
                                     {isActive && (
                                         <span className="absolute top-2 right-2 flex items-center justify-center w-5 h-5 rounded-full text-white text-xs font-bold"
-                                            style={{ background: color }}>
-                                            ✕
-                                        </span>
+                                            style={{ background: color }}>✕</span>
                                     )}
                                     <div className="flex justify-between items-center mb-2">
                                         <span className="text-xs font-semibold truncate max-w-[80px]" style={{ color }}>{cat}</span>
@@ -443,48 +549,38 @@ function ProductsPageInner() {
                 </div>
             )}
 
-            {/* ── Tendencia ──────────────────────────────────────────── */}
+            {/* ── Tendencia ─────────────────────────────────────────────── */}
             {!loading && showTendencia && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <AnalyticsChart externalMovements={filteredMovements} title={filterCat !== 'Todas' ? filterCat : undefined} compact />
                 </div>
             )}
 
-            {/* ── Barra de filtros activos ─────────────────────────────
-                Siempre visible cuando hay filtros, con pills removibles
-            ──────────────────────────────────────────────────────────── */}
+            {/* ── Filtros activos ──────────────────────────────────────── */}
             {hayFiltrosActivos && (
                 <div className="flex items-center gap-2 flex-wrap px-1">
                     <Filter size={13} className="text-gray-400 flex-shrink-0" />
                     <span className="text-xs text-gray-400 font-medium">Filtros activos:</span>
-                    {search && (
-                        <FilterPill label={`Búsqueda: "${search}"`} onRemove={() => setSearch('')} />
-                    )}
-                    {filterCat !== 'Todas' && (
-                        <FilterPill label={`Categoría: ${filterCat}`} onRemove={() => setFilterCat('Todas')} />
-                    )}
-                    {filterStock !== 'Todos' && (
-                        <FilterPill label={`Stock: ${filterStock}`} onRemove={() => setFilterStock('Todos')} />
-                    )}
-                    <button onClick={clearAllFilters} className="text-xs text-red-400 hover:text-red-600 hover:underline ml-1">
-                        Limpiar todo
-                    </button>
+                    {search && <FilterPill label={`Búsqueda: "${search}"`} onRemove={() => setSearch('')} />}
+                    {filterCat !== 'Todas' && <FilterPill label={`Categoría: ${filterCat}`} onRemove={() => setFilterCat('Todas')} />}
+                    {filterStock !== 'Todos' && <FilterPill label={`Stock: ${filterStock}`} onRemove={() => setFilterStock('Todos')} />}
+                    <button onClick={clearAllFilters} className="text-xs text-red-400 hover:text-red-600 hover:underline ml-1">Limpiar todo</button>
                 </div>
             )}
 
-            {/* ── Barra de acciones masivas ───────────────────────────── */}
+            {/* ── Barra de acciones masivas ─────────────────────────────── */}
             {selected.size > 0 && (
                 <div className="bg-blue-600 rounded-xl px-5 py-3 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
                         <Check size={16} className="text-white" />
-                        <span className="text-sm font-medium text-white">{selected.size} producto{selected.size !== 1 ? 's' : ''} seleccionado{selected.size !== 1 ? 's' : ''}</span>
+                        <span className="text-sm font-medium text-white">{selected.size} insumo{selected.size !== 1 ? 's' : ''} seleccionado{selected.size !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-medium rounded-lg transition-colors">
                             <Download size={13} /> Exportar selección
                         </button>
                         <button onClick={async () => {
-                            if (!confirm(`¿Desactivar ${selected.size} productos?`)) return;
+                            if (!confirm(`¿Desactivar ${selected.size} insumos?`)) return;
                             for (const id of Array.from(selected)) {
                                 try { await fetchApi(`/products/${id}`, { method: 'PUT', body: JSON.stringify({ activo: false }) }); } catch {}
                             }
@@ -493,7 +589,7 @@ function ProductsPageInner() {
                             Desactivar
                         </button>
                         <button onClick={async () => {
-                            if (!confirm(`¿Eliminar ${selected.size} productos?`)) return;
+                            if (!confirm(`¿Eliminar ${selected.size} insumos?`)) return;
                             for (const id of Array.from(selected)) {
                                 try { await fetchApi(`/products/${id}`, { method: 'DELETE' }); } catch {}
                             }
@@ -507,21 +603,19 @@ function ProductsPageInner() {
                 </div>
             )}
 
-            {/* ── Toolbar ─────────────────────────────────────────────── */}
+            {/* ── Toolbar ───────────────────────────────────────────────── */}
             <div className="flex flex-wrap gap-3 items-center">
                 <div className="relative flex-1 min-w-[200px] max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                         placeholder="Buscar por SKU, nombre o categoría..."
                         className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800" />
-                    {/* FIX: botón limpiar búsqueda dentro del input */}
                     {search && (
                         <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                             <X size={14} />
                         </button>
                     )}
                 </div>
-                {/* FIX: selects con indicador visual cuando tienen filtro activo */}
                 <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
                     className={`py-2 px-3 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${filterCat !== 'Todas' ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-200'}`}>
                     {categories.map(c => <option key={c}>{c}</option>)}
@@ -530,7 +624,6 @@ function ProductsPageInner() {
                     className={`py-2 px-3 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${filterStock !== 'Todos' ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-200'}`}>
                     <option>Todos</option><option>Bajo mínimo</option><option>Sin stock</option>
                 </select>
-                {/* FIX: botón limpiar filtros junto a los selects */}
                 {hayFiltrosActivos && (
                     <button onClick={clearAllFilters}
                         className="flex items-center gap-1.5 px-3 py-2 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium">
@@ -543,14 +636,10 @@ function ProductsPageInner() {
                 </div>
             </div>
 
-            {/* ── Estado vacío cuando filtros no dan resultados ─────────
-                Muestra qué filtros están activos y ofrece limpiarlos
-            ──────────────────────────────────────────────────────────── */}
+            {/* ── Estado vacío ──────────────────────────────────────────── */}
             {!loading && sorted.length === 0 && hayFiltrosActivos && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-10 flex flex-col items-center gap-3 text-center">
-                    <div className="p-3 bg-gray-100 rounded-full">
-                        <Search size={22} className="text-gray-400" />
-                    </div>
+                    <div className="p-3 bg-gray-100 rounded-full"><Search size={22} className="text-gray-400" /></div>
                     <div>
                         <p className="text-sm font-semibold text-gray-700">Sin resultados con los filtros actuales</p>
                         <p className="text-xs text-gray-400 mt-1">
@@ -565,14 +654,14 @@ function ProductsPageInner() {
                 </div>
             )}
 
-            {/* ── VISTA GRILLA ────────────────────────────────────────── */}
+            {/* ── VISTA GRILLA ──────────────────────────────────────────── */}
             {view === 'grid' && sorted.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                     {loading ? <p className="col-span-full text-center text-gray-500 py-10">Cargando...</p>
                         : sorted.map(product => {
-                            const isLow    = product.stock <= product.stockMinimo;
-                            
+                            const isLow      = product.stock <= product.stockMinimo;
                             const isSelected = selected.has(product.id);
+                            const c30d       = consumo30dPorProducto(product.id);
                             return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
                                     <div className="relative">
@@ -591,9 +680,13 @@ function ProductsPageInner() {
                                             <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>{product.categoria?.nombre || 'Sin cat.'}</span>
                                             <span className="text-xs text-gray-400">{product.unidad}</span>
                                         </div>
+                                        {/* MEJORA 4: barra visual de stock en grilla */}
+                                        <div className="mb-2">
+                                            <StockBar stock={product.stock} stockMinimo={product.stockMinimo} />
+                                        </div>
                                         <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                            <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-800'}`}>{product.stock}</span>
                                             <span className="text-xs text-gray-400">${product.ultimoPrecioCompra ? Number(product.ultimoPrecioCompra).toLocaleString() : '—'} /u</span>
+                                            {c30d > 0 && <span className="text-xs text-blue-500 font-medium">{c30d} {product.unidad}/30d</span>}
                                         </div>
                                         {isLow && <div className="mt-1"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
                                         <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
@@ -617,7 +710,7 @@ function ProductsPageInner() {
                 </div>
             )}
 
-            {/* ── VISTA LISTA ─────────────────────────────────────────── */}
+            {/* ── VISTA LISTA ───────────────────────────────────────────── */}
             {view === 'list' && (sorted.length > 0 || loading) && (
                 <Card>
                     <div className="overflow-x-auto">
@@ -629,11 +722,14 @@ function ProductsPageInner() {
                                     </th>
                                     <th className="p-3 w-10"></th>
                                     <th className={thClass('sku')} onClick={() => handleSort('sku')}>SKU <SortIcon col="sku" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={thClass('nombre')} onClick={() => handleSort('nombre')}>Producto <SortIcon col="nombre" sortKey={sortKey} sortDir={sortDir} /></th>
+                                    <th className={thClass('nombre')} onClick={() => handleSort('nombre')}>Insumo <SortIcon col="nombre" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Categoría</th>
-                                    <th className={`${thClass('stock')} text-right`} onClick={() => handleSort('stock')}>Stock <SortIcon col="stock" sortKey={sortKey} sortDir={sortDir} /></th>
+                                    {/* MEJORA 4: columna Stock con barra visual */}
+                                    <th className={`${thClass('stock')}`} onClick={() => handleSort('stock')}>Stock <SortIcon col="stock" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>Costo unit. <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Valor almacén</th>
+                                    {/* MEJORA 4: nueva columna consumo 30d */}
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Consumo 30d</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
                                 </tr>
                             </thead>
@@ -642,6 +738,7 @@ function ProductsPageInner() {
                                     : sorted.map(product => {
                                         const isLow      = product.stock <= product.stockMinimo;
                                         const isSelected = selected.has(product.id);
+                                        const c30d       = consumo30dPorProducto(product.id);
                                         return (
                                             <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
                                                 <td className="p-3">
@@ -654,7 +751,6 @@ function ProductsPageInner() {
                                                     {isLow && <div className="mt-0.5"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
                                                 </td>
                                                 <td className="p-3">
-                                                    {/* FIX: clic en categoría dentro de la tabla también filtra */}
                                                     <button
                                                         onClick={() => setFilterCat(filterCat === product.categoria?.nombre ? 'Todas' : (product.categoria?.nombre || 'Todas'))}
                                                         className="px-2 py-1 rounded-full text-xs font-medium transition-all hover:opacity-80"
@@ -663,12 +759,19 @@ function ProductsPageInner() {
                                                         {product.categoria?.nombre || 'Sin categoría'}
                                                     </button>
                                                 </td>
-                                                <td className="p-3 text-right">
-                                                    <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-700'}`}>{product.stock ?? 0}</span>
-                                                    <span className="text-xs text-gray-400 ml-1">/ {product.stockMinimo}</span>
+                                                {/* MEJORA 4: barra visual de stock */}
+                                                <td className="p-3">
+                                                    <StockBar stock={product.stock ?? 0} stockMinimo={product.stockMinimo} />
                                                 </td>
                                                 <td className="p-3 text-sm text-gray-500 text-right">{product.ultimoPrecioCompra ? `$${Number(product.ultimoPrecioCompra).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-sm font-semibold text-gray-700 text-right">{product.ultimoPrecioCompra ? `$${(product.stock * Number(product.ultimoPrecioCompra)).toLocaleString('es-MX', {maximumFractionDigits:0})}` : <span className="text-gray-300">—</span>}</td>
+                                                <td className="p-3 text-sm font-semibold text-gray-700 text-right">{product.ultimoPrecioCompra ? `$${(product.stock * Number(product.ultimoPrecioCompra)).toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>}</td>
+                                                {/* MEJORA 4: consumo 30d por fila */}
+                                                <td className="p-3 text-right">
+                                                    {c30d > 0
+                                                        ? <span className="text-sm font-medium text-blue-600">{c30d} <span className="text-xs text-gray-400 font-normal">{product.unidad}</span></span>
+                                                        : <span className="text-gray-300 text-sm">—</span>
+                                                    }
+                                                </td>
                                                 <td className="p-3 text-right">
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <Link href={`/dashboard/purchases/new?productoId=${product.id}`} className="p-1.5 text-green-500 hover:bg-green-50 rounded-md transition-colors inline-flex" title="Registrar entrada">
@@ -713,7 +816,7 @@ function ProductsPageInner() {
                 </Card>
             )}
 
-            {/* ── Modales ──────────────────────────────────────────────── */}
+            {/* ── Modales ───────────────────────────────────────────────── */}
             {showStockModal && <StockBarChart products={sorted} onClose={() => setShowStockModal(false)} />}
             {showImport && (
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
@@ -724,7 +827,7 @@ function ProductsPageInner() {
 
 export default function ProductsPage() {
     return (
-        <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando productos...</div>}>
+        <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando insumos...</div>}>
             <ProductsPageInner />
         </Suspense>
     );
