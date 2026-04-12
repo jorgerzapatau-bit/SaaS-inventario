@@ -10,7 +10,7 @@ import { useCompany } from '@/context/CompanyContext';
 
 const NAV = [
     { href: '/dashboard',                        icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
-    { href: '/dashboard/products',               icon: <Package size={20}/>,         label: 'Productos' },
+    { href: '/dashboard/products',               icon: <Package size={20}/>,         label: 'Insumos' },
     { href: '/dashboard/inventory',              icon: <ArrowRightLeft size={20}/>,  label: 'Kardex / Movimientos' },
     { href: '/dashboard/purchases',              icon: <ShoppingCart size={20}/>,    label: 'Compras (Entradas)' },
     { href: '/dashboard/sales',                  icon: <Upload size={20}/>,          label: 'Consumo de Insumos' },

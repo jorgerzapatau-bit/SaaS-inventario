@@ -337,7 +337,7 @@ function ProductsPageInner() {
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Productos</p>
+                            <p className="text-xs text-gray-400">Insumos</p>
                             <InfoTooltip text="SKUs visibles según los filtros aplicados." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{filtered.length}</p>
@@ -694,7 +694,7 @@ function ProductsPageInner() {
                     {!loading && (
                         <div className="p-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
                             <span>
-                                {sorted.length} producto{sorted.length !== 1 ? 's' : ''}
+                                {sorted.length} insumo{sorted.length !== 1 ? 's' : ''}
                                 {hayFiltrosActivos && products.length !== sorted.length && (
                                     <span className="text-xs text-blue-500 ml-1">
                                         (de {products.length} totales —{' '}
