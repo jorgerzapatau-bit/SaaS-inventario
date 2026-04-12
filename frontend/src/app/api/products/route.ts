@@ -37,13 +37,15 @@ export async function GET(req: NextRequest) {
 
         const productsWithStock = products.map(p => ({
             ...p,
-            precioCompra:      Number(p.precioCompra),
-            stockActual:       Number(p.stockActual),
-            stockMinimo:       Number(p.stockMinimo),
+            precioCompra:       Number(p.precioCompra),
+            stockActual:        Number(p.stockActual),
+            stock:              Number(p.stockActual),          // alias que usa la página
+            stockMinimo:        Number(p.stockMinimo),
             // moneda ya viene del modelo (MXN | USD)
-            ultimaEntrada:     lastCostoMap[p.id] ?? null,
+            ultimaEntrada:      lastCostoMap[p.id] ?? null,
+            ultimoPrecioCompra: lastCostoMap[p.id]?.costo ?? null, // alias que usa la página
             // alerta de stock bajo
-            stockBajo:         Number(p.stockActual) <= Number(p.stockMinimo),
+            stockBajo:          Number(p.stockActual) <= Number(p.stockMinimo),
         }));
 
         return Response.json(productsWithStock);
