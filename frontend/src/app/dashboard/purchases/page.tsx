@@ -96,7 +96,7 @@ function PurchasesPageInner() {
             .then(setCompras)
             .catch((err: any) => setError(err.message || 'Error al cargar compras'))
             .finally(() => setLoading(false));
-    }, [searchParams]);
+    }, [searchParams.toString()]);
 
     // ── Proveedores únicos para el select ─────────────────────────────────────
     const proveedoresUnicos = useMemo(() => {

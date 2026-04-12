@@ -154,9 +154,9 @@ function NewPurchasePageInner() {
             }
 
             console.log("✅ Guardado exitoso");
-            // Usamos window.location para forzar recarga completa de la página de lista
-            // router.push no remonta el componente si ya estaba en caché
-            window.location.href = "/dashboard/purchases";
+            // Agregamos ?t=timestamp para que searchParams cambie y el useEffect
+            // de la lista se vuelva a ejecutar, forzando un nuevo fetch al API.
+            window.location.href = `/dashboard/purchases?t=${Date.now()}`;
         } catch (err: any) {
             console.error("🔴 Error capturado:", err);
             setError(err.message || "Error al registrar la entrada");
