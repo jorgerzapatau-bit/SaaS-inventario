@@ -32,8 +32,8 @@ interface Producto {
     categoria: { id: string; nombre: string };
 }
 
-const tipoColor = (t: string) => ({ENTRADA:'bg-green-100 text-green-700',SALIDA:'bg-red-100 text-red-700',AJUSTE_POSITIVO:'bg-blue-100 text-blue-700',AJUSTE_NEGATIVO:'bg-orange-100 text-orange-700'}[t]||'bg-gray-100 text-gray-600');
-const tipoLabel = (t: string) => ({ENTRADA:'Entrada',SALIDA:'Salida',AJUSTE_POSITIVO:'Ajuste +',AJUSTE_NEGATIVO:'Ajuste -'}[t]||t);
+const tipoColor = (t: string) => ({ENTRADA:'bg-green-100 text-green-700',SALIDA:'bg-orange-100 text-orange-700',CONSUMO_INTERNO:'bg-orange-100 text-orange-700',AJUSTE_POSITIVO:'bg-blue-100 text-blue-700',AJUSTE_NEGATIVO:'bg-purple-100 text-purple-700'}[t]||'bg-gray-100 text-gray-600');
+const tipoLabel = (t: string) => ({ENTRADA:'Compra',SALIDA:'Consumo',CONSUMO_INTERNO:'Consumo',AJUSTE_POSITIVO:'Ajuste +',AJUSTE_NEGATIVO:'Ajuste -'}[t]||t);
 function toInputDate(d: Date) { return d.toISOString().split('T')[0]; }
 
 const MAX_SIZE_BYTES = 300*1024;
@@ -101,7 +101,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const [pagina,setPagina]=useState(1);
     const POR_PAGINA=25;
 
-    const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true,precioReferencia:''});
+    const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'litro',imagen:null as string|null,activo:true,precioReferencia:''});
 
     useEffect(()=>{
         const load=async()=>{
@@ -147,7 +147,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const startEdit=()=>{
         if(!product)return;
-        setEditData({sku:product?.sku??'',nombre:product?.nombre??'',descripcion:(product as any)?.descripcion||'',categoriaId:product?.categoria?.id||'',stockMinimo:String(product?.stockMinimo??5),unidad:product?.unidad??'pieza',imagen:product?.imagen??null,activo:product?.activo??true,precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):''});
+        setEditData({sku:product?.sku??'',nombre:product?.nombre??'',descripcion:(product as any)?.descripcion||'',categoriaId:product?.categoria?.id||'',stockMinimo:String(product?.stockMinimo??5),unidad:product?.unidad??'litro',imagen:product?.imagen??null,activo:product?.activo??true,precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):''});
         setEditing(true);setSaveError('');setImgError('');
     };
 
@@ -234,13 +234,12 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 m.almacen?.nombre||'—',
                 (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
                 `$${Number(m.costoUnitario).toLocaleString('es-MX')}`,
-                m.precioVenta?`$${Number(m.precioVenta).toLocaleString('es-MX')}`:'—',
                 String(m.saldo??''),
                 m.usuario?.nombre||'',
             ]);
             (doc as any).autoTable({
                 startY:52,
-                head:[['Fecha','Tipo','Referencia','Prov/Cliente','Almacén','Cant.','Costo','P.Venta','Saldo','Usuario']],
+                head:[['Fecha','Tipo','Referencia','Prov/Obra','Almacén','Cant.','Costo','Saldo','Usuario']],
                 body:tableData,
                 styles:{fontSize:7,cellPadding:2},
                 headStyles:{fillColor:[15,23,42],textColor:255,fontStyle:'bold'},
@@ -256,7 +255,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const exportCSV=()=>{
         if(!product||movements.length===0)return;
-        const headers=['Fecha','Tipo','Referencia','Proveedor/Cliente','Almacén','Cantidad','Costo Unitario','Precio Venta','Saldo','Usuario'];
+        const headers=['Fecha','Tipo','Referencia','Proveedor/Obra','Almacén','Cantidad','Costo Unitario','Saldo','Usuario'];
         const rows=[...movements].reverse().map(m=>[
             new Date(m.fecha).toLocaleDateString('es-MX'),
             tipoLabel(m.tipoMovimiento),
@@ -265,7 +264,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
             m.almacen?.nombre||'',
             (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
             Number(m.costoUnitario).toFixed(2),
-            m.precioVenta?Number(m.precioVenta).toFixed(2):'',
             String(m.saldo??''),
             m.usuario?.nombre||''
         ]);
@@ -287,15 +285,11 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     if(!isNew&&!product)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Producto no encontrado.</p></div>;
 
     const totalEntradas=!isNew?movements.filter(m=>['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0):0;
-    const totalSalidas=!isNew?movements.filter(m=>['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0):0;
+    const totalSalidas=!isNew?movements.filter(m=>['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0):0;
     const lowStock=!isNew&&product?product.stock<=product.stockMinimo:false;
-    const margen=product&&Number(product?.ultimoPrecioVenta??0)>0?((Number(product?.ultimoPrecioVenta??0)-Number(product?.ultimoPrecioCompra??0))/Number(product?.ultimoPrecioVenta??0)*100).toFixed(1):'0';
     const ultimaEntrada=!isNew?movements.find(m=>m.tipoMovimiento==='ENTRADA'):undefined;
-    const ultimaSalida=!isNew?movements.find(m=>m.tipoMovimiento==='SALIDA'):undefined;
+    const ultimaSalida=!isNew?movements.find(m=>["SALIDA","CONSUMO_INTERNO"].includes(m.tipoMovimiento)):undefined;
     const pC=Number(product?.ultimoPrecioCompra??0);
-    const pV=Number(product?.ultimoPrecioVenta??0);
-    const editMargen=pV>0?((pV-pC)/pV*100):0;
-    const editMargenColor=editMargen>=30?'text-green-600':editMargen>=15?'text-amber-500':'text-red-500';
     const CATEGORY_COLORS: Record<string,string>={'Electrónicos':'#3b82f6','Periféricos':'#8b5cf6','Consumibles':'#f59e0b','Accesorios':'#10b981','default':'#6b7280'};
 
     // ── Métricas de contexto ──────────────────────────────────────────────────
@@ -305,7 +299,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     // Rotación individual: salidas últimos 30d / stock actual
     const hace30d = new Date(Date.now() - 30 * 86400000);
     const salidasUltimos30d = !isNew ? movements
-        .filter(m => ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
+        .filter(m => ['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
         .reduce((a, m) => a + m.cantidad, 0) : 0;
     const rotacionProducto = product?.stock && product.stock > 0
         ? (salidasUltimos30d / product.stock * 100).toFixed(1)
@@ -349,8 +343,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <div className="flex items-start gap-4">
                     <button onClick={()=>router.back()} className="mt-1 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft size={20}/></button>
                     <div>
-                        <p className="text-sm text-gray-500">{isNew ? 'Nuevo producto' : `${product?.sku} · ${product?.categoria?.nombre}`}</p>
-                        <h1 className="text-3xl font-bold text-gray-900">{isNew ? (editData.nombre || 'Nuevo Producto') : product?.nombre}</h1>
+                        <p className="text-sm text-gray-500">{isNew ? 'Nuevo insumo' : `${product?.sku} · ${product?.categoria?.nombre}`}</p>
+                        <h1 className="text-3xl font-bold text-gray-900">{isNew ? (editData.nombre || 'Nuevo Insumo') : product?.nombre}</h1>
                         <div className="flex items-center gap-2 mt-1">
                             {!product?.activo&&<span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactivo</span>}
                             {saved&&<span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full inline-flex items-center gap-1"><Check size={11}/> Guardado</span>}
@@ -363,10 +357,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                     {!editing
                         ?<button onClick={startEdit} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors cursor-pointer"><Edit size={16}/> Editar</button>
                         :<><button onClick={()=>{setEditing(false);setSaveError('');}} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors cursor-pointer"><X size={16}/> Cancelar</button>
-                        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={16}/>{saving?'Creando...':(isNew?'Crear producto':'Guardar cambios')}</button></>
+                        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-70"><Save size={16}/>{saving?'Guardando...':(isNew?'Crear insumo':'Guardar cambios')}</button></>
                     }
                     {!isNew && <button onClick={()=>router.push(`/dashboard/purchases/new?productoId=${product?.id}`)} className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors cursor-pointer"><Plus size={16}/> Entrada</button>}
-                    {!isNew && <button onClick={()=>router.push(`/dashboard/sales/new?productoId=${product?.id}`)} className="flex items-center gap-2 px-4 py-2 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors cursor-pointer"><Minus size={16}/> Salida</button>}
+                    {!isNew && <button onClick={()=>router.push(`/dashboard/sales/new?productoId=${product?.id}`)} className="flex items-center gap-2 px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors cursor-pointer"><Minus size={16}/> Consumo</button>}
                 </div>
             </div>
 
@@ -378,7 +372,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                             <AlertTriangle size={18} className="text-red-600"/>
                         </div>
                         <div>
-                            <p className="text-sm font-semibold text-red-700">Stock bajo — requiere reabastecimiento</p>
+                            <p className="text-sm font-semibold text-red-700">Insumo bajo — requiere reabastecimiento</p>
                             <p className="text-xs text-red-500 mt-0.5">
                                 Stock actual <strong>{product?.stock} {product?.unidad}</strong> ≤ mínimo <strong>{product?.stockMinimo} {product?.unidad}</strong>
                                 {diasStock!==null&&` · ~${diasStock} días de inventario restantes`}
@@ -477,7 +471,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <div>
                                     <label className="text-xs font-medium text-gray-700 block mb-1">Unidad *</label>
                                     <select name="unidad" value={editData.unidad} onChange={handleEditChange} className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                        {['pieza','unidad','caja','litro','kg','gramo','metro','rollo','resma','par'].map(u=><option key={u} value={u}>{u}</option>)}
+                                        {['litro','pieza','jornal','kg','metro','caja','unidad','rollo'].map(u=><option key={u} value={u}>{u}</option>)}
                                     </select>
                                 </div>
                             </div>
@@ -485,7 +479,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <div className={isNew ? '' : 'bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200'}>
                                     {isNew ? (
                                         <>
-                                            <label className="text-xs font-medium text-gray-700 block mb-1">Precio de referencia <span className="text-gray-400 font-normal">(opcional)</span></label>
+                                            <label className="text-xs font-medium text-gray-700 block mb-1">Costo unitario <span className="text-gray-400 font-normal">(referencia, opcional)</span></label>
                                             <input
                                                 type="number" step="0.01" min="0"
                                                 value={editData.precioReferencia}
@@ -493,18 +487,18 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                                 placeholder="Ej: 77.92"
                                                 className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                                             />
-                                            <p className="text-xs text-gray-400 mt-1">Se usará como precio base hasta que registres una compra.</p>
+                                            <p className="text-xs text-gray-400 mt-1">Se actualizará automáticamente al registrar una compra.</p>
                                         </>
                                     ) : (
                                         <>
-                                            <p className="text-xs text-gray-400 mb-1">Precio compra <span className="text-gray-300 text-xs">(última entrada)</span></p>
+                                            <p className="text-xs text-gray-400 mb-1">Costo unitario <span className="text-gray-300 text-xs">(última compra)</span></p>
                                             <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? `$${Number(ultimaEntrada.costoUnitario).toLocaleString()}` : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
                                         </>
                                     )}
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200">
-                                    <p className="text-xs text-gray-400 mb-1">Precio venta <span className="text-gray-300 text-xs">(última salida)</span></p>
-                                    <p className="text-sm font-bold text-gray-700">{ultimaSalida?.precioVenta ? `$${Number(ultimaSalida.precioVenta).toLocaleString()}` : <span className="text-gray-400 italic text-xs">Sin ventas aún</span>}</p>
+                                    <p className="text-xs text-gray-400 mb-1">Consumo últimos 30 días</p>
+                                    <p className="text-sm font-bold text-gray-700">{salidasUltimos30d > 0 ? `${salidasUltimos30d} ${editData.unidad}` : <span className="text-gray-400 italic text-xs">Sin consumos</span>}</p>
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-gray-700 block mb-1">Stock mínimo *</label>
@@ -521,14 +515,14 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <p className="text-xs text-gray-400 mb-0.5">Valor almacén <span className="text-gray-300">(calculado)</span></p>
                                     <p className="text-sm font-bold text-gray-700">${((product?.stock??0)*pC).toLocaleString('es-MX',{maximumFractionDigits:0})}</p>
                                 </div>
-                                <div className={`rounded-lg px-3 py-2 ${editMargen>=30?'bg-green-50':editMargen>=15?'bg-amber-50':pV>0?'bg-red-50':'bg-gray-50'}`}>
-                                    <p className="text-xs text-gray-400 mb-0.5">Margen <span className="text-gray-300">(calculado)</span></p>
-                                    <p className={`text-sm font-bold ${editMargenColor}`}>{pV>0?`${editMargen.toFixed(1)}%`:'—'} {pV>0&&pC>0&&<span className="text-xs font-normal">· ${(pV-pC).toLocaleString('es-MX')}/{editData.unidad}</span>}</p>
+                                <div className={`rounded-lg px-3 py-2 ${diasStockAlerta?'bg-orange-50':'bg-gray-50'}`}>
+                                    <p className="text-xs text-gray-400 mb-0.5">Días de stock</p>
+                                    <p className={`text-sm font-bold ${diasStockAlerta?'text-orange-600':'text-gray-700'}`}>{diasStock!==null?`~${diasStock} días`:'—'}</p>
                                 </div>
                             </div>
                             {/* Toggle activo */}
                             <div className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                                <div><p className="text-sm font-medium text-gray-700">Producto activo</p><p className="text-xs text-gray-400">Visible en entradas/salidas</p></div>
+                                <div><p className="text-sm font-medium text-gray-700">Insumo activo</p><p className="text-xs text-gray-400">Visible en compras/consumos</p></div>
                                 <button type="button" onClick={()=>setEditData(p=>({...p,activo:!p.activo}))} className="cursor-pointer">
                                     {editData.activo?<ToggleRight size={32} className="text-green-500"/>:<ToggleLeft size={32} className="text-gray-300"/>}
                                 </button>
@@ -567,9 +561,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <p className="text-xs text-gray-400">{ultimaEntrada?`${new Date(ultimaEntrada.fecha).toLocaleDateString('es-MX')}${ultimaEntrada.proveedor?` · ${ultimaEntrada.proveedor.nombre}`:''}`:  'Sin entradas'}</p>
                                 </div>
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Último precio venta</p><InfoTooltip text="Precio de venta al cliente del último movimiento de SALIDA registrado. Se actualiza automáticamente con cada nueva salida." position="bottom" /></div><TrendingUp size={14} className="text-green-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">${Number(ultimaSalida?.precioVenta ?? product?.ultimoPrecioVenta ?? 0).toLocaleString()}</p>
-                                    <p className="text-xs text-gray-400">{ultimaSalida?new Date(ultimaSalida.fecha).toLocaleDateString('es-MX'):'Precio catálogo'}</p>
+                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Consumo últimos 30 días</p><InfoTooltip text="Total de unidades consumidas en obra en los últimos 30 días." position="bottom" /></div><TrendingDown size={14} className="text-orange-400"/></div>
+                                    <p className="text-2xl font-bold text-gray-800">{salidasUltimos30d}</p>
+                                    <p className="text-xs text-gray-400">{product?.unidad} · {salidasUltimos30d===0?'sin consumo reciente':'en los últimos 30 días'}</p>
                                 </div>
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
                                     <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor en almacén</p><InfoTooltip text="Stock actual × costo unitario de la última entrada. Representa cuánto vale el inventario de este producto a precio de costo." position="bottom" /></div><DollarSign size={14} className="text-gray-400"/></div>
@@ -586,7 +580,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <div>
                                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Información general</p>
                                     <table className="w-full text-sm"><tbody className="divide-y divide-gray-50">
-                                        {[['Nombre',product?.nombre??''],['Categoría',product?.categoria?.nombre??''],['Unidad',product?.unidad??''],['Margen', margen + '%'],['Stock mínimo',`${product?.stockMinimo} ${product?.unidad}`],['Estado',product?.activo?'Activo':'Inactivo']].map(([l,v])=>(
+                                        {[['Nombre',product?.nombre??''],['Categoría',product?.categoria?.nombre??''],['Unidad',product?.unidad??''],['Stock mínimo',`${product?.stockMinimo} ${product?.unidad}`],['Estado',product?.activo?'Activo':'Inactivo']].map(([l,v])=>(
                                             <tr key={l}><td className="py-1.5 text-gray-500 text-xs">{l}</td><td className="py-1.5 text-right font-medium text-gray-800 text-xs">{v}</td></tr>
                                         ))}
                                     </tbody></table>
@@ -621,10 +615,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Resumen de movimientos</p>
                                     <table className="w-full text-sm"><tbody className="divide-y divide-gray-50">
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total entradas</td><td className="py-1.5 text-right font-medium text-green-600 text-xs">+{totalEntradas} {product?.unidad}</td></tr>
-                                        <tr><td className="py-1.5 text-gray-500 text-xs">Total salidas</td><td className="py-1.5 text-right font-medium text-red-500 text-xs">-{totalSalidas} {product?.unidad}</td></tr>
+                                        <tr><td className="py-1.5 text-gray-500 text-xs">Total consumos</td><td className="py-1.5 text-right font-medium text-orange-500 text-xs">-{totalSalidas} {product?.unidad}</td></tr>
                                         <tr className="border-t-2 border-gray-200"><td className="py-1.5 font-semibold text-gray-800 text-xs">Stock actual</td><td className="py-1.5 text-right font-bold text-gray-800 text-xs">= {product?.stock} {product?.unidad}</td></tr>
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total movimientos</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">{movements.length}</td></tr>
-                                        <tr><td className="py-1.5 text-gray-500 text-xs">Valor total comprado</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">${movements.filter(m=>m.tipoMovimiento==='ENTRADA').reduce((a,m)=>a+m.cantidad*Number(m.costoUnitario),0).toLocaleString()}</td></tr>
+                                        <tr><td className="py-1.5 text-gray-500 text-xs">Valor total compras</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">${movements.filter(m=>m.tipoMovimiento==='ENTRADA').reduce((a,m)=>a+m.cantidad*Number(m.costoUnitario),0).toLocaleString()}</td></tr>
                                     </tbody></table>
                                 </div>
                             </div>
@@ -665,7 +659,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <p className={`text-2xl font-bold ${Number(rotacionProducto) >= 50 ? 'text-green-600' : Number(rotacionProducto) >= 20 ? 'text-amber-500' : 'text-gray-800'}`}>
                                     {rotacionProducto}%
                                 </p>
-                                <p className="text-xs text-gray-400 mt-1">{salidasUltimos30d} {product?.unidad} vendidas · {salidasUltimos30d === 0 ? 'sin movimiento' : 'en 30 días'}</p>
+                                <p className="text-xs text-gray-400 mt-1">{salidasUltimos30d} {product?.unidad} consumidas · {salidasUltimos30d === 0 ? 'sin movimiento' : 'en 30 días'}</p>
                             </>
                         ) : (
                             <p className="text-sm text-gray-400 italic mt-1">Sin stock para calcular</p>
@@ -684,11 +678,11 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     ~{diasStock} días
                                 </p>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    {diasStockAlerta ? '⚠ Considerar reabastecimiento pronto' : `Al ritmo de ${promedioSalidasDiarias.toFixed(1)} ${product?.unidad}/día`}
+                                    {diasStockAlerta ? '⚠ Considerar reabastecimiento pronto' : `Al ritmo de ${promedioSalidasDiarias.toFixed(1)} ${product?.unidad}/día consumidos`}
                                 </p>
                             </>
                         ) : (
-                            <p className="text-sm text-gray-400 italic mt-1">{salidasUltimos30d === 0 ? 'Sin ventas en 30 días' : 'Sin stock disponible'}</p>
+                            <p className="text-sm text-gray-400 italic mt-1">{salidasUltimos30d === 0 ? 'Sin consumos en 30 días' : 'Sin stock disponible'}</p>
                         )}
                     </div>
                 </div>
@@ -734,9 +728,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <select value={filtroTipo} onChange={e=>{setFiltroTipo(e.target.value);setPagina(1);}} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                                     <option value="todos">Todos</option>
                                     <option value="ENTRADA">Entrada</option>
-                                    <option value="SALIDA">Salida</option>
+                                    <option value="SALIDA">Consumo / Salida</option>
                                     <option value="AJUSTE_POSITIVO">Ajuste +</option>
-                                    <option value="AJUSTE_NEGATIVO">Ajuste -</option>
+                                    <option value="AJUSTE_NEGATIVO">Ajuste −</option>
                                 </select>
                             </div>
                             <div>
@@ -763,7 +757,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead><tr className="bg-gray-50/50 border-b border-gray-100">
-                            {['Fecha','Tipo','Referencia','Proveedor / Cliente','Almacén','Cant.','Costo unit.','P. Venta','Saldo','Usuario',''].map(h=>(
+                            {['Fecha','Tipo','Referencia','Proveedor / Obra','Almacén','Cant.','Costo unit.','Saldo','Usuario',''].map(h=>(
                                 <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
                             ))}
                         </tr></thead>
@@ -781,7 +775,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.almacen?.nombre}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className={`px-4 py-3 text-sm font-bold text-right cursor-pointer ${isPos?'text-green-600':'text-red-500'}`}>{isPos?'+':'-'}{mov.cantidad}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">${Number(mov.costoUnitario).toLocaleString()}</td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">{mov.precioVenta?`$${Number(mov.precioVenta).toLocaleString()}`:<span className="text-gray-300">—</span>}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm font-semibold text-gray-800 text-right cursor-pointer">{mov.saldo}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.usuario?.nombre}</td>
                                         {/* Acción rápida: repetir entrada */}
@@ -831,7 +824,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                             <button onClick={()=>setSelectedMov(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"><X size={20}/></button>
                         </div>
                         <div className="space-y-0">
-                            {([['Producto',product?.nombre],['Fecha',new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],['Almacén',selectedMov.almacen?.nombre],['Cantidad',`${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],['Costo unitario',`$${Number(selectedMov.costoUnitario).toLocaleString()}`],...(selectedMov.precioVenta?[['Precio de venta',`$${Number(selectedMov.precioVenta).toLocaleString()}`]]:[]),['Costo total',`$${(selectedMov.cantidad*Number(selectedMov.costoUnitario)).toLocaleString()}`],['Saldo después',`${selectedMov.saldo} ${product?.unidad}`],...(selectedMov.proveedor?[['Proveedor',selectedMov.proveedor.nombre],...(selectedMov.proveedor.telefono?[['Tel.',selectedMov.proveedor.telefono]]:[]),...(selectedMov.proveedor.email?[['Email',selectedMov.proveedor.email]]:[])]:  []),...(selectedMov.clienteNombre?[['Cliente',selectedMov.clienteNombre]]:[]),['Registrado por',selectedMov.usuario?.nombre]] as [string,string][]).map(([l,v])=>(
+                            {([['Producto',product?.nombre],['Fecha',new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],['Almacén',selectedMov.almacen?.nombre],['Cantidad',`${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],['Costo unitario',`$${Number(selectedMov.costoUnitario).toLocaleString()}`],['Costo total',`$${(selectedMov.cantidad*Number(selectedMov.costoUnitario)).toLocaleString()}`],['Saldo después',`${selectedMov.saldo} ${product?.unidad}`],...(selectedMov.proveedor?[['Proveedor',selectedMov.proveedor.nombre],...(selectedMov.proveedor.telefono?[['Tel.',selectedMov.proveedor.telefono]]:[]),...(selectedMov.proveedor.email?[['Email',selectedMov.proveedor.email]]:[])]:  []),...(selectedMov.clienteNombre?[['Cliente',selectedMov.clienteNombre]]:[]),['Registrado por',selectedMov.usuario?.nombre]] as [string,string][]).map(([l,v])=>(
                                 <div key={l} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0"><span className="text-sm text-gray-500">{l}</span><span className="text-sm font-medium text-gray-800 text-right max-w-[220px]">{v}</span></div>
                             ))}
                         </div>

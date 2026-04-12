@@ -20,11 +20,6 @@ const CATEGORY_COLORS: Record<string, string> = {
     'Accesorios': '#10b981', 'Ropa': '#ec4899', 'default': '#6b7280',
 };
 function getCatColor(cat: string) { return CATEGORY_COLORS[cat] || CATEGORY_COLORS['default']; }
-function getMargen(p: any) {
-    const pv = Number(p.ultimoPrecioVenta ?? 0);
-    const pc = Number(p.ultimoPrecioCompra ?? 0);
-    return pv > 0 ? (pv - pc) / pv * 100 : 0;
-}
 
 function ProductImage({ imagen, nombre, categoria, size = 40 }: { imagen?: string; nombre: string; categoria?: string; size?: number }) {
     const color = getCatColor(categoria || '');
@@ -42,7 +37,7 @@ function StockBadge({ stock, stockMinimo }: { stock: number; stockMinimo: number
     return null;
 }
 
-type SortKey = 'nombre' | 'sku' | 'stock' | 'precioCompra' | 'precioVenta' | 'margen';
+type SortKey = 'nombre' | 'sku' | 'stock' | 'precioCompra';
 type SortDir = 'asc' | 'desc';
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
@@ -101,9 +96,8 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     body: JSON.stringify({
                         sku: row.sku || `IMP-${Date.now()}`,
                         nombre: row.nombre,
-                        unidad: row.unidad || 'pieza',
-                        precioCompra: Number(row.preciocompra || row['precio compra'] || row.costo || 0),
-                        precioVenta: Number(row.precioventa || row['precio venta'] || row.precio || 0),
+                        unidad: row.unidad || 'litro',
+                        precioCompra: Number(row.costounitario || row.preciocompra || row['costo unitario'] || row.costo || 0),
                         stockMinimo: Number(row.stockminimo || row['stock minimo'] || row.minimo || 5),
                     }),
                 });
@@ -126,7 +120,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                     <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
                 </div>
                 <button onClick={() => {
-                    const csv = 'sku,nombre,unidad,preciocompra,precioventa,stockminimo\nPRD-001,Producto ejemplo,pieza,100,150,5';
+                    const csv = 'sku,nombre,unidad,costounitario,stockminimo\nPRD-001,Insumo ejemplo,litro,100,5';
                     const blob = new Blob([csv], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a'); a.href = url; a.download = 'plantilla_productos.csv'; a.click();
@@ -240,18 +234,18 @@ function ProductsPageInner() {
     // ── CSV Export ────────────────────────────────────────────────────────────
     const exportCSV = () => {
         const toExport = selected.size > 0 ? sorted.filter(p => selected.has(p.id)) : sorted;
-        const header = 'SKU,Nombre,Categoría,Stock,Precio Compra,Precio Venta,Margen %,Valor Almacén';
+        const header = 'SKU,Nombre,Categoría,Stock,Costo Unitario,Valor Almacén,Nivel Reorden';
         const rows = toExport.map(p => [
             p.sku, `"${p.nombre}"`, p.categoria?.nombre || '',
-            p.stock, Number(p.ultimoPrecioCompra ?? 0), Number(p.ultimoPrecioVenta ?? 0),
-            getMargen(p).toFixed(1),
-            (p.stock * Number(p.ultimoPrecioCompra ?? 0)).toFixed(0)
+            p.stock, Number(p.ultimoPrecioCompra ?? 0),
+            (p.stock * Number(p.ultimoPrecioCompra ?? 0)).toFixed(0),
+            p.stockMinimo
         ].join(','));
         const csv = [header, ...rows].join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url;
-        a.download = `productos_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+        a.download = `insumos_${new Date().toISOString().split('T')[0]}.csv`; a.click();
     };
 
     // ── Filtered & Sorted ─────────────────────────────────────────────────────
@@ -275,26 +269,25 @@ function ProductsPageInner() {
 
     const sorted = [...filtered].sort((a, b) => {
         let va: any, vb: any;
-        if (sortKey === 'margen')       { va = getMargen(a); vb = getMargen(b); }
-        else if (sortKey === 'stock')   { va = a.stock ?? 0; vb = b.stock ?? 0; }
+        if (sortKey === 'stock')        { va = a.stock ?? 0; vb = b.stock ?? 0; }
         else if (sortKey === 'precioCompra') { va = Number(a.ultimoPrecioCompra??0); vb = Number(b.ultimoPrecioCompra??0); }
-        else if (sortKey === 'precioVenta')  { va = Number(a.ultimoPrecioVenta??0);  vb = Number(b.ultimoPrecioVenta??0); }
         else { va = (a[sortKey] || '').toLowerCase(); vb = (b[sortKey] || '').toLowerCase(); }
         if (va < vb) return sortDir === 'asc' ? -1 : 1;
         if (va > vb) return sortDir === 'asc' ? 1 : -1;
         return 0;
     });
 
-    const maxMargen = Math.max(...sorted.map(p => getMargen(p)), 1);
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const totalValor = allMovements.reduce((a, m) => {
         const qty = Number(m.cantidad || 0), costo = Number(m.costoUnitario || 0);
         if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
-        if (['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))  return a - qty * costo;
+        if (['SALIDA','AJUSTE_NEGATIVO','CONSUMO_INTERNO'].includes(m.tipoMovimiento))  return a - qty * costo;
         return a;
     }, 0);
-    const margenProm  = filtered.length > 0 ? filtered.reduce((a, p) => a + getMargen(p), 0) / filtered.length : 0;
+    const costoPromUnitario = filtered.length > 0
+        ? filtered.reduce((a, p) => a + Number(p.ultimoPrecioCompra ?? 0), 0) / filtered.filter(p => p.ultimoPrecioCompra).length || 0
+        : 0;
     const bajosStock  = filtered.filter(p => p.stock <= p.stockMinimo).length;
     const catsActivas = new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean)).size;
 
@@ -302,8 +295,8 @@ function ProductsPageInner() {
     const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
         const prods = products.filter(p => p.categoria?.nombre === cat);
         const valor = prods.reduce((a, p) => a + (p.stock * Number(p.ultimoPrecioCompra ?? 0)), 0);
-        const mg    = prods.length > 0 ? prods.reduce((a, p) => a + getMargen(p), 0) / prods.length : 0;
-        return { cat, count: prods.length, valor, mg };
+        const costoMedUSD = prods.some(p => p.moneda === 'USD');
+        return { cat, count: prods.length, valor, costoMedUSD };
     }).sort((a, b) => b.valor - a.valor);
     const maxCatValor = catStats.length > 0 ? catStats[0].valor : 1;
 
@@ -321,8 +314,8 @@ function ProductsPageInner() {
             {/* ── Header ─────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Productos</h1>
-                    <p className="text-sm text-gray-500 mt-1">Gestiona el catálogo de productos de tu empresa.</p>
+                    <h1 className="text-3xl font-bold text-gray-900">Insumos</h1>
+                    <p className="text-sm text-gray-500 mt-1">Catálogo de insumos y materiales consumidos en obra.</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                     <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors">
@@ -332,7 +325,7 @@ function ProductsPageInner() {
                         <Download size={15} /> {selected.size > 0 ? `Exportar (${selected.size})` : 'Exportar CSV'}
                     </button>
                     <Link href="/dashboard/products/new" className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                        <Plus size={16} /> Nuevo Producto
+                        <Plus size={16} /> Nuevo Insumo
                     </Link>
                 </div>
             </div>
@@ -352,19 +345,19 @@ function ProductsPageInner() {
                     </div>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Valor inventario</p>
-                            <InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo). Mismo cálculo que el dashboard." position="bottom" />
+                            <p className="text-xs text-gray-400">Valor almacén</p>
+                            <InfoTooltip text="Σ(entradas×costo) − Σ(consumos×costo). Valor actual del inventario." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">${totalValor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
                         <p className="text-xs text-gray-400 mt-1">mismo cálculo que dashboard</p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Margen promedio</p>
-                            <InfoTooltip text="Promedio de margen de los productos visibles. Verde ≥30%, amarillo ≥15%, rojo <15%." position="bottom" />
+                            <p className="text-xs text-gray-400">Costo prom. unitario</p>
+                            <InfoTooltip text="Promedio del último costo de compra de los insumos visibles." position="bottom" />
                         </div>
-                        <p className={`text-2xl font-bold ${margenProm >= 30 ? 'text-green-600' : margenProm >= 15 ? 'text-amber-500' : 'text-red-500'}`}>{margenProm.toFixed(1)}%</p>
-                        <p className="text-xs text-gray-400 mt-1">productos visibles</p>
+                        <p className="text-2xl font-bold text-gray-800">${costoPromUnitario.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</p>
+                        <p className="text-xs text-gray-400 mt-1">insumos visibles</p>
                     </div>
                     {/* FIX: Stock bajo mínimo ahora es clickeable para activar el filtro */}
                     <button
@@ -415,7 +408,7 @@ function ProductsPageInner() {
                     </div>
 
                     <div className={`grid gap-3 ${catStats.length <= 2 ? 'grid-cols-2' : catStats.length === 3 ? 'grid-cols-3' : catStats.length === 4 ? 'grid-cols-2 md:grid-cols-4' : catStats.length === 5 ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
-                        {catStats.map(({ cat, count, valor, mg }) => {
+                        {catStats.map(({ cat, count, valor }) => {
                             const color    = getCatColor(cat);
                             const isActive = filterCat === cat;
                             return (
@@ -436,7 +429,7 @@ function ProductsPageInner() {
                                         <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 mr-5" style={{ background: color + '20', color }}>{count}</span>
                                     </div>
                                     <p className="text-base font-bold text-gray-800 mb-0.5">${valor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                                    <p className="text-xs text-gray-400 mb-2">Margen <span className="font-semibold text-green-600">{mg.toFixed(1)}%</span></p>
+                                    <p className="text-xs text-gray-400 mb-2">{count} insumo{count !== 1 ? 's' : ''}</p>
                                     <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
                                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(valor / maxCatValor) * 100}%`, background: color }} />
                                     </div>
@@ -578,7 +571,7 @@ function ProductsPageInner() {
                     {loading ? <p className="col-span-full text-center text-gray-500 py-10">Cargando...</p>
                         : sorted.map(product => {
                             const isLow    = product.stock <= product.stockMinimo;
-                            const mg       = getMargen(product).toFixed(0);
+                            
                             const isSelected = selected.has(product.id);
                             return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
@@ -596,19 +589,19 @@ function ProductsPageInner() {
                                         <Link href={`/dashboard/products/${product.id}`}><p className="text-sm font-semibold text-gray-800 leading-tight hover:text-blue-600 line-clamp-2 mb-2">{product.nombre}</p></Link>
                                         <div className="flex justify-between items-center mb-2">
                                             <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>{product.categoria?.nombre || 'Sin cat.'}</span>
-                                            <span className={`text-xs font-semibold ${Number(mg) >= 30 ? 'text-green-600' : Number(mg) >= 15 ? 'text-amber-500' : 'text-red-500'}`}>{mg}%</span>
+                                            <span className="text-xs text-gray-400">{product.unidad}</span>
                                         </div>
                                         <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                                             <span className={`text-sm font-bold ${isLow ? 'text-orange-600' : 'text-gray-800'}`}>{product.stock}</span>
-                                            <span className="text-sm font-semibold text-gray-800">{product.ultimoPrecioVenta ? `$${Number(product.ultimoPrecioVenta).toLocaleString()}` : '—'}</span>
+                                            <span className="text-xs text-gray-400">${product.ultimoPrecioCompra ? Number(product.ultimoPrecioCompra).toLocaleString() : '—'} /u</span>
                                         </div>
                                         {isLow && <div className="mt-1"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
                                         <div className="flex gap-1 mt-2 pt-2 border-t border-gray-100">
                                             <Link href={`/dashboard/purchases/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-md transition-colors">
                                                 <ArrowUpCircle size={13} /> Entrada
                                             </Link>
-                                            <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                                                <ArrowDownCircle size={13} /> Salida
+                                            <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-orange-500 hover:bg-orange-50 rounded-md transition-colors">
+                                                <ArrowDownCircle size={13} /> Consumo
                                             </Link>
                                             <Link href={`/dashboard/products/${product.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors">
                                                 <Edit size={13} />
@@ -639,14 +632,8 @@ function ProductsPageInner() {
                                     <th className={thClass('nombre')} onClick={() => handleSort('nombre')}>Producto <SortIcon col="nombre" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Categoría</th>
                                     <th className={`${thClass('stock')} text-right`} onClick={() => handleSort('stock')}>Stock <SortIcon col="stock" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>Últ. Compra <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('precioVenta')} text-right`} onClick={() => handleSort('precioVenta')}>Últ. Venta <SortIcon col="precioVenta" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('margen')} text-right`} onClick={() => handleSort('margen')}>
-                                        <span className="inline-flex items-center gap-1 justify-end w-full">
-                                            Margen <SortIcon col="margen" sortKey={sortKey} sortDir={sortDir} />
-                                            <InfoTooltip text="(últimoPrecioVenta − últimoCosto) ÷ últimoPrecioVenta × 100." position="top" />
-                                        </span>
-                                    </th>
+                                    <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>Costo unit. <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} /></th>
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Valor almacén</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
                                 </tr>
                             </thead>
@@ -654,7 +641,6 @@ function ProductsPageInner() {
                                 {loading ? <tr><td colSpan={10} className="p-8 text-center text-gray-500">Cargando...</td></tr>
                                     : sorted.map(product => {
                                         const isLow      = product.stock <= product.stockMinimo;
-                                        const mg         = getMargen(product);
                                         const isSelected = selected.has(product.id);
                                         return (
                                             <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
@@ -682,19 +668,13 @@ function ProductsPageInner() {
                                                     <span className="text-xs text-gray-400 ml-1">/ {product.stockMinimo}</span>
                                                 </td>
                                                 <td className="p-3 text-sm text-gray-500 text-right">{product.ultimoPrecioCompra ? `$${Number(product.ultimoPrecioCompra).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-sm font-semibold text-gray-800 text-right">{product.ultimoPrecioVenta ? `$${Number(product.ultimoPrecioVenta).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-right">
-                                                    <span className={`text-sm font-semibold ${mg >= 30 ? 'text-green-600' : mg >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{mg.toFixed(1)}%</span>
-                                                    <div className="h-1 mt-1 rounded-full bg-gray-100 overflow-hidden w-16 ml-auto">
-                                                        <div className="h-full rounded-full" style={{ width: `${(mg / maxMargen) * 100}%`, background: mg >= 30 ? '#22c55e' : mg >= 15 ? '#f59e0b' : '#ef4444' }} />
-                                                    </div>
-                                                </td>
+                                                <td className="p-3 text-sm font-semibold text-gray-700 text-right">{product.ultimoPrecioCompra ? `$${(product.stock * Number(product.ultimoPrecioCompra)).toLocaleString('es-MX', {maximumFractionDigits:0})}` : <span className="text-gray-300">—</span>}</td>
                                                 <td className="p-3 text-right">
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <Link href={`/dashboard/purchases/new?productoId=${product.id}`} className="p-1.5 text-green-500 hover:bg-green-50 rounded-md transition-colors inline-flex" title="Registrar entrada">
                                                             <ArrowUpCircle size={15} />
                                                         </Link>
-                                                        <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="p-1.5 text-red-400 hover:bg-red-50 rounded-md transition-colors inline-flex" title="Registrar salida">
+                                                        <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="p-1.5 text-orange-400 hover:bg-orange-50 rounded-md transition-colors inline-flex" title="Registrar consumo">
                                                             <ArrowDownCircle size={15} />
                                                         </Link>
                                                         <Link href={`/dashboard/products/${product.id}/edit`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors inline-flex">

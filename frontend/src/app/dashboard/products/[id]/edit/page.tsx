@@ -71,10 +71,11 @@ export default function EditProductPage() {
         nombre: '',
         descripcion: '',
         categoriaId: '',
-        precioCompra: '',
-        precioVenta: '',
+        costoUnitario: '',
+        nivelReorden: '',
+        diasReorden: '',
         stockMinimo: '',
-        unidad: 'pieza',
+        unidad: 'litro',
         imagen: '' as string | null,
         activo: true,
     });
@@ -97,10 +98,11 @@ export default function EditProductPage() {
                     nombre: product.nombre || '',
                     descripcion: product.descripcion || '',
                     categoriaId: product.categoriaId || '',
-                    precioCompra: product.precioCompra ?? '',
-                    precioVenta: product.precioVenta ?? '',
+                    costoUnitario: product.ultimoPrecioCompra ?? product.precioCompra ?? '',
+                    nivelReorden: product.nivelReorden ?? product.stockMinimo ?? '',
+                    diasReorden: product.diasReorden ?? '',
                     stockMinimo: product.stockMinimo ?? '',
-                    unidad: product.unidad || 'pieza',
+                    unidad: product.unidad || 'litro',
                     imagen: product.imagen || null,
                     activo: product.activo ?? true,
                 });
@@ -142,11 +144,13 @@ export default function EditProductPage() {
                 method: 'PUT',
                 body: JSON.stringify({
                     nombre: formData.nombre,
+                    descripcion: formData.descripcion,
                     categoriaId: formData.categoriaId,
                     unidad: formData.unidad,
-                    precioCompra: Number(formData.precioCompra),
-                    precioVenta: Number(formData.precioVenta),
+                    precioCompra: formData.costoUnitario ? Number(formData.costoUnitario) : undefined,
                     stockMinimo: Number(formData.stockMinimo),
+                    nivelReorden: formData.nivelReorden ? Number(formData.nivelReorden) : undefined,
+                    diasReorden: formData.diasReorden ? Number(formData.diasReorden) : undefined,
                     imagen: formData.imagen,
                     activo: formData.activo,
                 }),
@@ -158,11 +162,7 @@ export default function EditProductPage() {
         }
     };
 
-    // Margen calculado en tiempo real
-    const pCompra = Number(formData.precioCompra) || 0;
-    const pVenta  = Number(formData.precioVenta)  || 0;
-    const margen  = pVenta > 0 ? ((pVenta - pCompra) / pVenta * 100) : 0;
-    const margenColor = margen >= 30 ? 'text-green-600' : margen >= 15 ? 'text-amber-500' : 'text-red-500';
+    const costoUnitario = Number(formData.costoUnitario) || 0;
 
     if (fetching) return (
         <div className="flex items-center justify-center min-h-[50vh]">
@@ -179,7 +179,7 @@ export default function EditProductPage() {
                     <ArrowLeft size={20} />
                 </button>
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Editar Producto</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">Editar Insumo</h1>
                     <p className="text-sm text-gray-500 mt-1">SKU: <span className="font-mono font-semibold text-gray-700">{formData.sku}</span></p>
                 </div>
             </div>
@@ -316,43 +316,54 @@ export default function EditProductPage() {
                         </div>
 
                         <div className="border-t border-gray-100 pt-5">
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Precios y stock</p>
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Costos y reabastecimiento</p>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <div>
-                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Precio compra *</label>
+                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Costo unitario (referencia)</label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                                        <input required type="number" step="0.01" min="0" name="precioCompra" value={formData.precioCompra} onChange={handleChange}
+                                        <input type="number" step="0.01" min="0" name="costoUnitario" value={formData.costoUnitario} onChange={handleChange}
+                                            placeholder="Se actualiza con cada compra"
                                             className="w-full pl-7 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Precio venta *</label>
-                                    <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                                        <input required type="number" step="0.01" min="0" name="precioVenta" value={formData.precioVenta} onChange={handleChange}
-                                            className="w-full pl-7 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">Se actualiza automáticamente al registrar compras</p>
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">Stock mínimo *</label>
                                     <input required type="number" min="0" name="stockMinimo" value={formData.stockMinimo} onChange={handleChange}
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    <p className="text-xs text-gray-400 mt-1">Alerta cuando el stock baja de este nivel</p>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Nivel de reorden</label>
+                                    <input type="number" min="0" name="nivelReorden" value={formData.nivelReorden} onChange={handleChange}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    <p className="text-xs text-gray-400 mt-1">Cantidad a pedir cuando se activa la alerta</p>
                                 </div>
                             </div>
 
-                            {/* Margen en tiempo real */}
-                            <div className={`flex items-center justify-between px-4 py-3 rounded-lg border ${margen >= 30 ? 'bg-green-50 border-green-200' : margen >= 15 ? 'bg-amber-50 border-amber-200' : pVenta > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <p className="text-sm font-medium text-gray-700">Margen de ganancia</p>
-                                    <p className="text-xs text-gray-400">
-                                        {pVenta > 0 && pCompra > 0 ? `$${(pVenta - pCompra).toLocaleString('es-MX')} por ${formData.unidad}` : 'Ingresa los precios para calcular'}
-                                    </p>
+                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Días de reorden (tiempo de entrega)</label>
+                                    <input type="number" min="0" name="diasReorden" value={formData.diasReorden} onChange={handleChange}
+                                        placeholder="Ej: 7"
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    <p className="text-xs text-gray-400 mt-1">Días hábiles que tarda en llegar el pedido</p>
                                 </div>
-                                <p className={`text-2xl font-bold ${margenColor}`}>
-                                    {pVenta > 0 ? `${margen.toFixed(1)}%` : '—'}
-                                </p>
+                                {costoUnitario > 0 && (
+                                    <div className="flex items-end">
+                                        <div className="w-full bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+                                            <p className="text-xs text-blue-500 font-medium mb-1">Costo de reabastecimiento estimado</p>
+                                            <p className="text-xl font-bold text-blue-700">
+                                                ${(costoUnitario * (Number(formData.nivelReorden) || Number(formData.stockMinimo) || 0)).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
+                                            </p>
+                                            <p className="text-xs text-blue-400 mt-0.5">
+                                                {formData.nivelReorden || formData.stockMinimo} {formData.unidad} × ${costoUnitario.toLocaleString('es-MX')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
