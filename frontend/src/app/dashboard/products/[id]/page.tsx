@@ -101,7 +101,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const [pagina,setPagina]=useState(1);
     const POR_PAGINA=25;
 
-    const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true});
+    const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'pieza',imagen:null as string|null,activo:true,precioReferencia:''});
 
     useEffect(()=>{
         const load=async()=>{
@@ -178,7 +178,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         setSaving(true);setSaveError('');
         try{
             if(isNew){
-                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,categoriaId:editData.categoriaId,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo)||5,imagen:editData.imagen,activo:editData.activo})});
+                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,categoriaId:editData.categoriaId,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo)||5,imagen:editData.imagen,activo:editData.activo,precioCompra:editData.precioReferencia?Number(editData.precioReferencia):undefined})});
                 router.replace(`/dashboard/products/${created.id}`);
                 return;
             }
@@ -482,9 +482,25 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200">
-                                    <p className="text-xs text-gray-400 mb-1">Precio compra <span className="text-gray-300 text-xs">(última entrada)</span></p>
-                                    <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? `$${Number(ultimaEntrada.costoUnitario).toLocaleString()}` : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
+                                <div className={isNew ? '' : 'bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200'}>
+                                    {isNew ? (
+                                        <>
+                                            <label className="text-xs font-medium text-gray-700 block mb-1">Precio de referencia <span className="text-gray-400 font-normal">(opcional)</span></label>
+                                            <input
+                                                type="number" step="0.01" min="0"
+                                                value={editData.precioReferencia}
+                                                onChange={e => setEditData(p => ({ ...p, precioReferencia: e.target.value }))}
+                                                placeholder="Ej: 77.92"
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                            />
+                                            <p className="text-xs text-gray-400 mt-1">Se usará como precio base hasta que registres una compra.</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="text-xs text-gray-400 mb-1">Precio compra <span className="text-gray-300 text-xs">(última entrada)</span></p>
+                                            <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? `$${Number(ultimaEntrada.costoUnitario).toLocaleString()}` : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
+                                        </>
+                                    )}
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200">
                                     <p className="text-xs text-gray-400 mb-1">Precio venta <span className="text-gray-300 text-xs">(última salida)</span></p>

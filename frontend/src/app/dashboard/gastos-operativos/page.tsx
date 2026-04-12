@@ -29,6 +29,12 @@ type Gasto = {
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
 type Obra   = { id: string; nombre: string; status: string };
+type PlantillaResumen = {
+    id: string; numero: number;
+    fechaInicio: string | null; fechaFin: string | null;
+    status: string;
+    plantillaEquipos: { equipoId: string; equipo: { id: string; nombre: string; numeroEconomico: string | null } }[];
+};
 
 const CATEGORIAS: Record<string, { label: string; color: string }> = {
     LUBRICANTE:   { label: 'Lubricante',   color: 'bg-yellow-100 text-yellow-700' },
@@ -52,8 +58,9 @@ function GastoModal({
 }) {
     const hoy = new Date().toISOString().slice(0, 10);
     const [form, setForm] = useState({
-        equipoId:       '',
         obraId:         '',
+        plantillaId:    '',
+        equipoId:       '',
         fechaInicio:    hoy,
         categoria:      'OTRO',
         producto:       '',
@@ -66,6 +73,44 @@ function GastoModal({
     });
     const [saving, setSaving] = useState(false);
     const [error,  setError]  = useState('');
+
+    // Plantillas de la obra seleccionada
+    const [plantillas, setPlantillas] = useState<PlantillaResumen[]>([]);
+    const [loadingPlantillas, setLoadingPlantillas] = useState(false);
+
+    // Equipos filtrados por plantilla (o por obra si no hay plantilla)
+    const equiposFiltrados: Equipo[] = (() => {
+        if (form.plantillaId) {
+            const plt = plantillas.find(p => p.id === form.plantillaId);
+            return plt ? plt.plantillaEquipos.map(pe => pe.equipo) : [];
+        }
+        if (form.obraId) {
+            // todos los equipos de todas las plantillas de la obra (deduplicado)
+            const ids = new Set<string>();
+            const result: Equipo[] = [];
+            plantillas.forEach(p => p.plantillaEquipos.forEach(pe => {
+                if (!ids.has(pe.equipoId)) { ids.add(pe.equipoId); result.push(pe.equipo); }
+            }));
+            return result.length > 0 ? result : equipos;
+        }
+        return equipos;
+    })();
+
+    // Cargar plantillas cuando cambia la obra
+    useEffect(() => {
+        if (!form.obraId) { setPlantillas([]); setForm(f => ({ ...f, plantillaId: '', equipoId: '' })); return; }
+        setLoadingPlantillas(true);
+        fetchApi(`/obras/${form.obraId}`)
+            .then((obra: any) => setPlantillas(obra.plantillas ?? []))
+            .catch(() => setPlantillas([]))
+            .finally(() => setLoadingPlantillas(false));
+        setForm(f => ({ ...f, plantillaId: '', equipoId: '' }));
+    }, [form.obraId]);
+
+    // Reset equipo al cambiar plantilla
+    useEffect(() => {
+        setForm(f => ({ ...f, equipoId: '' }));
+    }, [form.plantillaId]);
 
     const total = form.cantidad && form.precioUnitario
         ? Number(form.cantidad) * Number(form.precioUnitario)
@@ -82,6 +127,12 @@ function GastoModal({
 
         setSaving(true); setError('');
         try {
+            // Incluir info de plantilla en notas si se seleccionó
+            const plt = plantillas.find(p => p.id === form.plantillaId);
+            const notasConPlantilla = plt
+                ? `[Plantilla ${plt.numero}]${form.notas ? ' ' + form.notas : ''}`
+                : form.notas;
+
             await fetchApi('/gastos-operativos', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -90,6 +141,7 @@ function GastoModal({
                     precioUnitario: Number(form.precioUnitario),
                     tipoCambio:     form.tipoCambio ? Number(form.tipoCambio) : null,
                     obraId:         form.obraId || null,
+                    notas:          notasConPlantilla || null,
                 }),
             });
             onSaved();
@@ -110,6 +162,8 @@ function GastoModal({
         </div>
     );
 
+    const fDate = (s: string) => new Date(s + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -119,31 +173,81 @@ function GastoModal({
                 </div>
 
                 <div className="px-6 py-5 space-y-4">
-                    {/* Equipo y obra */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Equipo *</label>
-                            <select value={form.equipoId} onChange={e => set('equipoId', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="">— Selecciona —</option>
-                                {equipos.map(eq => (
-                                    <option key={eq.id} value={eq.id}>
-                                        {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-600 mb-1">Obra (opcional)</label>
-                            <select value={form.obraId} onChange={e => set('obraId', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                <option value="">— Sin obra —</option>
-                                {obras.map(o => (
-                                    <option key={o.id} value={o.id}>{o.nombre}</option>
-                                ))}
-                            </select>
-                        </div>
+
+                    {/* ── PASO 1: Obra ── */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">1 · Obra (opcional)</label>
+                        <select value={form.obraId} onChange={e => set('obraId', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                            <option value="">— Sin obra —</option>
+                            {obras.map(o => (
+                                <option key={o.id} value={o.id}>{o.nombre}</option>
+                            ))}
+                        </select>
                     </div>
+
+                    {/* ── PASO 2: Plantilla (solo si hay obra) ── */}
+                    {form.obraId && (
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">2 · Plantilla (opcional)</label>
+                            {loadingPlantillas ? (
+                                <p className="text-xs text-gray-400 py-2">Cargando plantillas...</p>
+                            ) : plantillas.length === 0 ? (
+                                <p className="text-xs text-gray-400 italic py-2">Esta obra no tiene plantillas.</p>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {plantillas.map(p => {
+                                        const inicio = p.fechaInicio ? fDate(String(p.fechaInicio).slice(0, 10)) : null;
+                                        const fin    = p.fechaFin    ? fDate(String(p.fechaFin).slice(0, 10))    : null;
+                                        const rango  = inicio && fin ? `${inicio} – ${fin}` : inicio ?? '';
+                                        const checked = form.plantillaId === p.id;
+                                        return (
+                                            <label key={p.id}
+                                                className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                                                    checked ? 'bg-purple-50 border-purple-300' : 'border-gray-100 hover:border-gray-200'
+                                                }`}>
+                                                <input type="radio" name="plantillaId"
+                                                    checked={checked}
+                                                    onChange={() => set('plantillaId', checked ? '' : p.id)}
+                                                    className="accent-purple-600 flex-shrink-0" />
+                                                <div className="flex-1 flex items-center justify-between">
+                                                    <span className="text-sm font-semibold text-gray-700">Plantilla {p.numero}</span>
+                                                    <span className="text-xs text-gray-400">{rango}</span>
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                    {form.plantillaId && (
+                                        <button onClick={() => set('plantillaId', '')}
+                                            className="text-xs text-gray-400 hover:text-gray-600 underline">
+                                            Deseleccionar plantilla
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── PASO 3: Equipo ── */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                            {form.obraId ? '3 · Equipo *' : 'Equipo *'}
+                        </label>
+                        <select value={form.equipoId} onChange={e => set('equipoId', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                            <option value="">— Selecciona —</option>
+                            {equiposFiltrados.map(eq => (
+                                <option key={eq.id} value={eq.id}>
+                                    {eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {form.obraId && form.plantillaId && equiposFiltrados.length === 0 && (
+                            <p className="text-xs text-orange-500 mt-1">Esta plantilla no tiene equipos asignados.</p>
+                        )}
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-3" />
 
                     {/* Fecha y categoría */}
                     <div className="grid grid-cols-2 gap-3">
