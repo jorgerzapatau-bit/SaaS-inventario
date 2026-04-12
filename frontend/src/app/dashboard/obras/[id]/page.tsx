@@ -312,8 +312,12 @@ function CorteModal({
 
             let pLabel: string;
             if (r.plantillaNumero != null) {
-                const inicio = plantillaInfo?.fechaInicio ? fDate(plantillaInfo.fechaInicio) : null;
-                const fin    = plantillaInfo?.fechaFin    ? fDate(plantillaInfo.fechaFin)    : null;
+                const inicio = plantillaInfo?.fechaInicio
+                    ? fDate(String(plantillaInfo.fechaInicio).slice(0, 10))
+                    : null;
+                const fin = plantillaInfo?.fechaFin
+                    ? fDate(String(plantillaInfo.fechaFin).slice(0, 10))
+                    : null;
                 const rango  = inicio && fin ? ` · ${inicio} – ${fin}` : inicio ? ` · desde ${inicio}` : '';
                 pLabel = `Plantilla ${r.plantillaNumero}${rango}`;
             } else {

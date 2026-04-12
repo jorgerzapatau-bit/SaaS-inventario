@@ -46,6 +46,15 @@ export async function GET(req: NextRequest, { params }: Params) {
                 },
                 cortesFacturacion: {
                     orderBy: { numero: 'desc' },
+                    include: {
+                        corteRegistros: {
+                            include: {
+                                registro: {
+                                    select: { id: true, fecha: true, barrenos: true, metrosLineales: true },
+                                },
+                            },
+                        },
+                    },
                 },
                 _count: {
                     select: { registrosDiarios: true, cortesFacturacion: true },
@@ -124,6 +133,12 @@ export async function GET(req: NextRequest, { params }: Params) {
                 precioUnitario:    c.precioUnitario    ? Number(c.precioUnitario)    : null,
                 tipoCambio:        c.tipoCambio        ? Number(c.tipoCambio)        : null,
                 montoFacturado:    c.montoFacturado    ? Number(c.montoFacturado)    : null,
+                registros: (c.corteRegistros ?? []).map((cr: any) => ({
+                    id:             cr.registro.id,
+                    fecha:          cr.registro.fecha?.toISOString?.()?.slice(0, 10) ?? cr.registro.fecha,
+                    barrenos:       Number(cr.registro.barrenos),
+                    metrosLineales: Number(cr.registro.metrosLineales),
+                })),
             })),
             metricas: {
                 metrosPerforados,
