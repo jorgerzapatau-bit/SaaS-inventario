@@ -541,30 +541,35 @@ function PurchasesPageInner() {
                             </button>
                         </div>
                         <div className="px-6 py-5 space-y-5">
+                            {/* Proveedor + Fecha */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Building2 size={11}/> Proveedor</p>
-                                    <p className="text-sm font-semibold text-gray-800">{detalle.proveedor?.nombre || '—'}</p>
+                                    {detalle.proveedor?.nombre
+                                        ? <p className="text-sm font-semibold text-gray-800">{detalle.proveedor.nombre}</p>
+                                        : <p className="text-sm text-gray-400 italic">Sin proveedor</p>
+                                    }
                                     {detalle.proveedor?.telefono && <p className="text-xs text-gray-500 mt-0.5">{detalle.proveedor.telefono}</p>}
                                     {detalle.proveedor?.email   && <p className="text-xs text-gray-500">{detalle.proveedor.email}</p>}
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
                                     <p className="text-xs text-gray-400 mb-1 flex items-center gap-1"><Calendar size={11}/> Fecha</p>
                                     <p className="text-sm font-semibold text-gray-800">
-                                        {new Date(detalle.fecha).toLocaleDateString('es-MX', { dateStyle: 'long' })}
-                                    </p>
-                                    <p className="text-xs text-gray-400 mt-0.5">
-                                        {new Date(detalle.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                        {new Date(detalle.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                        {', '}
+                                        {new Date(detalle.fecha).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false })}
                                     </p>
                                 </div>
                             </div>
+
+                            {/* Productos recibidos */}
                             <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Productos recibidos</p>
-                                <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg overflow-hidden">
+                                <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
                                     {detalle.detalles?.map((d, i) => (
-                                        <div key={d.id ?? i} className="flex items-center justify-between px-4 py-3">
+                                        <div key={d.id ?? i} className="flex items-start justify-between px-4 py-3 bg-white">
                                             <div>
-                                                <p className="text-sm font-medium text-gray-800">{d.producto?.nombre}</p>
+                                                <p className="text-sm font-semibold text-gray-900">{d.producto?.nombre}</p>
                                                 <p className="text-xs text-gray-400 mt-0.5">
                                                     {d.producto?.sku}
                                                     {' · '}
@@ -573,12 +578,12 @@ function PurchasesPageInner() {
                                                     ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}/{d.producto?.unidad ?? 'u'}
                                                 </p>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-sm font-bold text-gray-800">
+                                            <div className="text-right shrink-0 ml-4">
+                                                <p className="text-sm font-bold text-gray-900">
                                                     ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                                    <span className="ml-1 text-[10px] font-normal text-gray-400">MXN</span>
+                                                    <span className="ml-1 text-[10px] font-semibold text-gray-400">MXN</span>
                                                 </p>
-                                                <p className="text-xs text-gray-400">
+                                                <p className="text-xs text-gray-400 mt-0.5">
                                                     {d.cantidad} × ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
                                                 </p>
                                             </div>
@@ -586,9 +591,11 @@ function PurchasesPageInner() {
                                     ))}
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+
+                            {/* Total */}
+                            <div className="flex justify-between items-end pt-3 border-t border-gray-200">
                                 <div>
-                                    <span className="text-sm font-semibold text-gray-700">Total facturado</span>
+                                    <p className="text-sm font-semibold text-gray-700">Total facturado</p>
                                     <p className="text-xs text-gray-400 mt-0.5">
                                         {detalle.detalles?.length ?? 0} {detalle.detalles?.length === 1 ? 'producto' : 'productos'}
                                         {' · '}
@@ -598,10 +605,10 @@ function PurchasesPageInner() {
                                     </p>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-xl font-bold text-gray-900">
+                                    <p className="text-2xl font-bold text-gray-900 leading-none">
                                         ${Number(detalle.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                    </span>
-                                    <p className="text-xs text-gray-400 mt-0.5">MXN</p>
+                                    </p>
+                                    <p className="text-xs font-semibold text-gray-400 mt-1">MXN</p>
                                 </div>
                             </div>
                         </div>
