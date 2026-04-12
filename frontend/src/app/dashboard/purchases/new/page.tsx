@@ -79,6 +79,7 @@ function NewPurchasePageInner() {
             const prod = products.find(p => p.id === value);
             newDetalles[index].precioUnitario = prod ? Number(prod.precioCompra ?? 0) : 0;
             newDetalles[index].moneda = prod?.moneda ?? "MXN";
+            newDetalles[index].unidad = prod?.unidad ?? "";
         }
         newDetalles[index][field] = value;
         setDetalles(newDetalles);
@@ -258,7 +259,7 @@ function NewPurchasePageInner() {
                         <div className="hidden sm:grid grid-cols-12 gap-4 pb-2 border-b border-gray-100 text-sm font-semibold text-gray-500">
                             <div className="col-span-5">Producto</div>
                             <div className="col-span-2">Costo Unitario</div>
-                            <div className="col-span-2">Cantidad {esAjuste ? "" : "recibida"}</div>
+                            <div className="col-span-2">Cantidad</div>
                             <div className="col-span-2 text-right">Costo Total</div>
                             <div className="col-span-1"></div>
                         </div>
@@ -285,10 +286,17 @@ function NewPurchasePageInner() {
                                     </div>
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
-                                    <input type="number" min="1" required value={detalle.cantidad}
-                                        onChange={e => handleDetalleChange(index, "cantidad", e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    />
+                                    <div className="flex items-center gap-1.5">
+                                        <input type="number" min="1" required value={detalle.cantidad}
+                                            onChange={e => handleDetalleChange(index, "cantidad", e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        />
+                                        {detalle.unidad && (
+                                            <span className="shrink-0 px-2 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-md border border-blue-100 uppercase">
+                                                {detalle.unidad}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="col-span-10 sm:col-span-2 text-right font-bold text-gray-700">
                                     ${(Number(detalle.precioUnitario) * Number(detalle.cantidad)).toFixed(2)}

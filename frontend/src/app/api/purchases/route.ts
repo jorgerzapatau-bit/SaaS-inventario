@@ -158,36 +158,37 @@ export async function POST(req: NextRequest) {
             const referencia = referenciaBody?.trim() || `AJ-${new Date().getFullYear()}-${Date.now()}`;
 
             await prisma.$transaction(async (tx) => {
-                await Promise.all(
-                    detalles.map(async (d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => {
-                        const cantidadNum = Number(d.cantidad);
-                        const costoNum    = Number(d.precioUnitario ?? 0);
-                        const detMoneda   = d.moneda === 'USD' ? 'USD' : monedaVal;
+                // IMPORTANTE: usar for...of en lugar de Promise.all dentro de $transaction.
+                // Prisma interactive transactions usan una sola conexión; Promise.all concurrente
+                // puede causar deadlock o ejecutar operaciones fuera del contexto transaccional.
+                for (const d of detalles as { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }[]) {
+                    const cantidadNum = Number(d.cantidad);
+                    const costoNum    = Number(d.precioUnitario ?? 0);
+                    const detMoneda   = d.moneda === 'USD' ? 'USD' : monedaVal;
 
-                        await tx.movimientoInventario.create({
-                            data: {
-                                empresaId,
-                                productoId:     d.productoId,
-                                almacenId:      targetAlmacenId,
-                                tipoMovimiento: 'AJUSTE_POSITIVO',
-                                cantidad:       cantidadNum,
-                                costoUnitario:  costoNum,
-                                moneda:         detMoneda,
-                                tipoCambio:     tipoCambioNum,
-                                referencia,
-                                notas:          notas || null,
-                                usuarioId,
-                                fecha:          fechaVal,
-                            },
-                        });
+                    await tx.movimientoInventario.create({
+                        data: {
+                            empresaId,
+                            productoId:     d.productoId,
+                            almacenId:      targetAlmacenId,
+                            tipoMovimiento: 'AJUSTE_POSITIVO',
+                            cantidad:       cantidadNum,
+                            costoUnitario:  costoNum,
+                            moneda:         detMoneda,
+                            tipoCambio:     tipoCambioNum,
+                            referencia,
+                            notas:          notas || null,
+                            usuarioId,
+                            fecha:          fechaVal,
+                        },
+                    });
 
-                        // Actualizar stockActual en el producto
-                        await tx.producto.update({
-                            where: { id: d.productoId },
-                            data:  { stockActual: { increment: cantidadNum } },
-                        });
-                    })
-                );
+                    // Actualizar stockActual en el producto
+                    await tx.producto.update({
+                        where: { id: d.productoId },
+                        data:  { stockActual: { increment: cantidadNum } },
+                    });
+                }
             });
 
             return Response.json({ ok: true, tipo: 'AJUSTE_POSITIVO', referencia }, { status: 201 });
@@ -234,34 +235,32 @@ export async function POST(req: NextRequest) {
 
             // Solo mover inventario si la compra está COMPLETADA
             if (statusFinal === 'COMPLETADA') {
-                await Promise.all(
-                    detalles.map(async (d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => {
-                        const detalleMoneda = d.moneda === 'USD' ? 'USD' : monedaVal;
+                for (const d of detalles as { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }[]) {
+                    const detalleMoneda = d.moneda === 'USD' ? 'USD' : monedaVal;
 
-                        await tx.movimientoInventario.create({
-                            data: {
-                                empresaId,
-                                productoId:     d.productoId,
-                                almacenId:      targetAlmacenId,
-                                tipoMovimiento: 'ENTRADA',
-                                cantidad:       Number(d.cantidad),
-                                costoUnitario:  Number(d.precioUnitario),
-                                moneda:         detalleMoneda,
-                                tipoCambio:     tipoCambioNum,
-                                proveedorId,
-                                compraId:       compra.id,
-                                referencia:     compra.referencia,
-                                usuarioId,
-                                fecha:          fechaVal,
-                            },
-                        });
+                    await tx.movimientoInventario.create({
+                        data: {
+                            empresaId,
+                            productoId:     d.productoId,
+                            almacenId:      targetAlmacenId,
+                            tipoMovimiento: 'ENTRADA',
+                            cantidad:       Number(d.cantidad),
+                            costoUnitario:  Number(d.precioUnitario),
+                            moneda:         detalleMoneda,
+                            tipoCambio:     tipoCambioNum,
+                            proveedorId,
+                            compraId:       compra.id,
+                            referencia:     compra.referencia,
+                            usuarioId,
+                            fecha:          fechaVal,
+                        },
+                    });
 
-                        await tx.producto.update({
-                            where: { id: d.productoId },
-                            data:  { stockActual: { increment: Number(d.cantidad) } },
-                        });
-                    })
-                );
+                    await tx.producto.update({
+                        where: { id: d.productoId },
+                        data:  { stockActual: { increment: Number(d.cantidad) } },
+                    });
+                }
             }
 
             return compra;
