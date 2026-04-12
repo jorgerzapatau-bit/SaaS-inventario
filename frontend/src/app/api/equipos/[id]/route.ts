@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const equipo = await prisma.equipo.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 _count: {
                     select: {
@@ -63,7 +63,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         } = await req.json();
 
         const equipo = await prisma.equipo.update({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             data: {
                 ...(nombre             !== undefined && { nombre }),
                 ...(modelo             !== undefined && { modelo }),
@@ -117,7 +117,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                 { status: 400 }
             );
 
-        await prisma.equipo.delete({ where: { id, empresaId: user.empresaId } });
+        await prisma.equipo.delete({ where: { id } });
         return Response.json({ message: 'Equipo eliminado correctamente' });
     } catch (error: unknown) {
         if ((error as { code?: string }).code === 'P2025')

@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const componente = await prisma.componente.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 equipoActual: { select: { id: true, nombre: true, numeroEconomico: true } },
                 historial: {
@@ -46,7 +46,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const { nombre, serie, tipo, notas } = await req.json();
 
         const componente = await prisma.componente.update({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             data: {
                 ...(nombre !== undefined && { nombre }),
                 ...(serie  !== undefined && { serie:  serie  || null }),
@@ -84,7 +84,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                 { status: 400 }
             );
 
-        await prisma.componente.delete({ where: { id, empresaId: user.empresaId } });
+        await prisma.componente.delete({ where: { id } });
         return Response.json({ message: 'Componente eliminado correctamente' });
     } catch (error: unknown) {
         if ((error as { code?: string }).code === 'P2025')

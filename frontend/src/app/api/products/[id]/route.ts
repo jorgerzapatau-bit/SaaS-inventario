@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const product = await prisma.producto.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: { categoria: true },
         });
         if (!product) return Response.json({ error: 'Producto no encontrado' }, { status: 404 });
@@ -44,7 +44,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
 
         const product = await prisma.producto.update({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             data: {
                 ...(nombre       !== undefined && { nombre }),
                 ...(categoriaId  !== undefined && { categoriaId }),
@@ -90,7 +90,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
             );
         }
 
-        await prisma.producto.delete({ where: { id, empresaId: user.empresaId } });
+        await prisma.producto.delete({ where: { id } });
         return Response.json({ message: 'Producto eliminado correctamente' });
     } catch (error: unknown) {
         if ((error as { code?: string }).code === 'P2003')

@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         const { id } = await params;
 
         const obra = await prisma.obra.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 cliente: { select: { nombre: true, telefono: true, email: true } },
                 obraEquipos: {
@@ -174,7 +174,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
         const obra = await prisma.$transaction(async (tx) => {
             const updated = await tx.obra.update({
-                where: { id, empresaId: user.empresaId },
+                where: { id },
                 data: {
                     ...(nombre            !== undefined && { nombre }),
                     ...(clienteId         !== undefined && { clienteId:         clienteId || null }),
@@ -248,7 +248,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
         // Verificar que la obra pertenece a esta empresa
         const obra = await prisma.obra.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
         });
         if (!obra)
             return Response.json({ error: 'Obra no encontrada' }, { status: 404 });

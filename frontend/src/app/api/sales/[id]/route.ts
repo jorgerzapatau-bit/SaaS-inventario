@@ -14,7 +14,7 @@ export async function GET(
 
     try {
         const salida = await prisma.salida.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 usuario:  { select: { nombre: true, email: true } },
                 detalles: {
@@ -89,7 +89,7 @@ export async function PUT(
 
         // Verificar que la salida existe y pertenece a la empresa
         const salidaExistente = await prisma.salida.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: { detalles: true },
         });
 

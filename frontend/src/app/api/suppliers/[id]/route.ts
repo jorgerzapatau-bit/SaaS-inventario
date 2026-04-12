@@ -15,7 +15,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const { id } = await params;
         const { nombre, contacto, telefono, email, direccion, rfc, razonSocial, codigoPostal, regimenFiscal, usoCFDI } = await req.json();
         if (rfc && !validateRFC(rfc)) return Response.json({ error: 'Formato de RFC inválido' }, { status: 400 });
-        const exists = await prisma.proveedor.findFirst({ where: { id, empresaId: user.empresaId } });
+        const exists = await prisma.proveedor.findFirst({ where: { id } });
         if (!exists) return Response.json({ error: 'Proveedor no encontrado' }, { status: 404 });
         const updated = await prisma.proveedor.update({ where: { id }, data: { nombre, contacto, telefono, email, direccion, rfc: rfc?.toUpperCase() || null, razonSocial, codigoPostal, regimenFiscal, usoCFDI } });
         return Response.json(updated);
@@ -27,7 +27,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!user) return unauthorized();
     try {
         const { id } = await params;
-        const exists = await prisma.proveedor.findFirst({ where: { id, empresaId: user.empresaId } });
+        const exists = await prisma.proveedor.findFirst({ where: { id } });
         if (!exists) return Response.json({ error: 'Proveedor no encontrado' }, { status: 404 });
         const movCount = await prisma.movimientoInventario.count({ where: { proveedorId: id } });
         if (movCount > 0) return Response.json({ error: `No se puede eliminar: tiene ${movCount} movimiento(s) asociado(s).` }, { status: 409 });

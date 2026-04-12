@@ -15,7 +15,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
 
         // Leer el gasto antes de eliminarlo para saber si hay que revertir stock
         const gasto = await prisma.gastoOperativo.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             select: {
                 tipoGasto:      true,
                 productoId:     true,
@@ -47,7 +47,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                     await tx.movimientoInventario.delete({ where: { id: movimiento.id } });
                     // 2. Restaurar el stock
                     await tx.producto.update({
-                        where: { id: gasto.productoId!, empresaId: user.empresaId },
+                        where: { id: gasto.productoId! },
                         data:  { stockActual: { increment: Number(movimiento.cantidad) } },
                     });
                 }

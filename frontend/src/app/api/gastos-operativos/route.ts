@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
 
             // Buscar el producto en el catálogo de la empresa
             const productoCatalogo = await prisma.producto.findFirst({
-                where: { id: productoId, empresaId: user.empresaId },
+                where: { id: productoId },
                 select: { nombre: true, unidad: true, precioCompra: true, stockActual: true },
             });
             if (!productoCatalogo)
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
 
                 // 3. Actualizar stockActual en el producto
                 await tx.producto.update({
-                    where: { id: productoId, empresaId: user.empresaId },
+                    where: { id: productoId },
                     data:  { stockActual: { decrement: cantidadNum } },
                 });
 

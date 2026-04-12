@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
 
                         // Actualizar stockActual en el producto
                         await tx.producto.update({
-                            where: { id: d.productoId, empresaId },
+                            where: { id: d.productoId },
                             data:  { stockActual: { increment: cantidadNum } },
                         });
                     })
@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
                         });
 
                         await tx.producto.update({
-                            where: { id: d.productoId, empresaId },
+                            where: { id: d.productoId },
                             data:  { stockActual: { increment: Number(d.cantidad) } },
                         });
                     })

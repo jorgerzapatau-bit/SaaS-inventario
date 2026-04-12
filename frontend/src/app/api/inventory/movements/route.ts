@@ -26,7 +26,7 @@ async function actualizarStock(
         : -cantidad;
 
     await tx.producto.update({
-        where: { id: productoId, empresaId },
+        where: { id: productoId },
         data: { stockActual: { increment: delta } },
     });
 }

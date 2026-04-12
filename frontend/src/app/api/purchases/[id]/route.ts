@@ -22,7 +22,7 @@ export async function PATCH(
     try {
         // Verificar que la compra exista y pertenezca a la empresa
         const compra = await prisma.compra.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 detalles: true,
             },
@@ -85,7 +85,7 @@ export async function PATCH(
                             },
                         });
                         await tx.producto.update({
-                            where: { id: d.productoId, empresaId: user.empresaId },
+                            where: { id: d.productoId },
                             data:  { stockActual: { increment: Number(d.cantidad) } },
                         });
                     })
@@ -129,7 +129,7 @@ export async function PUT(
 
         // Verificar que la compra existe, pertenece a la empresa y está PENDIENTE
         const compraExistente = await prisma.compra.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
         });
 
         if (!compraExistente) {

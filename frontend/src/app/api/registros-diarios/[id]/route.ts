@@ -11,7 +11,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
         const registro = await prisma.registroDiario.findFirst({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             include: {
                 equipo:    { select: { id: true, nombre: true, numeroEconomico: true, hodometroInicial: true } },
                 obra:      { select: { id: true, nombre: true } },
@@ -71,7 +71,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         }
 
         const registro = await prisma.registroDiario.update({
-            where: { id, empresaId: user.empresaId },
+            where: { id },
             data: {
                 ...(horometroInicio     !== undefined && { horometroInicio:    Number(horometroInicio) }),
                 ...(horometroFin        !== undefined && { horometroFin:       Number(horometroFin) }),
@@ -134,7 +134,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                 { status: 400 }
             );
 
-        await prisma.registroDiario.delete({ where: { id, empresaId: user.empresaId } });
+        await prisma.registroDiario.delete({ where: { id } });
         return Response.json({ message: 'Registro eliminado correctamente' });
     } catch (error: unknown) {
         if ((error as { code?: string }).code === 'P2025')

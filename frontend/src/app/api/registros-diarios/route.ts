@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
             );
 
         const equipo = await prisma.equipo.findFirst({
-            where: { id: equipoId, empresaId: user.empresaId },
+            where: { id: equipoId },
         });
         if (!equipo)
             return Response.json({ error: 'Equipo no encontrado' }, { status: 404 });
@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
             });
 
             await tx.equipo.update({
-                where: { id: equipoId, empresaId: user.empresaId },
+                where: { id: equipoId },
                 data:  { hodometroInicial: Number(horometroFin) },
             });
 
@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
                         });
 
                         await tx.producto.update({
-                            where: { id: productoDiesel.id, empresaId: user.empresaId },
+                            where: { id: productoDiesel.id },
                             data:  { stockActual: { decrement: litrosDieselNum } },
                         });
                     }
