@@ -107,41 +107,105 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/purchases ──────────────────────────────────────────────────────
-// Crea una orden de compra y actualiza stockActual si status = COMPLETADA.
-// Acepta moneda (MXN | USD) y tipoCambio por detalle y a nivel de compra.
+// Maneja dos flujos distintos según el campo `tipo`:
+//
+//   tipo = "COMPRA"          → requiere proveedorId, crea Compra + DetalleCompra + Movimientos
+//   tipo = "AJUSTE_POSITIVO" → NO requiere proveedorId, crea solo Movimientos AJUSTE_POSITIVO
+//
 export async function POST(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
         const {
-            proveedorId, detalles, total,
-            almacenId, status,
-            moneda, tipoCambio,
+            tipo = 'COMPRA',
+            proveedorId,
+            detalles,
+            total,
+            almacenId,
+            status,
+            moneda,
+            tipoCambio,
+            referencia: referenciaBody,
             notas,
         } = await req.json();
 
-        if (!proveedorId || !detalles?.length)
-            return Response.json({ error: 'proveedorId y detalles son requeridos' }, { status: 400 });
+        // Validación común
+        if (!detalles?.length)
+            return Response.json({ error: 'Se requiere al menos un producto' }, { status: 400 });
+        if (detalles.some((d: any) => !d.productoId || Number(d.cantidad) <= 0))
+            return Response.json({ error: 'Todos los productos deben tener cantidad mayor a 0' }, { status: 400 });
 
-        const empresaId    = user.empresaId;
-        const usuarioId    = user.id;
-        const monedaVal    = moneda === 'USD' ? 'USD' : 'MXN';
+        const empresaId     = user.empresaId;
+        const usuarioId     = user.id;
+        const monedaVal     = moneda === 'USD' ? 'USD' : 'MXN';
         const tipoCambioNum = tipoCambio != null ? Number(tipoCambio) : null;
-        const statusFinal: 'PENDIENTE' | 'COMPLETADA' = status === 'COMPLETADA' ? 'COMPLETADA' : 'PENDIENTE';
 
-        // Resolver almacén
+        // Resolver almacén (usa el primero de la empresa si no se especifica)
         let targetAlmacenId = almacenId;
         if (!targetAlmacenId) {
             const first = await prisma.almacen.findFirst({ where: { empresaId } });
-            if (!first) return Response.json({ error: 'No hay almacenes registrados' }, { status: 400 });
+            if (!first)
+                return Response.json({ error: 'No hay almacenes registrados. Crea uno primero.' }, { status: 400 });
             targetAlmacenId = first.id;
         }
 
+        // ── FLUJO AJUSTE POSITIVO ─────────────────────────────────────────────
+        // No necesita proveedor ni crear una Compra formal.
+        // Crea movimientos AJUSTE_POSITIVO y actualiza stockActual directamente.
+        if (tipo === 'AJUSTE_POSITIVO') {
+            const referencia = referenciaBody?.trim() || `AJ-${new Date().getFullYear()}-${Date.now()}`;
+
+            await prisma.$transaction(async (tx) => {
+                await Promise.all(
+                    detalles.map(async (d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => {
+                        const cantidadNum = Number(d.cantidad);
+                        const costoNum    = Number(d.precioUnitario ?? 0);
+                        const detMoneda   = d.moneda === 'USD' ? 'USD' : monedaVal;
+
+                        await tx.movimientoInventario.create({
+                            data: {
+                                empresaId,
+                                productoId:     d.productoId,
+                                almacenId:      targetAlmacenId,
+                                tipoMovimiento: 'AJUSTE_POSITIVO',
+                                cantidad:       cantidadNum,
+                                costoUnitario:  costoNum,
+                                moneda:         detMoneda,
+                                tipoCambio:     tipoCambioNum,
+                                referencia,
+                                notas:          notas || null,
+                                usuarioId,
+                            },
+                        });
+
+                        // Actualizar stockActual en el producto
+                        await tx.producto.update({
+                            where: { id: d.productoId, empresaId },
+                            data:  { stockActual: { increment: cantidadNum } },
+                        });
+                    })
+                );
+            });
+
+            return Response.json({ ok: true, tipo: 'AJUSTE_POSITIVO', referencia }, { status: 201 });
+        }
+
+        // ── FLUJO COMPRA FORMAL ───────────────────────────────────────────────
+        // Requiere proveedorId. Crea Compra + DetalleCompra.
+        // Solo mueve inventario si status === 'COMPLETADA'.
+        if (!proveedorId)
+            return Response.json({ error: 'Debes seleccionar un proveedor para registrar una compra.' }, { status: 400 });
+
+        const statusFinal: 'PENDIENTE' | 'COMPLETADA' = status === 'COMPLETADA' ? 'COMPLETADA' : 'PENDIENTE';
+
         const result = await prisma.$transaction(async (tx) => {
-            // Generar referencia automática
-            const year      = new Date().getFullYear();
-            const count     = await tx.compra.count({ where: { empresaId } });
-            const referencia = 'OC-' + year + '-' + String(count + 1).padStart(4, '0');
+            // Generar referencia automática si no viene
+            let referencia = referenciaBody?.trim();
+            if (!referencia) {
+                const year  = new Date().getFullYear();
+                const count = await tx.compra.count({ where: { empresaId } });
+                referencia  = 'OC-' + year + '-' + String(count + 1).padStart(4, '0');
+            }
 
             const compra = await tx.compra.create({
                 data: {
@@ -154,12 +218,7 @@ export async function POST(req: NextRequest) {
                     status:     statusFinal,
                     notas:      notas || null,
                     detalles: {
-                        create: detalles.map((d: {
-                            productoId: string;
-                            cantidad: number;
-                            precioUnitario: number;
-                            moneda?: string;
-                        }) => ({
+                        create: detalles.map((d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => ({
                             productoId:     d.productoId,
                             cantidad:       Number(d.cantidad),
                             precioUnitario: Number(d.precioUnitario),
@@ -169,15 +228,10 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // Solo mover inventario si la compra está COMPLETADA (productos físicamente recibidos)
+            // Solo mover inventario si la compra está COMPLETADA
             if (statusFinal === 'COMPLETADA') {
                 await Promise.all(
-                    detalles.map(async (d: {
-                        productoId: string;
-                        cantidad: number;
-                        precioUnitario: number;
-                        moneda?: string;
-                    }) => {
+                    detalles.map(async (d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => {
                         const detalleMoneda = d.moneda === 'USD' ? 'USD' : monedaVal;
 
                         await tx.movimientoInventario.create({
@@ -192,12 +246,11 @@ export async function POST(req: NextRequest) {
                                 tipoCambio:     tipoCambioNum,
                                 proveedorId,
                                 compraId:       compra.id,
-                                referencia,
+                                referencia:     compra.referencia,
                                 usuarioId,
                             },
                         });
 
-                        // ── Actualizar stockActual ──
                         await tx.producto.update({
                             where: { id: d.productoId, empresaId },
                             data:  { stockActual: { increment: Number(d.cantidad) } },
@@ -210,8 +263,9 @@ export async function POST(req: NextRequest) {
         });
 
         return Response.json(result, { status: 201 });
+
     } catch (error) {
         console.error(error);
-        return Response.json({ error: 'Error al registrar la compra' }, { status: 500 });
+        return Response.json({ error: 'Error al registrar la entrada' }, { status: 500 });
     }
 }

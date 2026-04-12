@@ -102,6 +102,7 @@ function NewPurchasePageInner() {
                 method: "POST",
                 body: JSON.stringify({
                     tipo:        formData.tipo,
+                    referencia:  formData.referencia || undefined,
                     proveedorId: formData.proveedorId || undefined,
                     moneda:      formData.moneda,
                     tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
