@@ -49,7 +49,7 @@ function NewPurchasePageInner() {
                     setDetalles([{
                         productoId,
                         cantidad: 1,
-                        precioUnitario: prod ? Number(prod.ultimoPrecioCompra ?? 0) : 0,
+                        precioUnitario: prod ? Number(prod.precioCompra ?? 0) : 0,
                     }]);
                 }
             })
@@ -107,7 +107,7 @@ function NewPurchasePageInner() {
                     proveedorId: formData.proveedorId || undefined,
                     moneda:      formData.moneda,
                     tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
-                    fecha:       formData.fecha ? new Date(formData.fecha + "T12:00:00").toISOString() : undefined,
+                    fecha:       formData.fecha ? new Date(formData.fecha + "T12:00:00Z").toISOString() : undefined,
                     detalles:    detalles.map(d => ({
                         productoId:     d.productoId,
                         cantidad:       Number(d.cantidad),
