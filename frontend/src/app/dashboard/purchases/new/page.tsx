@@ -90,11 +90,15 @@ function NewPurchasePageInner() {
 
     const total = detalles.reduce((acc, d) => acc + Number(d.precioUnitario) * Number(d.cantidad), 0);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async () => {
         setLoading(true);
         setError("");
         try {
+            // Validaciones manuales (ya no dependemos del HTML del form nativo)
+            if (!formData.referencia?.trim())
+                throw new Error("La referencia (Folio/Ticket) es obligatoria.");
+            if (!formData.fecha)
+                throw new Error("La fecha de operación es obligatoria.");
             if (proveedorRequerido && !formData.proveedorId)
                 throw new Error("Debes seleccionar un proveedor para registrar una compra.");
             if (detalles.some(d => !d.productoId || Number(d.cantidad) <= 0))
@@ -160,7 +164,7 @@ function NewPurchasePageInner() {
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-6">
 
                 {/* ── Información General ── */}
                 <Card>
@@ -181,7 +185,7 @@ function NewPurchasePageInner() {
                         {/* Referencia — siempre visible */}
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-gray-700">Referencia (Folio/Ticket) *</label>
-                            <input required type="text" name="referencia" value={formData.referencia} onChange={handleChange}
+                            <input type="text" name="referencia" value={formData.referencia} onChange={handleChange}
                                 placeholder={esAjuste ? "Ej: AJUSTE-2026-001" : "Ej: COMPRA-0001"}
                                 className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                             />
@@ -190,7 +194,7 @@ function NewPurchasePageInner() {
                         {/* Fecha de operación — siempre visible */}
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-gray-700">Fecha de operación *</label>
-                            <input required type="date" name="fecha" value={formData.fecha} onChange={handleChange}
+                            <input type="date" name="fecha" value={formData.fecha} onChange={handleChange}
                                 className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                             />
                         </div>
@@ -203,7 +207,7 @@ function NewPurchasePageInner() {
                                     Proveedor
                                     <span className="text-red-500 text-xs font-normal ml-1">* obligatorio</span>
                                 </label>
-                                <select name="proveedorId" value={formData.proveedorId} onChange={handleChange} required
+                                <select name="proveedorId" value={formData.proveedorId} onChange={handleChange}
                                     className={`w-full px-4 py-2 bg-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20
                                         ${!formData.proveedorId ? "border-blue-300 bg-blue-50/30" : "border-gray-200"}`}>
                                     <option value="">-- Seleccionar Proveedor --</option>
@@ -267,7 +271,7 @@ function NewPurchasePageInner() {
                         {detalles.map((detalle, index) => (
                             <div key={index} className="grid grid-cols-12 gap-4 items-center mb-4 sm:mb-0">
                                 <div className="col-span-12 sm:col-span-5">
-                                    <select required value={detalle.productoId}
+                                    <select value={detalle.productoId}
                                         onChange={e => handleDetalleChange(index, "productoId", e.target.value)}
                                         className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                                         <option value="">-- Selecciona Producto --</option>
@@ -279,7 +283,7 @@ function NewPurchasePageInner() {
                                 <div className="col-span-6 sm:col-span-2">
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                                        <input type="number" step="0.01" required value={detalle.precioUnitario}
+                                        <input type="number" step="0.01" value={detalle.precioUnitario}
                                             onChange={e => handleDetalleChange(index, "precioUnitario", e.target.value)}
                                             className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                                         />
@@ -287,7 +291,7 @@ function NewPurchasePageInner() {
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
                                     <div className="flex items-center gap-1.5">
-                                        <input type="number" min="1" required value={detalle.cantidad}
+                                        <input type="number" min="1" value={detalle.cantidad}
                                             onChange={e => handleDetalleChange(index, "cantidad", e.target.value)}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                                         />
@@ -329,14 +333,17 @@ function NewPurchasePageInner() {
                         className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors">
                         Cancelar
                     </button>
-                    <button type="submit" disabled={loading}
+                    <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={loading}
                         className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70 shadow-sm">
                         {loading ? "Guardando..." : (
                             <><Save size={18}/> {labelBoton()}</>
                         )}
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
     );
 }
