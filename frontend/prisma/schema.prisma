@@ -147,6 +147,7 @@ model Producto {
   detallesCompra  DetalleCompra[]
   detallesSalida  DetalleSalida[]
   movimientos     MovimientoInventario[]
+  gastosOperativos GastoOperativo[]      @relation("GastosProducto")
   categoria       Categoria              @relation(fields: [categoriaId], references: [id])
   empresa         Empresa                @relation(fields: [empresaId], references: [id])
   equipo          Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
@@ -363,6 +364,7 @@ model PlantillaObra {
 
   registrosDiarios  RegistroDiario[]
   plantillaEquipos  PlantillaEquipo[]
+  gastosOperativos  GastoOperativo[]
 
   @@unique([obraId, numero])
   @@index([obraId])
@@ -573,8 +575,12 @@ model GastoOperativo {
   semanaNum      Int
   anoNum         Int
   fechaInicio    DateTime?       @db.Date
+  // NUEVO: distingue si es consumo de almacén o gasto externo
+  tipoGasto      TipoGasto       @default(EXTERNO)
   categoria      CategoriaGasto? @default(OTRO)
   producto       String
+  // NUEVO: FK al catálogo (solo se llena cuando tipoGasto = INSUMO)
+  productoId     String?
   unidad         String          @default("pza")
   cantidad       Decimal         @default(0) @db.Decimal
   precioUnitario Decimal         @default(0) @db.Decimal
@@ -582,17 +588,27 @@ model GastoOperativo {
   moneda         Moneda?         @default(MXN)
   tipoCambio     Decimal?        @db.Decimal
   obraId         String?
+  // NUEVO: FK real a la plantilla (reemplaza el texto "[Plantilla N]" en notas)
+  plantillaId    String?
   notas          String?
   createdAt      DateTime        @default(now()) @db.Timestamp(6)
   updatedAt      DateTime        @default(now()) @updatedAt @db.Timestamp(6)
   empresa        Empresa         @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   equipo         Equipo          @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   obra           Obra?           @relation(fields: [obraId], references: [id], onUpdate: NoAction)
+  // NUEVO: relación al producto del catálogo
+  productoRef    Producto?       @relation("GastosProducto", fields: [productoId], references: [id], onUpdate: NoAction)
+  // NUEVO: relación real a la plantilla
+  plantilla      PlantillaObra?  @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
 
-  @@unique([equipoId, semanaNum, anoNum, producto], map: "GastoOperativo_equipo_semana_producto_idx")
+  // Constraint relajado: permite el mismo producto varias veces en la semana (ej: compras en días distintos)
+  // Se distinguen por fechaInicio + createdAt
+  @@index([equipoId, semanaNum, anoNum])
   @@index([empresaId])
   @@index([equipoId])
   @@index([obraId])
+  @@index([productoId])
+  @@index([plantillaId])
 }
 
 // =============================================================================
@@ -711,4 +727,9 @@ enum CategoriaGasto {
   VEHICULO
   RENTA_EQUIPO
   OTRO
+}
+
+enum TipoGasto {
+  INSUMO    // Consumo de producto del almacén → descuenta stock
+  EXTERNO   // Gasto externo, servicio o compra sin pasar por inventario
 }
