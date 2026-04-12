@@ -65,11 +65,11 @@ export async function PATCH(
                 },
             });
 
-            // Si se completa, generar las entradas en el kardex por cada producto
+            // Si se completa, generar las entradas en el kardex y actualizar stockActual
             if (status === 'COMPLETADA' && targetAlmacenId) {
                 await Promise.all(
-                    compra.detalles.map((d) =>
-                        tx.movimientoInventario.create({
+                    compra.detalles.map(async (d) => {
+                        await tx.movimientoInventario.create({
                             data: {
                                 empresaId:      user.empresaId,
                                 productoId:     d.productoId,
@@ -81,9 +81,14 @@ export async function PATCH(
                                 compraId:       compra.id,
                                 referencia:     compra.referencia ?? undefined,
                                 usuarioId:      user.id,
+                                fecha:          compra.fecha,
                             },
-                        })
-                    )
+                        });
+                        await tx.producto.update({
+                            where: { id: d.productoId, empresaId: user.empresaId },
+                            data:  { stockActual: { increment: Number(d.cantidad) } },
+                        });
+                    })
                 );
             }
 

@@ -28,6 +28,7 @@ function NewPurchasePageInner() {
         estado:      "PENDIENTE",
         moneda:      "MXN",
         tipoCambio:  "",
+        fecha:       new Date().toISOString().slice(0, 10), // YYYY-MM-DD
     });
 
     const [detalles, setDetalles] = useState<any[]>([
@@ -106,6 +107,7 @@ function NewPurchasePageInner() {
                     proveedorId: formData.proveedorId || undefined,
                     moneda:      formData.moneda,
                     tipoCambio:  formData.tipoCambio ? Number(formData.tipoCambio) : null,
+                    fecha:       formData.fecha ? new Date(formData.fecha + "T12:00:00").toISOString() : undefined,
                     detalles:    detalles.map(d => ({
                         productoId:     d.productoId,
                         cantidad:       Number(d.cantidad),
@@ -180,6 +182,14 @@ function NewPurchasePageInner() {
                             <label className="text-sm font-semibold text-gray-700">Referencia (Folio/Ticket) *</label>
                             <input required type="text" name="referencia" value={formData.referencia} onChange={handleChange}
                                 placeholder={esAjuste ? "Ej: AJUSTE-2026-001" : "Ej: COMPRA-0001"}
+                                className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                            />
+                        </div>
+
+                        {/* Fecha de operación — siempre visible */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-semibold text-gray-700">Fecha de operación *</label>
+                            <input required type="date" name="fecha" value={formData.fecha} onChange={handleChange}
                                 className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                             />
                         </div>
@@ -261,7 +271,7 @@ function NewPurchasePageInner() {
                                         className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                                         <option value="">-- Selecciona Producto --</option>
                                         {products.map(p => (
-                                            <option key={p.id} value={p.id}>{p.sku} - {p.nombre}</option>
+                                            <option key={p.id} value={p.id}>{p.sku} - {p.nombre} ({p.unidad})</option>
                                         ))}
                                     </select>
                                 </div>

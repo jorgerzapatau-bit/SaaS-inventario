@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
             tipoCambio,
             referencia: referenciaBody,
             notas,
+            fecha: fechaBody,
         } = await req.json();
 
         // Validación común
@@ -139,6 +140,7 @@ export async function POST(req: NextRequest) {
         const usuarioId     = user.id;
         const monedaVal     = moneda === 'USD' ? 'USD' : 'MXN';
         const tipoCambioNum = tipoCambio != null ? Number(tipoCambio) : null;
+        const fechaVal      = fechaBody ? new Date(fechaBody) : new Date();
 
         // Resolver almacén (usa el primero de la empresa si no se especifica)
         let targetAlmacenId = almacenId;
@@ -175,6 +177,7 @@ export async function POST(req: NextRequest) {
                                 referencia,
                                 notas:          notas || null,
                                 usuarioId,
+                                fecha:          fechaVal,
                             },
                         });
 
@@ -217,6 +220,7 @@ export async function POST(req: NextRequest) {
                     referencia,
                     status:     statusFinal,
                     notas:      notas || null,
+                    fecha:      fechaVal,
                     detalles: {
                         create: detalles.map((d: { productoId: string; cantidad: number; precioUnitario: number; moneda?: string }) => ({
                             productoId:     d.productoId,
@@ -248,6 +252,7 @@ export async function POST(req: NextRequest) {
                                 compraId:       compra.id,
                                 referencia:     compra.referencia,
                                 usuarioId,
+                                fecha:          fechaVal,
                             },
                         });
 

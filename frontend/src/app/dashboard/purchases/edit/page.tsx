@@ -231,7 +231,7 @@ function EditPurchasePageInner() {
                                     >
                                         <option value="">-- Selecciona Producto --</option>
                                         {products.map((p) => (
-                                            <option key={p.id} value={p.id}>{p.sku} - {p.nombre}</option>
+                                            <option key={p.id} value={p.id}>{p.sku} - {p.nombre} ({p.unidad})</option>
                                         ))}
                                     </select>
                                 </div>
