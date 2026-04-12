@@ -93,8 +93,14 @@ function PurchasesPageInner() {
     useEffect(() => {
         setLoading(true);
         fetchApi('/purchases')
-            .then(setCompras)
-            .catch((err: any) => setError(err.message || 'Error al cargar compras'))
+            .then(data => {
+                console.log('✅ Compras recibidas:', data?.length, data);
+                setCompras(data);
+            })
+            .catch((err: any) => {
+                console.error('❌ Error al cargar compras:', err);
+                setError(err.message || 'Error al cargar compras');
+            })
             .finally(() => setLoading(false));
     }, [searchParams.toString()]);
 
@@ -407,6 +413,11 @@ function PurchasesPageInner() {
                                             <button onClick={resetFiltros} className="mt-2 text-sm text-blue-500 hover:underline cursor-pointer">
                                                 Limpiar filtros
                                             </button>
+                                        )}
+                                        {!busqueda && !hayFiltros && (
+                                            <p className="mt-2 text-xs text-gray-400">
+                                                Si acabas de registrar una compra, abre la consola del navegador (F12) y revisa la pestaña <strong>Console</strong> para ver el resultado del fetch.
+                                            </p>
                                         )}
                                     </td>
                                 </tr>

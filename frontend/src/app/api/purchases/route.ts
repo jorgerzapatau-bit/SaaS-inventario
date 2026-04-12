@@ -28,12 +28,15 @@ export async function GET(req: NextRequest) {
         });
 
         // Entradas registradas directamente (sin orden de compra formal)
+        // Incluye ENTRADA (con proveedor) y AJUSTE_POSITIVO
         const entradasHuerfanas = await prisma.movimientoInventario.findMany({
             where: {
-                empresaId:      user.empresaId,
-                tipoMovimiento: 'ENTRADA',
-                proveedorId:    { not: null },
-                compraId:       null,
+                empresaId: user.empresaId,
+                compraId:  null,
+                OR: [
+                    { tipoMovimiento: 'ENTRADA',         proveedorId: { not: null } },
+                    { tipoMovimiento: 'AJUSTE_POSITIVO' },
+                ],
             },
             orderBy: { fecha: 'desc' },
             include: {
@@ -49,7 +52,7 @@ export async function GET(req: NextRequest) {
             empresaId:   m.empresaId,
             proveedorId: m.proveedorId,
             proveedor:   m.proveedor,
-            referencia:  m.referencia || 'Entrada directa',
+            referencia:  m.referencia || (m.tipoMovimiento === 'AJUSTE_POSITIVO' ? 'Ajuste positivo' : 'Entrada directa'),
             fecha:       m.fecha,
             total:       Number(m.costoUnitario) * Number(m.cantidad),
             moneda:      m.moneda,
@@ -58,6 +61,7 @@ export async function GET(req: NextRequest) {
             createdAt:   m.createdAt,
             updatedAt:   m.createdAt,
             esHuerfana:  true,
+            tipoMovimiento: m.tipoMovimiento,
             detalles: [{
                 id:             m.id,
                 compraId:       m.id,
