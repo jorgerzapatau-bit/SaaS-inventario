@@ -104,6 +104,8 @@ function NewPurchasePageInner() {
                 throw new Error("Debes seleccionar un proveedor para registrar una compra.");
             if (detalles.some(d => !d.productoId || Number(d.cantidad) <= 0))
                 throw new Error("Por favor completa correctamente todas las líneas.");
+            if (formData.moneda === 'USD' && !formData.tipoCambio)
+                throw new Error("Debes ingresar el tipo de cambio (USD → MXN) para registrar en dólares.");
 
             const payload = {
                 tipo:        formData.tipo,
@@ -406,6 +408,12 @@ function NewPurchasePageInner() {
                                         {formData.moneda}
                                     </span>
                                 </div>
+                                {formData.moneda === 'USD' && formData.tipoCambio && (
+                                    <p className="text-xs text-blue-500 mt-1">
+                                        ≈ ${(total * Number(formData.tipoCambio)).toLocaleString('es-MX', { maximumFractionDigits: 2 })} MXN
+                                        <span className="text-gray-400 ml-1">(TC: ${formData.tipoCambio})</span>
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </CardContent>

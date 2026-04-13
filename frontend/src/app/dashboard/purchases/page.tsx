@@ -14,6 +14,7 @@ interface DetalleCompra {
     producto: { nombre: string; sku: string; unidad: string };
     cantidad: number;
     precioUnitario: number | string;
+    moneda?: string;
 }
 
 interface Compra {
@@ -23,6 +24,8 @@ interface Compra {
     referencia: string;
     fecha: string;
     total: number | string;
+    moneda?: string;
+    tipoCambio?: number | null;
     status: 'PENDIENTE' | 'COMPLETADA' | 'CANCELADA';
     esHuerfana: boolean;
     detalles: DetalleCompra[];
@@ -465,7 +468,12 @@ function PurchasesPageInner() {
                                             </td>
                                             <td className="px-4 py-3 text-sm font-bold text-gray-800 whitespace-nowrap">
                                                 ${Number(compra.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                                <span className="ml-1 text-[10px] font-normal text-gray-400">MXN</span>
+                                                <span className="ml-1 text-[10px] font-normal text-gray-400">{compra.moneda ?? 'MXN'}</span>
+                                                {compra.moneda === 'USD' && compra.tipoCambio && (
+                                                    <p className="text-[10px] text-gray-400 font-normal">
+                                                        ≈ ${(Number(compra.total) * compra.tipoCambio).toLocaleString('es-MX', { maximumFractionDigits: 0 })} MXN
+                                                    </p>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${st.cls}`}>
@@ -527,7 +535,7 @@ function PurchasesPageInner() {
                                         {statusConfig[detalle.status]?.label}
                                     </span>
                                     <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-50 text-blue-600 border border-blue-100">
-                                        MXN
+                                        {detalle.moneda ?? 'MXN'}
                                     </span>
                                 </div>
                                 {detalle.esHuerfana && (
@@ -576,16 +584,23 @@ function PurchasesPageInner() {
                                                     <span className="font-semibold text-gray-700">{d.cantidad} {d.producto?.unidad ?? 'uds'}</span>
                                                     {' a '}
                                                     ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}/{d.producto?.unidad ?? 'u'}
+                                                    {' '}
+                                                    <span className="font-semibold">{d.moneda ?? detalle.moneda ?? 'MXN'}</span>
                                                 </p>
                                             </div>
                                             <div className="text-right shrink-0 ml-4">
                                                 <p className="text-sm font-bold text-gray-900">
                                                     ${(Number(d.precioUnitario) * d.cantidad).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
-                                                    <span className="ml-1 text-[10px] font-semibold text-gray-400">MXN</span>
+                                                    <span className="ml-1 text-[10px] font-semibold text-gray-400">{d.moneda ?? detalle.moneda ?? 'MXN'}</span>
                                                 </p>
                                                 <p className="text-xs text-gray-400 mt-0.5">
                                                     {d.cantidad} × ${Number(d.precioUnitario).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
                                                 </p>
+                                                {(d.moneda === 'USD' || detalle.moneda === 'USD') && detalle.tipoCambio && (
+                                                    <p className="text-[10px] text-blue-500 mt-0.5">
+                                                        ≈ ${(Number(d.precioUnitario) * d.cantidad * detalle.tipoCambio).toLocaleString('es-MX', { maximumFractionDigits: 0 })} MXN
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -608,7 +623,13 @@ function PurchasesPageInner() {
                                     <p className="text-2xl font-bold text-gray-900 leading-none">
                                         ${Number(detalle.total).toLocaleString('es-MX', { maximumFractionDigits: 2 })}
                                     </p>
-                                    <p className="text-xs font-semibold text-gray-400 mt-1">MXN</p>
+                                    <p className="text-xs font-semibold text-gray-400 mt-1">{detalle.moneda ?? 'MXN'}</p>
+                                    {detalle.moneda === 'USD' && detalle.tipoCambio && (
+                                        <p className="text-xs text-blue-500 mt-0.5">
+                                            ≈ ${(Number(detalle.total) * detalle.tipoCambio).toLocaleString('es-MX', { maximumFractionDigits: 0 })} MXN
+                                            <span className="text-gray-400"> (TC: ${detalle.tipoCambio})</span>
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>
