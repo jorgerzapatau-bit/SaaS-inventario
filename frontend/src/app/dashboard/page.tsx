@@ -216,6 +216,13 @@ export default function DashboardPage() {
     // último registro diario para mostrar en el panel
     const ultimoRegistro = registros[0] ?? null;
 
+    const getClienteNombre = (cliente: any) => {
+        if (!cliente) return "—";
+        if (typeof cliente === "string") return cliente;
+        if (typeof cliente === "object") return cliente.nombre ?? cliente.name ?? cliente.razonSocial ?? "—";
+        return "—";
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
 
@@ -473,7 +480,9 @@ export default function DashboardPage() {
 
             {/* ── Gráfica tendencia ─────────────────────────────────────────── */}
             {!loading && movsActual.length > 0 && (
-                <AnalyticsChart externalMovements={movements} externalDateRange={chartDateRange} />
+                <div className="min-w-0">
+                    <AnalyticsChart externalMovements={movements} externalDateRange={chartDateRange} />
+                </div>
             )}
 
             {/* ── Panel inferior: Stock crítico + Últimos registros ──────────── */}
@@ -579,7 +588,7 @@ export default function DashboardPage() {
                                     className="flex items-center justify-between py-2.5 px-1 hover:bg-gray-50 rounded-lg transition-colors group">
                                     <div className="min-w-0 flex-1">
                                         <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">{o.nombre}</p>
-                                        <p className="text-xs text-gray-400">{o.cliente ?? "—"}</p>
+                                        <p className="text-xs text-gray-400">{getClienteNombre(o.cliente)}</p>
                                     </div>
                                     <div className="text-right ml-3 flex-shrink-0">
                                         <p className="text-xs font-semibold text-gray-700">{Number(o.metrosContratados ?? 0).toFixed(0)} m contrat.</p>
