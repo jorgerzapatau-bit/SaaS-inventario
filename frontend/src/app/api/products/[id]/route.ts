@@ -38,7 +38,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const {
             nombre, categoriaId, unidad,
             precioCompra, moneda,
-            stockMinimo, imagen, activo,
+            stockMinimo, imagen, activo, notas,
         } = await req.json();
 
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
@@ -54,6 +54,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 ...(stockMinimo  !== undefined && { stockMinimo: Number(stockMinimo) }),
                 ...(imagen       !== undefined && { imagen }),
                 ...(activo       !== undefined && { activo }),
+                ...(notas        !== undefined && { notas }),
                 // stockActual nunca se edita directamente aquí
             },
             include: { categoria: true },

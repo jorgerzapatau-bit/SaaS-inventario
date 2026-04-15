@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
+import { useCompany } from '@/context/CompanyContext';
 import {
     ArrowLeft, Plus, Minus, Edit, AlertTriangle, X,
     TrendingUp, TrendingDown, DollarSign, FileDown,
@@ -69,6 +70,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const {id}=useParams();
     const router=useRouter();
     const fileInputRef=useRef<HTMLInputElement>(null);
+    const { moneda } = useCompany();
+    const currencyFmt = (v: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(v);
 
     const [product,setProduct]=useState<Producto|null>(null);
     const [movements,setMovements]=useState<Movimiento[]>([]);
@@ -121,12 +125,12 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                     fetchApi('/inventory/movements').catch(()=>[]),
                 ]);
                 let saldo=0;
-                const movsWithBalance=[...movs].sort((a:Movimiento,b:Movimiento)=>new Date(a.fecha).getTime()-new Date(b.fecha).getTime()).map((m:Movimiento)=>{saldo+=(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?m.cantidad:-m.cantidad);return{...m,saldo};});
+                const movsWithBalance=[...movs].sort((a:Movimiento,b:Movimiento)=>new Date(a.fecha).getTime()-new Date(b.fecha).getTime()).map((m:Movimiento)=>{saldo+=(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?Number(m.cantidad):-Number(m.cantidad));return{...m,saldo};});
                 const fp=products.find((p:any)=>p.id===id);
                 setProduct({...prod,stock:fp?.stock??0,ultimoPrecioCompra:fp?.ultimoPrecioCompra,ultimoPrecioVenta:fp?.ultimoPrecioVenta});
                 setMovements([...movsWithBalance].reverse());
-                // Cargar notas internas desde localStorage
-                const notasGuardadas=localStorage.getItem(`notas_producto_${id}`)||'';
+                // Cargar notas internas desde la base de datos (campo producto.notas)
+                const notasGuardadas = prod.notas || '';
                 setNotas(notasGuardadas);
                 setNotasTemp(notasGuardadas);
                 // Valor total del inventario para % de contexto
@@ -224,7 +228,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
             doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,34);
             doc.setFontSize(8);doc.setFont('helvetica','normal');
             doc.text(`SKU: ${product?.sku}  ·  Categoría: ${product?.categoria?.nombre}`,18,40);
-            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}  ·  Valor almacén: $${((product?.stock??0)*costoRef).toLocaleString('es-MX')}`,pageW/2,40);
+            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}  ·  Valor almacén: ${currencyFmt((product?.stock??0)*costoRef)}`,pageW/2,40);
             // ── Tabla ──
             const tableData=[...movements].reverse().map(m=>[
                 new Date(m.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
@@ -233,7 +237,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 m.proveedor?.nombre||m.clienteNombre||'—',
                 m.almacen?.nombre||'—',
                 (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
-                `$${Number(m.costoUnitario).toLocaleString('es-MX')}`,
+                currencyFmt(Number(m.costoUnitario)),
                 String(m.saldo??''),
                 m.usuario?.nombre||'',
             ]);
@@ -276,16 +280,22 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const guardarNotas=async()=>{
         setNotasGuardando(true);
-        localStorage.setItem(`notas_producto_${id}`,notasTemp);
-        setNotas(notasTemp);
-        setTimeout(()=>{setNotasGuardando(false);setNotasEditando(false);},400);
+        try {
+            await fetchApi(`/products/${id}`, { method: 'PUT', body: JSON.stringify({ notas: notasTemp }) });
+            setNotas(notasTemp);
+            setNotasEditando(false);
+        } catch {
+            alert('Error al guardar las notas. Intenta de nuevo.');
+        } finally {
+            setNotasGuardando(false);
+        }
     };
 
     if(loading)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Cargando producto...</p></div>;
     if(!isNew&&!product)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Producto no encontrado.</p></div>;
 
-    const totalEntradas=!isNew?movements.filter(m=>['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0):0;
-    const totalSalidas=!isNew?movements.filter(m=>['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0):0;
+    const totalEntradas=!isNew?movements.filter(m=>['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad),0):0;
+    const totalSalidas=!isNew?movements.filter(m=>['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad),0):0;
     const lowStock=!isNew&&product?product.stock<=product.stockMinimo:false;
     const ultimaEntrada=!isNew?movements.find(m=>m.tipoMovimiento==='ENTRADA'):undefined;
     const ultimaSalida=!isNew?movements.find(m=>["SALIDA","CONSUMO_INTERNO"].includes(m.tipoMovimiento)):undefined;
@@ -300,7 +310,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const hace30d = new Date(Date.now() - 30 * 86400000);
     const salidasUltimos30d = !isNew ? movements
         .filter(m => ['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
-        .reduce((a, m) => a + m.cantidad, 0) : 0;
+        .reduce((a, m) => a + Number(m.cantidad), 0) : 0;
     const rotacionProducto = product?.stock && product.stock > 0
         ? (salidasUltimos30d / product.stock * 100).toFixed(1)
         : null;
@@ -492,7 +502,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     ) : (
                                         <>
                                             <p className="text-xs text-gray-400 mb-1">Costo unitario <span className="text-gray-300 text-xs">(última compra)</span></p>
-                                            <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? `$${Number(ultimaEntrada.costoUnitario).toLocaleString()}` : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
+                                            <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? currencyFmt(Number(ultimaEntrada.costoUnitario)) : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
                                         </>
                                     )}
                                 </div>
@@ -513,7 +523,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 </div>
                                 <div className="bg-gray-50 rounded-lg px-3 py-2">
                                     <p className="text-xs text-gray-400 mb-0.5">Valor almacén <span className="text-gray-300">(calculado)</span></p>
-                                    <p className="text-sm font-bold text-gray-700">${((product?.stock??0)*pC).toLocaleString('es-MX',{maximumFractionDigits:0})}</p>
+                                    <p className="text-sm font-bold text-gray-700">{currencyFmt((product?.stock??0)*pC)}</p>
                                 </div>
                                 <div className={`rounded-lg px-3 py-2 ${diasStockAlerta?'bg-orange-50':'bg-gray-50'}`}>
                                     <p className="text-xs text-gray-400 mb-0.5">Días de stock</p>
@@ -537,7 +547,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <textarea
                                         value={notasTemp||notas}
                                         onChange={e=>setNotasTemp(e.target.value)}
-                                        onBlur={()=>{if(notasTemp!==notas){localStorage.setItem(`notas_producto_${id}`,notasTemp);setNotas(notasTemp);}}}
                                         rows={3}
                                         placeholder="Ej: Pedir solo al proveedor X · Frágil · Requiere revisión técnica antes de despachar..."
                                         className="w-full px-3 py-2 bg-amber-50/50 border border-amber-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400/20 focus:border-amber-400 resize-none placeholder:text-gray-400"
@@ -557,7 +566,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 </div>
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
                                     <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Último precio compra</p><InfoTooltip text="CostoUnitario del último movimiento de ENTRADA registrado. Se actualiza automáticamente cada vez que registras una nueva entrada." position="bottom" /></div><TrendingDown size={14} className="text-blue-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">${Number(ultimaEntrada?.costoUnitario ?? product?.ultimoPrecioCompra ?? 0).toLocaleString()}</p>
+                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt(Number(ultimaEntrada?.costoUnitario ?? product?.ultimoPrecioCompra ?? 0))}</p>
                                     <p className="text-xs text-gray-400">{ultimaEntrada?`${new Date(ultimaEntrada.fecha).toLocaleDateString('es-MX')}${ultimaEntrada.proveedor?` · ${ultimaEntrada.proveedor.nombre}`:''}`:  'Sin entradas'}</p>
                                 </div>
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
@@ -566,13 +575,13 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <p className="text-xs text-gray-400">{product?.unidad} · {salidasUltimos30d===0?'sin consumo reciente':'en los últimos 30 días'}</p>
                                 </div>
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor en almacén</p><InfoTooltip text="Stock actual × costo unitario de la última entrada. Representa cuánto vale el inventario de este producto a precio de costo." position="bottom" /></div><DollarSign size={14} className="text-gray-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">${((product?.stock??0)*Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0)).toLocaleString()}</p>
-                                    <p className="text-xs text-gray-400">{product?.stock} × ${Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0).toLocaleString()}</p>
+                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor actual en stock</p><InfoTooltip text="Stock actual × costo unitario de la última entrada. Representa cuánto vale el inventario de este producto a precio de costo." position="bottom" /></div><DollarSign size={14} className="text-gray-400"/></div>
+                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt((product?.stock??0)*Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0))}</p>
+                                    <p className="text-xs text-gray-400">{product?.stock} × {currencyFmt(Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0))}</p>
                                 </div>
                                 <div className="bg-amber-50 rounded-xl border border-amber-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor inventario</p><InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos de este producto. Misma fórmula que el KPI 'Valor inventario' del dashboard." position="bottom" /></div><DollarSign size={14} className="text-amber-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">${movements.reduce((a,m)=>{ const q=Number(m.cantidad||0),c=Number(m.costoUnitario||0); if(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento))return a+q*c; if(['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))return a-q*c; return a; },0).toLocaleString('es-MX',{maximumFractionDigits:0})}</p>
+                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor histórico acumulado</p><InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos de este producto. Misma fórmula que el KPI 'Valor inventario' del dashboard." position="bottom" /></div><DollarSign size={14} className="text-amber-400"/></div>
+                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt(movements.reduce((a,m)=>{ const q=Number(m.cantidad||0),c=Number(m.costoUnitario||0); if(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento))return a+q*c; if(['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))return a-q*c; return a; },0))}</p>
                                     <p className="text-xs text-gray-400">Desde todos los movimientos</p>
                                 </div>
                             </div>
@@ -618,7 +627,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total consumos</td><td className="py-1.5 text-right font-medium text-orange-500 text-xs">-{totalSalidas} {product?.unidad}</td></tr>
                                         <tr className="border-t-2 border-gray-200"><td className="py-1.5 font-semibold text-gray-800 text-xs">Stock actual</td><td className="py-1.5 text-right font-bold text-gray-800 text-xs">= {product?.stock} {product?.unidad}</td></tr>
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total movimientos</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">{movements.length}</td></tr>
-                                        <tr><td className="py-1.5 text-gray-500 text-xs">Valor total compras</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">${movements.filter(m=>m.tipoMovimiento==='ENTRADA').reduce((a,m)=>a+m.cantidad*Number(m.costoUnitario),0).toLocaleString()}</td></tr>
+                                        <tr><td className="py-1.5 text-gray-500 text-xs">Valor total compras</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">{currencyFmt(movements.filter(m=>m.tipoMovimiento==='ENTRADA').reduce((a,m)=>a+Number(m.cantidad)*Number(m.costoUnitario),0))}</td></tr>
                                     </tbody></table>
                                 </div>
                             </div>
@@ -641,10 +650,13 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <p className="text-2xl font-bold text-gray-800">
                                     {((valorEsteProducto / totalInventarioValor) * 100).toFixed(1)}%
                                 </p>
-                                <p className="text-xs text-gray-400 mt-1">${valorEsteProducto.toLocaleString('es-MX', {maximumFractionDigits:0})} de valor en almacén</p>
+                                <p className="text-xs text-gray-400 mt-1">{currencyFmt(valorEsteProducto)} de valor actual en stock</p>
                             </>
                         ) : (
-                            <p className="text-sm text-gray-400 italic mt-1">Sin entradas registradas</p>
+                            <>
+                                <p className="text-2xl font-bold text-gray-400">0.0%</p>
+                                <p className="text-xs text-gray-400 italic mt-1">Sin entradas registradas</p>
+                            </>
                         )}
                     </div>
 
@@ -693,6 +705,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <ProductChart
                     movements={[...movements].reverse()}
                     unidad={product?.unidad ?? ''}
+                    moneda={moneda}
                 />
             )}
 
@@ -770,12 +783,12 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     return(<tr key={mov.id} className="hover:bg-blue-50/40 transition-colors group">
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap cursor-pointer">{new Date(mov.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 cursor-pointer"><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tipoColor(mov.tipoMovimiento)}`}>{tipoLabel(mov.tipoMovimiento)}</span></td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 max-w-[140px] truncate cursor-pointer">{mov.referencia||'—'}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 max-w-[140px] truncate cursor-pointer" title={mov.referencia||''}>{mov.referencia||'—'}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm cursor-pointer">{contacto?<span className="flex items-center gap-1.5 text-gray-700">{mov.proveedor?<Building2 size={13} className="text-blue-400 flex-shrink-0"/>:<User size={13} className="text-green-400 flex-shrink-0"/>}{contacto}</span>:<span className="text-gray-300">—</span>}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.almacen?.nombre}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className={`px-4 py-3 text-sm font-bold text-right cursor-pointer ${isPos?'text-green-600':'text-red-500'}`}>{isPos?'+':'-'}{mov.cantidad}</td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">${Number(mov.costoUnitario).toLocaleString()}</td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm font-semibold text-gray-800 text-right cursor-pointer">{mov.saldo}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">{currencyFmt(Number(mov.costoUnitario))}</td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm font-semibold text-gray-800 text-right cursor-pointer">{mov.saldo} <span className="text-xs font-normal text-gray-400">{product?.unidad}</span></td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.usuario?.nombre}</td>
                                         {/* Acción rápida: repetir entrada */}
                                         <td className="px-3 py-3 text-right">
@@ -824,7 +837,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                             <button onClick={()=>setSelectedMov(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"><X size={20}/></button>
                         </div>
                         <div className="space-y-0">
-                            {([['Producto',product?.nombre],['Fecha',new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],['Almacén',selectedMov.almacen?.nombre],['Cantidad',`${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],['Costo unitario',`$${Number(selectedMov.costoUnitario).toLocaleString()}`],['Costo total',`$${(selectedMov.cantidad*Number(selectedMov.costoUnitario)).toLocaleString()}`],['Saldo después',`${selectedMov.saldo} ${product?.unidad}`],...(selectedMov.proveedor?[['Proveedor',selectedMov.proveedor.nombre],...(selectedMov.proveedor.telefono?[['Tel.',selectedMov.proveedor.telefono]]:[]),...(selectedMov.proveedor.email?[['Email',selectedMov.proveedor.email]]:[])]:  []),...(selectedMov.clienteNombre?[['Cliente',selectedMov.clienteNombre]]:[]),['Registrado por',selectedMov.usuario?.nombre]] as [string,string][]).map(([l,v])=>(
+                            {([['Producto',product?.nombre],['Fecha',new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],['Almacén',selectedMov.almacen?.nombre],['Cantidad',`${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],['Costo unitario',currencyFmt(Number(selectedMov.costoUnitario))],['Costo total',currencyFmt(Number(selectedMov.cantidad)*Number(selectedMov.costoUnitario))],['Saldo después',`${selectedMov.saldo} ${product?.unidad}`],...(selectedMov.proveedor?[['Proveedor',selectedMov.proveedor.nombre],...(selectedMov.proveedor.telefono?[['Tel.',selectedMov.proveedor.telefono]]:[]),...(selectedMov.proveedor.email?[['Email',selectedMov.proveedor.email]]:[])]:  []),...(selectedMov.clienteNombre?[['Cliente',selectedMov.clienteNombre]]:[]),['Registrado por',selectedMov.usuario?.nombre]] as [string,string][]).map(([l,v])=>(
                                 <div key={l} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0"><span className="text-sm text-gray-500">{l}</span><span className="text-sm font-medium text-gray-800 text-right max-w-[220px]">{v}</span></div>
                             ))}
                         </div>
@@ -858,7 +871,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                             let saldo = 0;
                             const movsWithBalance = [...movs]
                                 .sort((a: any, b: any) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
-                                .map((m: any) => { saldo += ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento) ? m.cantidad : -m.cantidad; return { ...m, saldo }; });
+                                .map((m: any) => { saldo += ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento) ? Number(m.cantidad) : -Number(m.cantidad); return { ...m, saldo }; });
                             const fp = products.find((p: any) => p.id === id);
                             setProduct({ ...prod, stock: fp?.stock ?? 0, ultimoPrecioCompra: fp?.ultimoPrecioCompra, ultimoPrecioVenta: fp?.ultimoPrecioVenta });
                             setMovements([...movsWithBalance].reverse());

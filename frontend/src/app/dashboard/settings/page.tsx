@@ -70,6 +70,7 @@ interface CompanySettings {
     telefono: string; whatsapp: string; email: string;
     direccion: string; rfc: string;
     razonSocial: string; codigoPostal: string; regimenFiscal: string; usoCFDI: string;
+    moneda: string;
 }
 interface Almacen { id: string; nombre: string; }
 interface Categoria { id: string; nombre: string; descripcion?: string | null; }
@@ -239,7 +240,7 @@ export default function SettingsPage() {
 
     const [settings, setSettings] = useState<CompanySettings>({
         nombre: '', url: '', logo: '', loginBg: '', telefono: '', whatsapp: '', email: '', direccion: '', rfc: '',
-        razonSocial: '', codigoPostal: '', regimenFiscal: '', usoCFDI: ''
+        razonSocial: '', codigoPostal: '', regimenFiscal: '', usoCFDI: '', moneda: 'MXN'
     });
     const [saving, setSaving]           = useState(false);
     const [saveMsg, setSaveMsg]         = useState('');
@@ -262,7 +263,8 @@ export default function SettingsPage() {
                 telefono: company.telefono||'', whatsapp: company.whatsapp||'', email: company.email||'',
                 direccion: company.direccion||'', rfc: company.rfc||'',
                 razonSocial: company.razonSocial||'', codigoPostal: company.codigoPostal||'',
-                regimenFiscal: company.regimenFiscal||'', usoCFDI: company.usoCFDI||''
+                regimenFiscal: company.regimenFiscal||'', usoCFDI: company.usoCFDI||'',
+                moneda: company.moneda||'MXN',
             });
             setAlmacenes(alms);
             setCategorias(cats);
@@ -469,6 +471,18 @@ export default function SettingsPage() {
                             <input type="text" value={settings.whatsapp}
                                 onChange={e => setSettings(s => ({...s, whatsapp: e.target.value}))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-gray-700 block mb-1.5">Moneda</label>
+                            <select value={settings.moneda}
+                                onChange={e => setSettings(s => ({...s, moneda: e.target.value}))}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-white">
+                                <option value="MXN">MXN — Peso mexicano ($)</option>
+                                <option value="USD">USD — Dólar estadounidense ($)</option>
+                                <option value="EUR">EUR — Euro (€)</option>
+                                <option value="CAD">CAD — Dólar canadiense ($)</option>
+                            </select>
+                            <p className="text-xs text-gray-400 mt-1">Se usará en todos los valores monetarios de la aplicación.</p>
                         </div>
                         <div>
                             <label className="text-xs font-medium text-gray-700 block mb-1.5">Slug URL</label>

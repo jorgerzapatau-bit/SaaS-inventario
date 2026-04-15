@@ -19,10 +19,10 @@ export async function PUT(req: NextRequest) {
     const user = getAuthUser(req);
     if (!user) return unauthorized();
     try {
-        const { nombre, url, telefono, whatsapp, email, direccion, rfc, razonSocial, codigoPostal, regimenFiscal, usoCFDI, logo, loginBg } = await req.json();
+        const { nombre, url, telefono, whatsapp, email, direccion, rfc, razonSocial, codigoPostal, regimenFiscal, usoCFDI, logo, loginBg, moneda } = await req.json();
         const empresa = await prisma.empresa.update({
             where: { id: user.empresaId },
-            data: { nombre, url, telefono, whatsapp, email, direccion, rfc, razonSocial, codigoPostal, regimenFiscal, usoCFDI, logo, loginBg },
+            data: { nombre, url, telefono, whatsapp, email, direccion, rfc, razonSocial, codigoPostal, regimenFiscal, usoCFDI, logo, loginBg, moneda },
         });
         return Response.json(empresa);
     } catch (error) {

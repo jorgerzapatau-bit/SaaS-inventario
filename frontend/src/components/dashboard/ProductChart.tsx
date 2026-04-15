@@ -33,6 +33,7 @@ interface Movimiento {
 interface Props {
     movements: Movimiento[];   // DESC (más reciente primero) — como llegan del estado
     unidad: string;
+    moneda?: string; // símbolo de moneda, ej: "MXN" | "USD" — default "MXN"
 }
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -73,7 +74,7 @@ const METRICS: { key: MetricKey; label: string; color: string; tooltip: string }
     },
 ];
 
-function CustomTooltip({ active, payload, label, metric, unidad }: any) {
+function CustomTooltip({ active, payload, label, metric, unidad, currencyFmt }: any) {
     if (!active || !payload?.length) return null;
     return (
         <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs min-w-[140px]">
@@ -90,7 +91,7 @@ function CustomTooltip({ active, payload, label, metric, unidad }: any) {
                                 p.dataKey === 'salida' ? `-${p.value} ${unidad}` : `+${p.value} ${unidad}`
                             ) :
                              (metric === 'flujo') ? `${p.value > 0 ? '+' : ''}${p.value} ${unidad}` :
-                             `$${Number(p.value).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`}
+                             currencyFmt(Number(p.value))}
                         </span>
                     </div>
                 ) : null
@@ -99,7 +100,9 @@ function CustomTooltip({ active, payload, label, metric, unidad }: any) {
     );
 }
 
-export default function ProductChart({ movements, unidad }: Props) {
+export default function ProductChart({ movements, unidad, moneda = 'MXN' }: Props) {
+    const currencyFmt = (v: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(v);
     const [metric, setMetric] = useState<MetricKey>('stock');
     const [period, setPeriod] = useState<'30d' | '90d' | '1y' | 'all' | 'manual'>('all');
 
@@ -142,19 +145,19 @@ export default function ProductChart({ movements, unidad }: Props) {
         const cutoffDate = filteredAsc.length > 0 ? new Date(filteredAsc[0].fecha) : null;
         const initialSaldo = cutoffDate
             ? asc.filter(m => new Date(m.fecha) < cutoffDate).reduce((acc, m) => {
-                return acc + (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento) ? m.cantidad : -m.cantidad);
+                return acc + (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento) ? Number(m.cantidad) : -Number(m.cantidad));
             }, 0)
             : 0;
 
         let saldo = initialSaldo;
         return filteredAsc.map(m => {
             const isPos = ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento);
-            saldo += isPos ? m.cantidad : -m.cantidad;
+            saldo += isPos ? Number(m.cantidad) : -Number(m.cantidad);
             return {
                 name: fmtDate(m.fecha.split('T')[0]),
                 stock: saldo,
-                entrada: isPos ? m.cantidad : 0,
-                salida: isPos ? 0 : m.cantidad,   // positivo — la barra siempre va hacia arriba
+                entrada: isPos ? Number(m.cantidad) : 0,
+                salida: isPos ? 0 : Number(m.cantidad),   // positivo — la barra siempre va hacia arriba
                 tipo: isPos ? 'entrada' : 'salida',
             };
         });
@@ -167,8 +170,8 @@ export default function ProductChart({ movements, unidad }: Props) {
             const d = new Date(m.fecha);
             const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2,'0')}`;
             if (!buckets[key]) buckets[key] = { name: fmtMes(m.fecha.split('T')[0]), entradas: 0, salidas: 0 };
-            if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) buckets[key].entradas += m.cantidad;
-            else buckets[key].salidas += m.cantidad;
+            if (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) buckets[key].entradas += Number(m.cantidad);
+            else buckets[key].salidas += Number(m.cantidad);
         });
         return Object.keys(buckets).sort().map(k => buckets[k]);
     }, [filteredAsc]);
@@ -209,8 +212,8 @@ export default function ProductChart({ movements, unidad }: Props) {
     }, [filteredAsc]);
 
     // ── Resumen del periodo ─────────────────────────────────────────────────
-    const totalEntradas   = filteredAsc.filter(m => ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0);
-    const totalSalidas    = filteredAsc.filter(m => ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+m.cantidad,0);
+    const totalEntradas   = filteredAsc.filter(m => ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad),0);
+    const totalSalidas    = filteredAsc.filter(m => ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad),0);
     const totalCosto      = filteredAsc.filter(m => ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad)*Number(m.costoUnitario),0);
     const totalIngresos   = filteredAsc.filter(m => ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad)*Number(m.precioVenta||0),0);
     const margenBruto     = totalIngresos - filteredAsc.filter(m=>['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad)*Number(m.costoUnitario),0);
@@ -241,7 +244,7 @@ export default function ProductChart({ movements, unidad }: Props) {
                     <YAxis axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} dx={-8}
                         domain={[0, 'auto']}
                         label={{ value: unidad, angle: -90, position: 'insideLeft', offset: 10, style: { fill:'#9CA3AF', fontSize:10 } }} />
-                    <Tooltip content={<CustomTooltip metric="stock" unidad={unidad} />} />
+                    <Tooltip content={<CustomTooltip metric="stock" unidad={unidad} currencyFmt={currencyFmt} />} />
                     {/* Barras de fondo para entradas/salidas */}
                     <Bar dataKey="entrada" fill="#22c55e" fillOpacity={0.25} radius={[2,2,0,0]} name="Entrada" barSize={16} />
                     <Bar dataKey="salida"  fill="#ef4444" fillOpacity={0.25} radius={[2,2,0,0]} name="Salida"  barSize={16} />
@@ -261,7 +264,7 @@ export default function ProductChart({ movements, unidad }: Props) {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} dx={-8} />
-                    <Tooltip content={<CustomTooltip metric="flujo" unidad={unidad} />} />
+                    <Tooltip content={<CustomTooltip metric="flujo" unidad={unidad} currencyFmt={currencyFmt} />} />
                     <Bar dataKey="entradas" fill="#22c55e" radius={[4,4,0,0]} name="Entradas" barSize={28} />
                     <Bar dataKey="salidas"  fill="#ef4444" radius={[4,4,0,0]} name="Salidas"  barSize={28} />
                     <Legend wrapperStyle={{ paddingTop:12, fontSize:12 }} />
@@ -281,8 +284,8 @@ export default function ProductChart({ movements, unidad }: Props) {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} dx={-8}
-                        tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                    <Tooltip content={<CustomTooltip metric="valor" unidad={unidad} />} />
+                        tickFormatter={(v) => currencyFmt(v)} />
+                    <Tooltip content={<CustomTooltip metric="valor" unidad={unidad} currencyFmt={currencyFmt} />} />
                     <Area type="monotone" dataKey="valor" stroke="#f59e0b" strokeWidth={2.5}
                         fill="url(#gradValor)" fillOpacity={1}
                         dot={{ r:4, fill:'#f59e0b', strokeWidth:2, stroke:'#fff' }}
@@ -298,8 +301,8 @@ export default function ProductChart({ movements, unidad }: Props) {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} dx={-8}
-                        tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                    <Tooltip content={<CustomTooltip metric="dinero" unidad={unidad} />} />
+                        tickFormatter={(v) => currencyFmt(v)} />
+                    <Tooltip content={<CustomTooltip metric="dinero" unidad={unidad} currencyFmt={currencyFmt} />} />
                     <Bar dataKey="costo"    fill="#3b82f6" radius={[4,4,0,0]} name="Inversión (compras)" barSize={28} />
                     <Bar dataKey="ingresos" fill="#22c55e" radius={[4,4,0,0]} name="Ingresos (ventas)"   barSize={28} />
                     <Legend wrapperStyle={{ paddingTop:12, fontSize:12 }} />
@@ -370,13 +373,13 @@ export default function ProductChart({ movements, unidad }: Props) {
                             <span className="text-gray-500">Neto: {totalEntradas-totalSalidas>=0?'+':''}{totalEntradas-totalSalidas} {unidad}</span>
                         </>}
                         {metric === 'valor' && <>
-                            <span className="text-amber-600">Valor final: ${valorFinal.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                            <span className="text-amber-600">Valor final: {currencyFmt(valorFinal)}</span>
                         </>}
                         {metric === 'dinero' && <>
-                            <span className="text-blue-600">Inversión: ${totalCosto.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
-                            <span className="text-green-600">Ingresos: ${totalIngresos.toLocaleString('es-MX',{maximumFractionDigits:0})}</span>
+                            <span className="text-blue-600">Inversión: {currencyFmt(totalCosto)}</span>
+                            <span className="text-green-600">Ingresos: {currencyFmt(totalIngresos)}</span>
                             {totalIngresos > 0 && <span className={margenBruto>=0?'text-green-700':'text-red-500'}>
-                                Margen: ${margenBruto.toLocaleString('es-MX',{maximumFractionDigits:0})} ({(margenBruto/totalIngresos*100).toFixed(1)}%)
+                                Margen: {currencyFmt(margenBruto)} ({(margenBruto/totalIngresos*100).toFixed(1)}%)
                             </span>}
                         </>}
                     </div>
