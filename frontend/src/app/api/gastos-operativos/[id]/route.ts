@@ -19,16 +19,6 @@ function serializeGasto(g: any) {
   };
 }
 
-function validateNivel({ nivelGasto, obraId, equipoId, plantillaId }: any) {
-  if (!obraId) throw new Error('La obra es obligatoria en Gastos Operativos.');
-  if (nivelGasto === 'POR_EQUIPO' && !equipoId) {
-    throw new Error('Debes seleccionar un equipo para un gasto por equipo.');
-  }
-  if (nivelGasto === 'POR_PLANTILLA' && !plantillaId) {
-    throw new Error('Debes seleccionar una plantilla para un gasto por plantilla.');
-  }
-}
-
 function normalizeDistribuciones(distribuciones: any[] | undefined, total: number) {
   const rows = Array.isArray(distribuciones) ? distribuciones.filter(Boolean) : [];
   const normalized = rows.map((d) => ({
@@ -49,6 +39,16 @@ function normalizeDistribuciones(distribuciones: any[] | undefined, total: numbe
   return normalized;
 }
 
+function validateNivel({ nivelGasto, obraId, equipoId, plantillaId }: any) {
+  if (!obraId) throw new Error('La obra es obligatoria en Gastos Operativos.');
+  if (nivelGasto === 'POR_EQUIPO' && !equipoId) {
+    throw new Error('Debes seleccionar un equipo para un gasto por equipo.');
+  }
+  if (nivelGasto === 'POR_PLANTILLA' && !plantillaId) {
+    throw new Error('Debes seleccionar una plantilla para un gasto por plantilla.');
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: Params) {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
@@ -64,13 +64,16 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     if (!gasto) return Response.json({ error: 'Gasto no encontrado' }, { status: 404 });
 
     if (gasto.tipoGasto === 'INSUMO' && gasto.productoId) {
+      const productoId = gasto.productoId;
+      const referencia = gasto.equipoId ? `GASTO-EQUIPO:${gasto.equipoId}` : `GASTO-OBRA:${gasto.obraId}`;
+
       await prisma.$transaction(async (tx) => {
         const movimiento = await tx.movimientoInventario.findFirst({
           where: {
             empresaId: user.empresaId,
-            productoId: gasto.productoId,
+            productoId,
             tipoMovimiento: 'SALIDA',
-            referencia: gasto.equipoId ? `GASTO-EQUIPO:${gasto.equipoId}` : `GASTO-OBRA:${gasto.obraId}`,
+            referencia,
           },
           orderBy: { createdAt: 'desc' },
           select: { id: true, cantidad: true },
@@ -79,7 +82,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         if (movimiento) {
           await tx.movimientoInventario.delete({ where: { id: movimiento.id } });
           await tx.producto.update({
-            where: { id: gasto.productoId! },
+            where: { id: productoId },
             data: { stockActual: { increment: Number(movimiento.cantidad) } },
           });
         }
@@ -127,15 +130,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
     const current = await prisma.gastoOperativo.findFirst({ where: { id, empresaId: user.empresaId } });
     if (!current) return Response.json({ error: 'Gasto no encontrado' }, { status: 404 });
 
-    const resolvedNivel = nivelGasto !== undefined ? nivelGasto : current.nivelGasto;
-    const resolvedObraId = obraId !== undefined ? (obraId || null) : current.obraId;
-    const resolvedEquipoId = equipoId !== undefined ? (equipoId || null) : current.equipoId;
-    const resolvedPlantillaId = plantillaId !== undefined ? (plantillaId || null) : current.plantillaId;
+    const nextNivel = nivelGasto ?? current.nivelGasto;
+    const nextObraId = obraId !== undefined ? obraId : current.obraId;
+    const nextEquipoId = equipoId !== undefined ? equipoId : current.equipoId;
+    const nextPlantillaId = plantillaId !== undefined ? plantillaId : current.plantillaId;
+
     validateNivel({
-      nivelGasto: resolvedNivel,
-      obraId: resolvedObraId,
-      equipoId: resolvedEquipoId,
-      plantillaId: resolvedPlantillaId,
+      nivelGasto: nextNivel,
+      obraId: nextObraId,
+      equipoId: nextEquipoId,
+      plantillaId: nextPlantillaId,
     });
 
     const newCantidad = cantidad !== undefined ? Number(cantidad) : Number(current.cantidad);
