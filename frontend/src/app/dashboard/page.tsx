@@ -75,6 +75,7 @@ export default function DashboardPage() {
     const [purchases,  setPurchases]  = useState<any[]>([]);
     const [registros,  setRegistros]  = useState<any[]>([]);
     const [equipos,    setEquipos]    = useState<any[]>([]);
+    const [obras,      setObras]      = useState<any[]>([]);
     const [loading,    setLoading]    = useState(true);
     const [period,     setPeriod]     = useState<PeriodKey>('este_mes');
     const [showSinMovimiento, setShowSinMovimiento] = useState(false);
@@ -90,18 +91,20 @@ export default function DashboardPage() {
     useEffect(() => {
         const load = async () => {
             try {
-                const [prods, movs, purch, regs, eqs] = await Promise.all([
+                const [prods, movs, purch, regs, eqs, obs] = await Promise.all([
                     fetchApi('/products'),
                     fetchApi('/inventory/movements'),
                     fetchApi('/purchases'),
                     fetchApi('/registros-diarios'),
                     fetchApi('/equipos'),
+                    fetchApi('/obras'),
                 ]);
                 setProducts(prods);
                 setMovements(movs);
                 setPurchases(Array.isArray(purch) ? purch : []);
                 setRegistros(regs);
                 setEquipos(eqs);
+                setObras(Array.isArray(obs) ? obs.filter((o: any) => o.activa !== false) : []);
             } catch (e) { console.error(e); }
             finally { setLoading(false); }
         };
@@ -153,17 +156,22 @@ export default function DashboardPage() {
     const sinMovimiento  = products.filter(p => !new Set(movsActual.map(m => m.productoId)).has(p.id));
 
     // ── KPIs operacionales (Teprex) ───────────────────────────────────────────
+    const toSafeDate = (fecha: string) => {
+        const bare = fecha.includes('T') ? fecha.split('T')[0] : fecha;
+        return new Date(bare + 'T12:00:00');
+    };
+
     const registrosPeriodo = useMemo(() =>
         registros.filter(r => {
             if (period === 'general') return true;
-            const f = new Date(r.fecha + 'T12:00:00');
+            const f = toSafeDate(r.fecha);
             return f >= desde && f <= hasta;
         }), [registros, period, desde, hasta]);
 
     const registrosPrev = useMemo(() => {
         if (!prevRange) return [];
         return registros.filter(r => {
-            const f = new Date(r.fecha + 'T12:00:00');
+            const f = toSafeDate(r.fecha);
             return f >= prevRange.prevDesde && f <= prevRange.prevHasta;
         });
     }, [registros, prevRange]);
@@ -254,7 +262,7 @@ export default function DashboardPage() {
                     <span className="text-xs text-slate-400 italic flex items-center gap-1"><Clock size={11} /> No varía con el filtro</span>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
 
                     {/* Equipos activos */}
                     <Link href="/dashboard/equipos" className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-blue-200 transition-all group block">
@@ -264,6 +272,16 @@ export default function DashboardPage() {
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{loading ? '…' : equipos.filter(e => e.activo).length}</p>
                         <p className="text-xs text-gray-400 mt-1">{equipos.length} equipos en total</p>
+                    </Link>
+
+                    {/* Obras activas */}
+                    <Link href="/dashboard/obras" className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-yellow-200 transition-all group block">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-gray-500 font-medium group-hover:text-yellow-600 transition-colors">Obras activas</p>
+                            <div className="p-1.5 bg-yellow-50 rounded-lg"><FileText size={14} className="text-yellow-600" /></div>
+                        </div>
+                        <p className="text-2xl font-bold text-gray-800">{loading ? '…' : obras.length}</p>
+                        <p className="text-xs text-gray-400 mt-1">En curso actualmente</p>
                     </Link>
 
                     {/* Valor inventario */}
@@ -306,7 +324,7 @@ export default function DashboardPage() {
                         ) : (
                             <>
                                 <p className="text-sm font-bold text-gray-800">
-                                    {new Date(ultimoRegistro.fecha + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                                    {toSafeDate(ultimoRegistro.fecha).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
                                 </p>
                                 <p className="text-xs text-gray-400 mt-1">
                                     {Number(ultimoRegistro.horasTrabajadas)} hrs · {Number(ultimoRegistro.metrosLineales).toFixed(1)} m · {Number(ultimoRegistro.litrosDiesel)} lt
@@ -459,7 +477,7 @@ export default function DashboardPage() {
             )}
 
             {/* ── Panel inferior: Stock crítico + Últimos registros ──────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
                 {/* Stock crítico */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
@@ -519,7 +537,7 @@ export default function DashboardPage() {
                                 <div key={r.id} className="flex items-center justify-between py-2.5 px-1">
                                     <div>
                                         <p className="text-sm font-medium text-gray-800">
-                                            {new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' })}
+                                            {toSafeDate(r.fecha).toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' })}
                                         </p>
                                         <p className="text-xs text-gray-400">{r.equipo?.nombre}</p>
                                     </div>
@@ -534,6 +552,40 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                 </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Obras en curso */}
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-base font-semibold text-gray-800">Obras en curso</h2>
+                        <Link href="/dashboard/obras" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                            Ver todas <ExternalLink size={10} />
+                        </Link>
+                    </div>
+                    {loading ? (
+                        <p className="text-sm text-gray-400 text-center py-6">Cargando...</p>
+                    ) : obras.length === 0 ? (
+                        <div className="flex flex-col items-center py-6 gap-2">
+                            <div className="p-3 bg-yellow-50 rounded-full"><FileText size={20} className="text-yellow-500" /></div>
+                            <p className="text-sm text-gray-500 font-medium">Sin obras activas</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-50">
+                            {obras.slice(0, 5).map((o: any) => (
+                                <Link key={o.id} href={`/dashboard/obras/${o.id}`}
+                                    className="flex items-center justify-between py-2.5 px-1 hover:bg-gray-50 rounded-lg transition-colors group">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-600">{o.nombre}</p>
+                                        <p className="text-xs text-gray-400">{o.cliente ?? "—"}</p>
+                                    </div>
+                                    <div className="text-right ml-3 flex-shrink-0">
+                                        <p className="text-xs font-semibold text-gray-700">{Number(o.metrosContratados ?? 0).toFixed(0)} m contrat.</p>
+                                        <p className="text-xs text-gray-400">{Number(o.metrosPerforados ?? 0).toFixed(1)} m perf.</p>
+                                    </div>
+                                </Link>
                             ))}
                         </div>
                     )}
