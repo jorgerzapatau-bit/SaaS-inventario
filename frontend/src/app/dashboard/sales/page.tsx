@@ -226,26 +226,26 @@ function SalesPageInner() {
             {/* ── Header ─────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Consumo de Insumos</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">Salidas de Insumos</h1>
                     <p className="text-sm text-gray-500 mt-1">
-                        Registra consumos, consumos internos, mermas o ajustes negativos de inventario.
+                        Registra salidas de inventario, consumos internos, mermas o ajustes negativos.
                     </p>
                 </div>
                 <Link href="/dashboard/sales/new"
                     className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 hover:bg-orange-700
                                text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-                    <Plus size={16}/> Registrar Consumo
+                    <Plus size={16}/> Registrar Salida
                 </Link>
             </div>
 
             {/* ── KPIs ───────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
 
-                {/* Consumos totales */}
+                {/* Salidas totales */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
-                        Consumos totales
-                        <KpiTooltip text="Total de registros: consumos, consumos, mermas y ajustes negativos." />
+                        Salidas totales
+                        <KpiTooltip text="Total de registros: salidas, consumos internos, mermas y ajustes negativos." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">{kpiCount}</p>
                     <p className="text-xs text-gray-400 mt-1">{kpiMes} este mes</p>
@@ -255,19 +255,19 @@ function SalesPageInner() {
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
                         Total despachado
-                        <KpiTooltip text="Suma del valor de todas las consumos según el precio unitario registrado." />
+                        <KpiTooltip text="Suma del valor de todas las salidas según el precio unitario registrado." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">{hayFiltros ? 'en selección' : 'todas las consumos'}</p>
+                    <p className="text-xs text-gray-400 mt-1">{hayFiltros ? 'en selección' : 'todas las salidas'}</p>
                 </div>
 
                 {/* Ticket promedio */}
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                     <p className="text-xs text-gray-500 mb-1 flex items-center">
                         Ticket promedio
-                        <KpiTooltip text="Total despachado dividido entre el número de consumos registradas." />
+                        <KpiTooltip text="Total despachado dividido entre el número de salidas registradas." />
                     </p>
                     <p className="text-2xl font-bold text-gray-800">
                         ${kpiPromedio.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
@@ -456,7 +456,7 @@ function SalesPageInner() {
                             {loading ? (
                                 <tr>
                                     <td colSpan={7} className="px-6 py-10 text-center text-gray-400">
-                                        Cargando consumos...
+                                        Cargando salidas...
                                     </td>
                                 </tr>
                             ) : consumosPag.length === 0 ? (
@@ -466,7 +466,7 @@ function SalesPageInner() {
                                         <p className="text-gray-500 font-medium">
                                             {busqueda || hayFiltros
                                                 ? 'Sin resultados para estos filtros'
-                                                : 'No hay consumos registradas'}
+                                                : 'No hay salidas registradas'}
                                         </p>
                                         {(busqueda || hayFiltros) && (
                                             <button onClick={resetFiltros}

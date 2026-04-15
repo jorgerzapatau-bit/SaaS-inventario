@@ -8,7 +8,7 @@ import { fetchApi } from "@/lib/api";
 
 // Solo CONSUMO_INTERNO y AJUSTE_NEGATIVO — Teprex no hace ventas
 const TIPOS_CONSUMO = [
-    { value: "CONSUMO_INTERNO", label: "Consumo de insumo — salida por operación" },
+    { value: "CONSUMO_INTERNO", label: "Salida de insumo — salida por operación" },
     { value: "AJUSTE_NEGATIVO", label: "Ajuste (−) — baja manual de inventario"   },
 ];
 
@@ -232,7 +232,7 @@ function ConsumoInsumoPageInner() {
             router.push("/dashboard/sales");
             router.refresh();
         } catch (err: any) {
-            setError(err.message || "Error al registrar el consumo");
+            setError(err.message || "Error al registrar la salida");
             setLoading(false);
         }
     };
@@ -250,12 +250,12 @@ function ConsumoInsumoPageInner() {
                 <div>
                     <div className="flex items-center gap-2">
                         <h1 className="text-3xl font-bold text-gray-900">
-                            {isEdit ? "Editar Consumo" : "Registrar Consumo de Insumo"}
+                            {isEdit ? "Editar Salida" : "Registrar Salida de Insumos"}
                         </h1>
                         {isEdit && <span className="flex items-center gap-1 px-2.5 py-1 bg-orange-100 text-orange-700 text-xs font-semibold rounded-full"><Pencil size={11}/> Editando</span>}
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
-                        {esAjuste ? "Registra una baja manual de inventario." : "Registra el consumo de insumos en una obra o equipo."}
+                        {esAjuste ? "Registra una baja manual de inventario." : "Registra la salida de insumos para una obra o equipo."}
                     </p>
                 </div>
             </div>
@@ -414,7 +414,7 @@ function ConsumoInsumoPageInner() {
                     <button type="submit" disabled={loading}
                         className="flex items-center gap-2 px-6 py-2.5 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-70 shadow-sm">
                         {loading ? "Guardando..." : (
-                            <>{isEdit ? <Pencil size={18}/> : <Save size={18}/>} {isEdit ? "Guardar cambios" : esAjuste ? "Registrar Ajuste" : "Registrar Consumo"}</>
+                            <>{isEdit ? <Pencil size={18}/> : <Save size={18}/>} {isEdit ? "Guardar cambios" : esAjuste ? "Registrar Ajuste" : "Registrar Salida"}</>
                         )}
                     </button>
                 </div>

@@ -13,7 +13,7 @@ const NAV = [
     { href: '/dashboard/products',               icon: <Package size={20}/>,         label: 'Insumos' },
     { href: '/dashboard/inventory',              icon: <ArrowRightLeft size={20}/>,  label: 'Kardex / Movimientos' },
     { href: '/dashboard/purchases',              icon: <ShoppingCart size={20}/>,    label: 'Compras (Entradas)' },
-    { href: '/dashboard/sales',                  icon: <Upload size={20}/>,          label: 'Consumo de Insumos' },
+    { href: '/dashboard/sales',                  icon: <Upload size={20}/>,          label: 'Salidas de Insumos' },
     // ── Sección Operación ──────────────────────────────────────────────────────
     { href: '/dashboard/obras',                  icon: <HardHat size={20}/>,         label: 'Obras' },
     { href: '/dashboard/equipos',                icon: <Wrench size={20}/>,          label: 'Equipos' },
