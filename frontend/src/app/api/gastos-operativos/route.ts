@@ -22,12 +22,10 @@ function parseDateOnly(value?: string | null): Date | null {
   if (!value) return null;
   const v = String(value).trim();
 
-  // Formato correcto del input type="date"
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
     return new Date(`${v}T12:00:00`);
   }
 
-  // Evita parseos ambiguos como dd/mm/yyyy que terminan en años corruptos
   throw new Error(`Fecha inválida: "${value}". Usa el formato YYYY-MM-DD.`);
 }
 
@@ -199,7 +197,7 @@ export async function POST(req: NextRequest) {
       const gasto = await prisma.$transaction(async (tx) => {
         const g = await tx.gastoOperativo.create({
           data: {
-            empresaId: user.empresaId,
+            empresa: { connect: { id: user.empresaId } },
             equipoId: equipoId || null,
             obraId: obraId || null,
             plantillaId: plantillaId || null,
@@ -274,7 +272,7 @@ export async function POST(req: NextRequest) {
 
     const gasto = await prisma.gastoOperativo.create({
       data: {
-        empresaId: user.empresaId,
+        empresa: { connect: { id: user.empresaId } },
         equipoId: equipoId || null,
         obraId: obraId || null,
         plantillaId: plantillaId || null,
