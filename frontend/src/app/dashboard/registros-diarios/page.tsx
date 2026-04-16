@@ -1053,6 +1053,7 @@ function CapturaGrid({
     const [editingRow, setEditingRow] = useState<EditingRow | null>(null);
     const [savingInline, setSavingInline] = useState(false);
     const [inlineError,  setInlineError]  = useState('');
+    const [expandedId,   setExpandedId]   = useState<string | null>(null);
     const [showSuccess,  setShowSuccess]  = useState(false);
     const [horometroLocked, setHorometroLocked] = useState(true);
 
@@ -1378,42 +1379,58 @@ function CapturaGrid({
                                         const iso = (r.fecha || '').slice(0, 10);
                                         const [yr, mo, dy] = iso.split('-').map(Number);
                                         const fechaStr = `${String(dy).padStart(2, '0')}/${String(mo).padStart(2, '0')}/${yr}`;
-                                        const isEditing = editingRow?.id === r.id;
+                                        const isEditing  = editingRow?.id === r.id;
+                                        const isExpanded = expandedId === r.id;
                                         const hrsReg = r.horometroInicio != null ? r.horometroFin - r.horometroInicio : null;
+                                        const litrosPorHora  = hrsReg && hrsReg > 0 && r.litrosDiesel  ? +(r.litrosDiesel  / hrsReg).toFixed(2) : null;
+                                        const litrosPorMetro = r.metrosLineales > 0 && r.litrosDiesel  ? +(r.litrosDiesel  / r.metrosLineales).toFixed(2) : null;
+                                        const metrosPorHora  = hrsReg && hrsReg > 0 && r.metrosLineales ? +(r.metrosLineales / hrsReg).toFixed(2) : null;
 
                                         return (
                                             <React.Fragment key={r.id}>
-                                                {/* Fila compacta */}
-                                                <tr className={`border-b border-gray-100 transition-colors ${isEditing ? 'bg-amber-50/40' : 'bg-blue-50/20 hover:bg-blue-100/30'}`}>
+                                                {/* Fila compacta — mismo look que historial */}
+                                                <tr
+                                                    className={`border-b border-gray-100 transition-colors group cursor-pointer ${isEditing ? 'bg-amber-50/40' : 'bg-blue-50/20 hover:bg-blue-100/30'}`}
+                                                    onClick={() => { if (!isEditing) setExpandedId(v => v === r.id ? null : r.id); }}
+                                                >
                                                     <td className="p-2 text-xs text-blue-300 text-center border-r w-8">{i + 1}</td>
                                                     <td className="border-r border-blue-100 px-2 h-9 text-xs font-medium text-blue-700 whitespace-nowrap">{fechaStr}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.horometroInicio ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-semibold">{r.horometroFin}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.barrenos || '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.metrosLineales?.toFixed(1) || '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.profundidadPromedio ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.litrosDiesel ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.precioDiesel ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.rentaEquipoDiaria != null ? `$${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.operadores ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600">{r.peones ?? '—'}</td>
-                                                    <td className="border-r border-blue-100 text-center px-1">
-                                                        {hrsReg !== null ? <span className="text-xs font-bold px-1.5 py-0.5 rounded text-blue-600 bg-blue-100">{hrsReg}h</span> : <span className="text-gray-200">—</span>}
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 font-mono">
+                                                        {r.horometroInicio ?? '—'} → {r.horometroFin}
+                                                        {hrsReg !== null && <span className="ml-1 text-gray-400">{hrsReg}h</span>}
                                                     </td>
-                                                    <td className="text-center px-2">
-                                                        <button
-                                                            onClick={() => isEditing ? setEditingRow(null) : startEditingRow(r)}
-                                                            className={`inline-flex items-center gap-1 px-2.5 py-1 border text-xs font-semibold rounded-md transition-colors ${
-                                                                isEditing
-                                                                    ? 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200'
-                                                                    : 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-700'
-                                                            }`}>
-                                                            {isEditing ? <><X size={10}/> Cancelar</> : <><Pencil size={10}/> Editar</>}
-                                                        </button>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-700 font-semibold text-right">{r.barrenos || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-700 font-semibold text-right">{r.metrosLineales?.toFixed(1) || '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-blue-600 font-semibold text-right">{r.litrosDiesel ?? '—'}</td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-gray-600 text-right">
+                                                        {r.litrosDiesel != null && r.precioDiesel != null
+                                                            ? `$${(r.litrosDiesel * r.precioDiesel).toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
+                                                            : '—'}
+                                                    </td>
+                                                    <td className="border-r border-blue-100 px-2 h-9 text-xs text-right">
+                                                        {r.rentaEquipoDiaria != null
+                                                            ? <span className="font-semibold text-emerald-600">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}</span>
+                                                            : <span className="text-gray-300">—</span>}
+                                                    </td>
+                                                    <td className="px-2 text-center w-16" onClick={e => e.stopPropagation()}>
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            <button
+                                                                onClick={() => { isEditing ? setEditingRow(null) : startEditingRow(r); setExpandedId(null); }}
+                                                                className={`p-1.5 rounded-md transition-colors opacity-0 group-hover:opacity-100 ${isEditing ? 'opacity-100 text-amber-600 bg-amber-100' : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'}`}>
+                                                                {isEditing ? <X size={13}/> : <Pencil size={13}/>}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { if (!isEditing) setExpandedId(v => v === r.id ? null : r.id); }}
+                                                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors">
+                                                                {isExpanded && !isEditing
+                                                                    ? <ChevronUp size={14}/>
+                                                                    : <ChevronDown size={14}/>}
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
 
-                                                {/* Panel expandible de edición inline */}
+                                                {/* Panel de edición inline */}
                                                 {isEditing && editingRow && (
                                                     <InlineEditPanel
                                                         row={editingRow}
@@ -1424,6 +1441,58 @@ function CapturaGrid({
                                                         saving={savingInline}
                                                         error={inlineError}
                                                     />
+                                                )}
+
+                                                {/* Panel de detalle expandido — igual al historial */}
+                                                {isExpanded && !isEditing && (
+                                                    <tr className="bg-slate-50/60">
+                                                        <td colSpan={9} className="px-4 py-3 space-y-3 border-b border-gray-100">
+                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
+                                                                    <p className="text-sm font-bold text-gray-700 font-mono">
+                                                                        {r.horometroInicio?.toLocaleString('es-MX')} → {r.horometroFin.toLocaleString('es-MX')}
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-400">{hrsReg} hrs efectivas</p>
+                                                                </div>
+                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</p>
+                                                                    <p className="text-sm font-bold text-gray-700">{r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}</p>
+                                                                </div>
+                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-1">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Gauge size={10}/> KPIs</p>
+                                                                    <div className="grid grid-cols-3 gap-1 text-center">
+                                                                        <div><p className="text-[10px] text-gray-400">Lt/hr</p><p className="text-xs font-bold text-gray-700">{litrosPorHora ?? '—'}</p></div>
+                                                                        <div><p className="text-[10px] text-gray-400">Lt/m</p><p className="text-xs font-bold text-gray-700">{litrosPorMetro ?? '—'}</p></div>
+                                                                        <div><p className="text-[10px] text-gray-400">m/hr</p><p className="text-xs font-bold text-gray-700">{metrosPorHora ?? '—'}</p></div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Droplets size={10}/> Diésel</p>
+                                                                    <p className="text-xs text-gray-600">{r.litrosDiesel} lt × ${r.precioDiesel}/lt</p>
+                                                                    <p className="text-sm font-bold text-gray-700">= ${r.litrosDiesel != null && r.precioDiesel != null ? (r.litrosDiesel * r.precioDiesel).toLocaleString('es-MX', { maximumFractionDigits: 0 }) : '0'}</p>
+                                                                </div>
+                                                            </div>
+                                                            {r.notas && (
+                                                                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800 flex gap-2 items-start">
+                                                                    <span className="font-semibold flex-shrink-0">📝 Notas:</span>
+                                                                    <span>{r.notas}</span>
+                                                                </div>
+                                                            )}
+                                                            {(r.bordo != null || r.espaciamiento != null || r.profundidadPromedio != null || r.volumenRoca != null || r.rentaEquipoDiaria != null) && (
+                                                                <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
+                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-1"><Drill size={10}/> Datos de perforación</p>
+                                                                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-3 text-xs">
+                                                                        {r.bordo != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{r.bordo} m</p></div>}
+                                                                        {r.espaciamiento != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Espa.</p><p className="font-bold text-indigo-700">{r.espaciamiento} m</p></div>}
+                                                                        {r.profundidadPromedio != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p></div>}
+                                                                        {r.volumenRoca != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
+                                                                        {r.rentaEquipoDiaria != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p></div>}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
                                                 )}
                                             </React.Fragment>
                                         );
