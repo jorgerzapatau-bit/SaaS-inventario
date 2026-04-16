@@ -18,6 +18,19 @@ function getISOWeek(date: Date): number {
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
+function parseDateOnly(value?: string | null): Date | null {
+  if (!value) return null;
+  const v = String(value).trim();
+
+  // Formato correcto del input type="date"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return new Date(`${v}T12:00:00`);
+  }
+
+  // Evita parseos ambiguos como dd/mm/yyyy que terminan en años corruptos
+  throw new Error(`Fecha inválida: "${value}". Usa el formato YYYY-MM-DD.`);
+}
+
 function serializeGasto(g: any) {
   return {
     ...g,
@@ -150,8 +163,8 @@ export async function POST(req: NextRequest) {
     }
 
     const cantidadNum = Number(cantidad);
-    const fechaDate = fechaInicio ? new Date(fechaInicio) : new Date();
-    const fechaFinDate = fechaFin ? new Date(fechaFin) : null;
+    const fechaDate = parseDateOnly(fechaInicio) ?? new Date();
+    const fechaFinDate = parseDateOnly(fechaFin);
     const semanaFinal = semanaNum ?? getISOWeek(fechaDate);
     const anoFinal = anoNum ?? fechaDate.getFullYear();
     const monedaVal = moneda === 'USD' ? 'USD' : 'MXN';
@@ -164,7 +177,7 @@ export async function POST(req: NextRequest) {
 
       const productoCatalogo = await prisma.producto.findFirst({
         where: { id: productoId },
-        select: { nombre: true, unidad: true, precioCompra: true, stockActual: true },
+        select: { nombre: true, unidad: true, precioCompra: true, stockActual: true, moneda: true },
       });
       if (!productoCatalogo) {
         return Response.json({ error: 'Producto no encontrado en el catálogo' }, { status: 404 });
@@ -203,7 +216,7 @@ export async function POST(req: NextRequest) {
             unidad: productoCatalogo.unidad,
             cantidad: cantidadNum,
             precioUnitario: precioFinal,
-            moneda: monedaVal,
+            moneda: (productoCatalogo.moneda === 'USD' ? 'USD' : 'MXN'),
             tipoCambio: tipoCambioN,
             notas: notas || null,
             distribuciones: dist.length ? {
@@ -232,7 +245,7 @@ export async function POST(req: NextRequest) {
             tipoMovimiento: 'SALIDA',
             cantidad: cantidadNum,
             costoUnitario: precioFinal,
-            moneda: monedaVal,
+            moneda: (productoCatalogo.moneda === 'USD' ? 'USD' : 'MXN'),
             tipoCambio: tipoCambioN,
             obraId: obraId || null,
             referencia: equipoId ? `GASTO-EQUIPO:${equipoId}` : `GASTO-OBRA:${obraId}`,

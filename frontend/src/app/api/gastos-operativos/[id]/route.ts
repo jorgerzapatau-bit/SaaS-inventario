@@ -4,6 +4,17 @@ import { getAuthUser, unauthorized } from '../../lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
+function parseDateOnly(value?: string | null): Date | null {
+  if (!value) return null;
+  const v = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return new Date(`${v}T12:00:00`);
+  }
+
+  throw new Error(`Fecha inválida: "${value}". Usa el formato YYYY-MM-DD.`);
+}
+
 function serializeGasto(g: any) {
   return {
     ...g,
@@ -57,7 +68,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     const { id } = await params;
 
     const gasto = await prisma.gastoOperativo.findFirst({
-      where: { id },
+      where: { id, empresaId: user.empresaId },
       select: { tipoGasto: true, productoId: true, cantidad: true, equipoId: true, obraId: true },
     });
 
@@ -164,8 +175,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
           ...(obraId !== undefined && { obraId: obraId || null }),
           ...(equipoId !== undefined && { equipoId: equipoId || null }),
           ...(plantillaId !== undefined && { plantillaId: plantillaId || null }),
-          ...(fechaInicio !== undefined && { fechaInicio: fechaInicio ? new Date(fechaInicio) : null }),
-          ...(fechaFin !== undefined && { fechaFin: fechaFin ? new Date(fechaFin) : null }),
+          ...(fechaInicio !== undefined && { fechaInicio: parseDateOnly(fechaInicio) }),
+          ...(fechaFin !== undefined && { fechaFin: parseDateOnly(fechaFin) }),
           ...(nivelGasto !== undefined && { nivelGasto }),
           ...(distribuible !== undefined && { distribuible: Boolean(distribuible) }),
           ...(notas !== undefined && { notas: notas || null }),
