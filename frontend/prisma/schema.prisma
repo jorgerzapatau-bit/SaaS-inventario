@@ -364,10 +364,10 @@ model PlantillaObra {
   createdAt         DateTime        @default(now())
   obra              Obra            @relation(fields: [obraId], references: [id])
 
-  registrosDiarios            RegistroDiario[]
-  plantillaEquipos            PlantillaEquipo[]
-  gastosOperativos            GastoOperativo[]
-  gastoOperativoDistribucions GastoOperativoDistribucion[]
+  registrosDiarios    RegistroDiario[]
+  plantillaEquipos    PlantillaEquipo[]
+  gastosOperativos    GastoOperativo[]
+  gastoDistribuciones GastoOperativoDistribucion[]
 
   @@unique([obraId, numero])
   @@index([obraId])
@@ -574,13 +574,16 @@ model RegistroMantenimiento {
 model GastoOperativo {
   id             String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
   empresaId      String
-  equipoId       String
+  equipoId       String?
   semanaNum      Int
   anoNum         Int
   fechaInicio    DateTime?                    @db.Date
   fechaFin       DateTime?                    @db.Date
   // NUEVO: distingue si es consumo de almacén o gasto externo
   tipoGasto      TipoGasto                    @default(EXTERNO)
+  // NUEVO: cómo impacta operativamente el gasto
+  nivelGasto     NivelGasto                   @default(GENERAL)
+  distribuible   Boolean                      @default(false)
   categoria      CategoriaGasto?              @default(OTRO)
   producto       String
   // NUEVO: FK al catálogo (solo se llena cuando tipoGasto = INSUMO)
@@ -594,13 +597,11 @@ model GastoOperativo {
   obraId         String?
   // NUEVO: FK real a la plantilla (reemplaza el texto "[Plantilla N]" en notas)
   plantillaId    String?
-  nivelGasto     NivelGasto                   @default(POR_EQUIPO)
-  distribuible   Boolean                      @default(false)
   notas          String?
   createdAt      DateTime                     @default(now()) @db.Timestamp(6)
   updatedAt      DateTime                     @default(now()) @updatedAt @db.Timestamp(6)
   empresa        Empresa                      @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  equipo         Equipo                       @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  equipo         Equipo?                      @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   obra           Obra?                        @relation(fields: [obraId], references: [id], onUpdate: NoAction)
   // NUEVO: relación al producto del catálogo
   productoRef    Producto?                    @relation("GastosProducto", fields: [productoId], references: [id], onUpdate: NoAction)
@@ -626,9 +627,10 @@ model GastoOperativoDistribucion {
   montoAsignado    Decimal          @default(0) @db.Decimal
   metodoAsignacion MetodoAsignacion @default(MANUAL)
   createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  gastoOperativo   GastoOperativo   @relation(fields: [gastoOperativoId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  plantilla        PlantillaObra    @relation(fields: [plantillaId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updatedAt        DateTime         @default(now()) @updatedAt
+
+  gastoOperativo GastoOperativo @relation(fields: [gastoOperativoId], references: [id], onDelete: Cascade)
+  plantilla      PlantillaObra  @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
 
   @@index([gastoOperativoId])
   @@index([plantillaId])
@@ -741,19 +743,6 @@ enum TipoMantenimiento {
   REPARACION
 }
 
-enum NivelGasto {
-  GENERAL
-  POR_EQUIPO
-  POR_PLANTILLA
-  DISTRIBUIBLE
-}
-
-enum MetodoAsignacion {
-  MANUAL
-  POR_DIAS
-  POR_HORAS
-}
-
 enum CategoriaGasto {
   LUBRICANTE
   FILTRO
@@ -768,4 +757,17 @@ enum CategoriaGasto {
 enum TipoGasto {
   INSUMO // Consumo de producto del almacén → descuenta stock
   EXTERNO // Gasto externo, servicio o compra sin pasar por inventario
+}
+
+enum NivelGasto {
+  GENERAL
+  POR_EQUIPO
+  POR_PLANTILLA
+  DISTRIBUIBLE
+}
+
+enum MetodoAsignacion {
+  MANUAL
+  POR_DIAS
+  POR_HORAS
 }
