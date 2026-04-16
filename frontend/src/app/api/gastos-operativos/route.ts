@@ -285,7 +285,6 @@ export async function POST(req: NextRequest) {
         distribuible: Boolean(distribuible || nivelGasto === 'DISTRIBUIBLE'),
         categoria: categoria || 'OTRO',
         producto: producto.trim(),
-        productoId: null,
         unidad: unidad || 'pza',
         cantidad: cantidadNum,
         precioUnitario: Number(precioUnitario),
