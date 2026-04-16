@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: Params) {
                     },
                 },
                 plantillas: {
-                    orderBy: { numero: 'asc' },   // Mejora 10
+                    orderBy: { numero: 'asc' },
                     include: {
                         plantillaEquipos: {
                             where: { fechaFin: null },
@@ -104,7 +104,6 @@ export async function GET(req: NextRequest, { params }: Params) {
             bordo:             obra.bordo             ? Number(obra.bordo)             : null,
             espesor:           obra.espesor           ? Number(obra.espesor)           : null,
             tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
-            // Mejora 10: serializar plantillas con Decimals como número
             plantillas: (obra.plantillas ?? []).map(p => ({
                 ...p,
                 metrosContratados: Number(p.metrosContratados),
@@ -167,7 +166,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
             bordo, espesor, espaciamiento, metrosContratados, precioUnitario,
             moneda, tipoCambio, fechaInicio, fechaFin,
             status, notas,
-            plantillas,   // Mejora 2: [{ id?, numero, metrosContratados, barrenos, fechaInicio, fechaFin, notas }]
+            plantillas,
         } = await req.json();
 
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
@@ -193,12 +192,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 },
             });
 
-            // Mejora 2: upsert de plantillas si vienen en el body
             if (Array.isArray(plantillas)) {
                 for (const p of plantillas) {
                     if (!p.metrosContratados) continue;
                     if (p.id) {
-                        // Actualizar plantilla existente
                         await tx.plantillaObra.update({
                             where: { id: p.id },
                             data: {
@@ -211,7 +208,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
                             },
                         });
                     } else {
-                        // Crear nueva plantilla
                         await tx.plantillaObra.create({
                             data: {
                                 obraId:            id,
@@ -246,10 +242,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
     try {
         const { id } = await params;
 
-        // Verificar que la obra pertenece a esta empresa
-        const obra = await prisma.obra.findFirst({
-            where: { id },
-        });
+        const obra = await prisma.obra.findFirst({ where: { id } });
         if (!obra)
             return Response.json({ error: 'Obra no encontrada' }, { status: 404 });
 
@@ -271,36 +264,39 @@ export async function DELETE(req: NextRequest, { params }: Params) {
                 { status: 400 }
             );
 
-        // Eliminar en transacción: primero los hijos sin datos operativos, luego la obra
         await prisma.$transaction(async (tx) => {
-            // 1. Cerrar asignaciones de equipo (ObraEquipo) — no son datos operativos, son configuración
-            await tx.obraEquipo.deleteMany({ where: { obraId: id } });
-
-            // 2. Desvincular gastos operativos (obraId nullable → poner null)
-            await tx.gastoOperativo.updateMany({
-                where: { obraId: id },
-                data:  { obraId: null },
+            // 1. Eliminar distribuciones de gastos operativos de esta obra
+            //    (CASCADE desde GastoOperativo, pero lo hacemos explícito por claridad)
+            await tx.gastoOperativoDistribucion.deleteMany({
+                where: { gastoOperativo: { obraId: id } },
             });
 
-            // 3. Desvincular compras vinculadas (obraId nullable)
+            // 2. Eliminar gastos operativos de la obra
+            //    obraId es ahora OBLIGATORIO → no se puede desvincular, se elimina
+            await tx.gastoOperativo.deleteMany({ where: { obraId: id } });
+
+            // 3. Cerrar asignaciones de equipo (ObraEquipo)
+            await tx.obraEquipo.deleteMany({ where: { obraId: id } });
+
+            // 4. Desvincular compras vinculadas (obraId sigue nullable en Compra)
             await tx.compra.updateMany({
                 where: { obraId: id },
                 data:  { obraId: null },
             });
 
-            // 4. Desvincular salidas vinculadas (obraId nullable)
+            // 5. Desvincular salidas vinculadas (obraId nullable en Salida)
             await tx.salida.updateMany({
                 where: { obraId: id },
                 data:  { obraId: null },
             });
 
-            // 5. Desvincular movimientos de inventario (obraId nullable)
+            // 6. Desvincular movimientos de inventario (obraId nullable)
             await tx.movimientoInventario.updateMany({
                 where: { obraId: id },
                 data:  { obraId: null },
             });
 
-            // 6. Eliminar la obra
+            // 7. Eliminar la obra
             await tx.obra.delete({ where: { id } });
         });
 
