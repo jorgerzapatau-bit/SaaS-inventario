@@ -237,6 +237,12 @@ function serializeRegistro(r: any) {
 
     return {
         ...r,
+        // Serializar fecha como string YYYY-MM-DD para evitar "Invalid Date" en el cliente
+        fecha:       r.fecha instanceof Date
+                        ? r.fecha.toISOString().slice(0, 10)
+                        : typeof r.fecha === 'string'
+                            ? r.fecha.slice(0, 10)
+                            : r.fecha,
         plantillaId: r.plantillaId ?? null,
         plantilla:   r.plantilla   ?? null,
         horometroInicio:     Number(r.horometroInicio),
