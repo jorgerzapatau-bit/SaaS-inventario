@@ -270,10 +270,11 @@ function serializeRegistro(r: any) {
             ? { id: r.corteRegistro.corte.id, numero: r.corteRegistro.corte.numero, status: r.corteRegistro.corte.status }
             : null,
         kpi: {
-            litrosPorHora:  horas    > 0 ? +(litros  / horas).toFixed(2)    : null,
-            litrosPorMetro: metros   > 0 ? +(litros  / metros).toFixed(2)   : null,
-            metrosPorHora:  horas    > 0 ? +(metros  / horas).toFixed(2)    : null,
-            metrosPorDia:   barrenos > 0 ? +(metros  / barrenos).toFixed(2) : null,
+            litrosPorHora:  horas  > 0 ? +(litros / horas).toFixed(2)  : null,
+            litrosPorMetro: metros > 0 ? +(litros / metros).toFixed(2) : null,
+            metrosPorHora:  horas  > 0 ? +(metros / horas).toFixed(2)  : null,
+            // Un registro = 1 día operado → metrosPorDia = metrosLineales del día
+            metrosPorDia:   metros > 0 ? +metros.toFixed(2)            : null,
         },
     };
 }
