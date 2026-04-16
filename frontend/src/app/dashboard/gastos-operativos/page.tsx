@@ -1,682 +1,672 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Filter, Package, Plus, Receipt, ShoppingCart, Trash2, X } from 'lucide-react';
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+    Receipt, Plus, Trash2, X, Filter, Package, ShoppingCart,
+    AlertTriangle, Building2, Wrench, Users, GitBranch, ChevronDown, ChevronUp,
+} from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
-type TipoGasto = 'INSUMO' | 'EXTERNO';
-type NivelGasto = 'GENERAL' | 'POR_EQUIPO' | 'POR_PLANTILLA' | 'DISTRIBUIBLE';
-
-type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
-type Obra = { id: string; nombre: string; status?: string };
-type Almacen = { id: string; nombre: string };
-type Plantilla = { id: string; numero: number; fechaInicio: string | null; fechaFin: string | null; status?: string; plantillaEquipos?: { equipoId: string; equipo: Equipo }[] };
-
-type ProductoCatalogo = {
-  id: string;
-  nombre: string;
-  sku: string;
-  unidad: string;
-  precioCompra: number;
-  stockActual: number;
-  stockMinimo: number;
-  stockBajo: boolean;
-  moneda: 'MXN' | 'USD';
-};
+type TipoGasto   = 'INSUMO' | 'EXTERNO';
+type NivelGasto  = 'GENERAL' | 'POR_EQUIPO' | 'POR_PLANTILLA' | 'DISTRIBUIBLE';
 
 type Distribucion = {
-  plantillaId: string;
-  porcentaje: string;
-  montoAsignado: string;
-  metodoAsignacion: 'MANUAL' | 'POR_DIAS' | 'POR_HORAS';
+    id: string; plantillaId: string; porcentaje: number;
+    montoAsignado: number; metodoAsignacion: string;
+    plantilla: { numero: number };
 };
 
 type Gasto = {
-  id: string;
-  tipoGasto: TipoGasto;
-  nivelGasto: NivelGasto;
-  distribuible: boolean;
-  obraId: string | null;
-  equipoId: string | null;
-  plantillaId: string | null;
-  fechaInicio: string | null;
-  fechaFin: string | null;
-  categoria: string;
-  producto: string;
-  unidad: string;
-  cantidad: number;
-  precioUnitario: number;
-  total: number;
-  moneda: 'MXN' | 'USD';
-  notas: string | null;
-  obra: { nombre: string } | null;
-  equipo: { nombre: string; numeroEconomico: string | null } | null;
-  plantilla: { id: string; numero: number } | null;
-  distribuciones: { id: string; plantillaId: string; porcentaje: number; montoAsignado: number; metodoAsignacion: string; plantilla?: { id: string; numero: number } }[];
+    id: string; equipoId: string | null; obraId: string; plantillaId: string | null;
+    nivelGasto: NivelGasto; distribuible: boolean; semanaNum: number; anoNum: number;
+    fechaInicio: string | null; fechaFin: string | null; tipoGasto: TipoGasto;
+    categoria: string; producto: string; productoId: string | null; unidad: string;
+    cantidad: number; precioUnitario: number; total: number; moneda: 'MXN' | 'USD';
+    tipoCambio: number | null; notas: string | null;
+    equipo:        { nombre: string; numeroEconomico: string | null } | null;
+    obra:          { nombre: string } | null;
+    plantilla:     { numero: number; fechaInicio: string | null; fechaFin: string | null } | null;
+    productoRef:   { nombre: string; unidad: string; stockActual: number } | null;
+    distribuciones: Distribucion[];
 };
+
+type Equipo  = { id: string; nombre: string; numeroEconomico: string | null };
+type Obra    = { id: string; nombre: string; status: string };
+type Almacen = { id: string; nombre: string };
+type ProductoCatalogo = {
+    id: string; nombre: string; sku: string; unidad: string;
+    precioCompra: number; stockActual: number; stockMinimo: number;
+    stockBajo: boolean; moneda: string;
+};
+type PlantillaResumen = {
+    id: string; numero: number; fechaInicio: string | null; fechaFin: string | null;
+    status: string; plantillaEquipos: { equipoId: string; equipo: Equipo }[];
+};
+type DistribucionRow = { plantillaId: string; porcentaje: string };
 
 const CATEGORIAS: Record<string, { label: string; color: string }> = {
-  LUBRICANTE: { label: 'Lubricante', color: 'bg-yellow-100 text-yellow-700' },
-  FILTRO: { label: 'Filtro', color: 'bg-orange-100 text-orange-700' },
-  HERRAMIENTA: { label: 'Herramienta', color: 'bg-blue-100 text-blue-700' },
-  COMBUSTIBLE: { label: 'Combustible', color: 'bg-red-100 text-red-700' },
-  PERSONAL: { label: 'Personal', color: 'bg-purple-100 text-purple-700' },
-  VEHICULO: { label: 'Vehículo', color: 'bg-indigo-100 text-indigo-700' },
-  RENTA_EQUIPO: { label: 'Renta equipo', color: 'bg-orange-100 text-orange-800' },
-  OTRO: { label: 'Otro', color: 'bg-gray-100 text-gray-600' },
+    LUBRICANTE:   { label: 'Lubricante',   color: 'bg-yellow-100 text-yellow-700' },
+    FILTRO:       { label: 'Filtro',       color: 'bg-orange-100 text-orange-700' },
+    HERRAMIENTA:  { label: 'Herramienta',  color: 'bg-blue-100 text-blue-700'    },
+    COMBUSTIBLE:  { label: 'Combustible',  color: 'bg-red-100 text-red-700'      },
+    PERSONAL:     { label: 'Personal',     color: 'bg-purple-100 text-purple-700' },
+    VEHICULO:     { label: 'Vehículo',     color: 'bg-indigo-100 text-indigo-700' },
+    RENTA_EQUIPO: { label: 'Renta equipo', color: 'bg-orange-100 text-orange-800' },
+    OTRO:         { label: 'Otro',         color: 'bg-gray-100 text-gray-600'    },
 };
 
-const NIVELES: { value: NivelGasto; label: string; help: string }[] = [
-  { value: 'GENERAL', label: 'General de obra', help: 'Afecta a la obra completa. No requiere equipo ni plantilla.' },
-  { value: 'POR_EQUIPO', label: 'Por equipo', help: 'Afecta a una obra y a un equipo específico.' },
-  { value: 'POR_PLANTILLA', label: 'Por plantilla', help: 'Afecta a una plantilla específica de la obra.' },
-  { value: 'DISTRIBUIBLE', label: 'Distribuible', help: 'Se reparte entre varias plantillas.' },
-];
+const NIVEL_INFO: Record<NivelGasto, { label: string; desc: string; sel: string; icon: React.ReactNode }> = {
+    GENERAL:       { label: 'General de obra',  desc: 'Sin equipo ni plantilla',      sel: 'border-gray-400 bg-gray-50',       icon: <Building2 size={18} className="text-gray-500 mt-0.5 flex-shrink-0"/> },
+    POR_EQUIPO:    { label: 'Por equipo',        desc: 'Asignado a un equipo',         sel: 'border-blue-400 bg-blue-50',       icon: <Wrench    size={18} className="text-blue-500 mt-0.5 flex-shrink-0"/>  },
+    POR_PLANTILLA: { label: 'Por plantilla',     desc: 'Asignado a una plantilla',     sel: 'border-purple-400 bg-purple-50',   icon: <Users     size={18} className="text-purple-500 mt-0.5 flex-shrink-0"/>},
+    DISTRIBUIBLE:  { label: 'Distribuible',      desc: 'Repartir entre plantillas',    sel: 'border-emerald-400 bg-emerald-50', icon: <GitBranch size={18} className="text-emerald-500 mt-0.5 flex-shrink-0"/>},
+};
 
-function formatDate(value?: string | null) {
-  if (!value) return '—';
-  const date = new Date(String(value).slice(0, 10) + 'T12:00:00');
-  return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+function NivelBadge({ nivel }: { nivel: NivelGasto }) {
+    const m: Record<NivelGasto, { label: string; color: string }> = {
+        GENERAL:       { label: 'General',     color: 'bg-gray-100 text-gray-600'       },
+        POR_EQUIPO:    { label: 'Equipo',       color: 'bg-blue-100 text-blue-700'       },
+        POR_PLANTILLA: { label: 'Plantilla',    color: 'bg-purple-100 text-purple-700'   },
+        DISTRIBUIBLE:  { label: 'Distribuible', color: 'bg-emerald-100 text-emerald-700' },
+    };
+    const { label, color } = m[nivel] ?? m.GENERAL;
+    return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${color}`}>{label}</span>;
 }
 
-function Money({ value, moneda = 'MXN' }: { value: number; moneda?: 'MXN' | 'USD' }) {
-  return <>{moneda === 'USD' ? 'US$' : '$'}{value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>;
-}
-
-function GastoModal({ obras, equipos, onClose, onSaved }: { obras: Obra[]; equipos: Equipo[]; onClose: () => void; onSaved: () => void }) {
-  const hoy = new Date().toISOString().slice(0, 10);
-  const [nivelGasto, setNivelGasto] = useState<NivelGasto>('GENERAL');
-  const [tipoGasto, setTipoGasto] = useState<TipoGasto>('EXTERNO');
-  const [obraId, setObraId] = useState('');
-  const [equipoId, setEquipoId] = useState('');
-  const [plantillaId, setPlantillaId] = useState('');
-  const [fechaInicio, setFechaInicio] = useState(hoy);
-  const [fechaFin, setFechaFin] = useState('');
-  const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
-  const [loadingPlantillas, setLoadingPlantillas] = useState(false);
-  const [catalogo, setCatalogo] = useState<ProductoCatalogo[]>([]);
-  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-  const [loadingCatalogo, setLoadingCatalogo] = useState(false);
-  const [productoSel, setProductoSel] = useState<ProductoCatalogo | null>(null);
-  const [busqueda, setBusqueda] = useState('');
-  const [almacenId, setAlmacenId] = useState('');
-  const [cantidadInsumo, setCantidadInsumo] = useState('');
-  const [extForm, setExtForm] = useState({
-    categoria: 'OTRO',
-    producto: '',
-    unidad: 'pza',
-    cantidad: '',
-    precioUnitario: '',
-    moneda: 'MXN',
-    tipoCambio: '',
-    notas: '',
-  });
-  const [distribuciones, setDistribuciones] = useState<Distribucion[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    setLoadingCatalogo(true);
-    Promise.all([fetchApi('/products'), fetchApi('/warehouse')])
-      .then(([prods, alms]) => {
-        setCatalogo(Array.isArray(prods) ? prods : []);
-        setAlmacenes(Array.isArray(alms) ? alms : []);
-        if (Array.isArray(alms) && alms[0]) setAlmacenId(alms[0].id);
-      })
-      .finally(() => setLoadingCatalogo(false));
-  }, []);
-
-  useEffect(() => {
-    if (!obraId) {
-      setPlantillas([]);
-      setPlantillaId('');
-      setDistribuciones([]);
-      return;
-    }
-    setLoadingPlantillas(true);
-    fetchApi(`/obras/${obraId}`)
-      .then((obra: any) => {
-        const pls = Array.isArray(obra?.plantillas) ? obra.plantillas : [];
-        setPlantillas(pls);
-        setDistribuciones((prev) => prev.filter((d) => pls.some((p: Plantilla) => p.id === d.plantillaId)));
-      })
-      .catch(() => setPlantillas([]))
-      .finally(() => setLoadingPlantillas(false));
-  }, [obraId]);
-
-  useEffect(() => {
-    if (nivelGasto === 'GENERAL') {
-      setEquipoId('');
-      setPlantillaId('');
-    }
-    if (nivelGasto === 'POR_EQUIPO') {
-      setPlantillaId('');
-    }
-    if (nivelGasto === 'POR_PLANTILLA') {
-      setDistribuciones([]);
-    }
-    if (nivelGasto !== 'DISTRIBUIBLE') {
-      setDistribuciones([]);
-    }
-  }, [nivelGasto]);
-
-  const catalogoFiltrado = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    if (!q) return catalogo;
-    return catalogo.filter((p) => p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
-  }, [busqueda, catalogo]);
-
-  const equiposFiltrados = useMemo(() => {
-    if (nivelGasto === 'POR_PLANTILLA' && plantillaId) {
-      const p = plantillas.find((x) => x.id === plantillaId);
-      return p?.plantillaEquipos?.map((pe) => pe.equipo) || equipos;
-    }
-    if (obraId) {
-      const ids = new Set<string>();
-      const list: Equipo[] = [];
-      plantillas.forEach((p) => (p.plantillaEquipos || []).forEach((pe) => {
-        if (!ids.has(pe.equipoId)) {
-          ids.add(pe.equipoId);
-          list.push(pe.equipo);
-        }
-      }));
-      return list.length ? list : equipos;
-    }
-    return equipos;
-  }, [nivelGasto, plantillaId, plantillas, obraId, equipos]);
-
-  const totalExterno = extForm.cantidad && extForm.precioUnitario ? Number(extForm.cantidad) * Number(extForm.precioUnitario) : 0;
-  const totalInsumo = productoSel && cantidadInsumo ? Number(cantidadInsumo) * Number(productoSel.precioCompra) : 0;
-  const totalActual = tipoGasto === 'INSUMO' ? totalInsumo : totalExterno;
-  const totalDistribuido = distribuciones.reduce((acc, d) => acc + Number(d.montoAsignado || 0), 0);
-  const totalPorcentaje = distribuciones.reduce((acc, d) => acc + Number(d.porcentaje || 0), 0);
-
-  const setExt = (key: keyof typeof extForm, value: string) => setExtForm((prev) => ({ ...prev, [key]: value }));
-  const updateDistribucion = (index: number, patch: Partial<Distribucion>) => {
-    setDistribuciones((prev) => prev.map((d, i) => i === index ? { ...d, ...patch } : d));
-  };
-  const addDistribucion = () => {
-    const existing = new Set(distribuciones.map((d) => d.plantillaId));
-    const next = plantillas.find((p) => !existing.has(p.id));
-    if (!next) return;
-    setDistribuciones((prev) => [...prev, { plantillaId: next.id, porcentaje: '', montoAsignado: '', metodoAsignacion: 'MANUAL' }]);
-  };
-  const removeDistribucion = (index: number) => setDistribuciones((prev) => prev.filter((_, i) => i !== index));
-
-  const handleSave = async () => {
-    try {
-      setError('');
-      if (!obraId) throw new Error('La obra es obligatoria.');
-      if (nivelGasto === 'POR_EQUIPO' && !equipoId) throw new Error('Selecciona un equipo.');
-      if (nivelGasto === 'POR_PLANTILLA' && !plantillaId) throw new Error('Selecciona una plantilla.');
-      if (nivelGasto === 'DISTRIBUIBLE' && distribuciones.length === 0) throw new Error('Agrega al menos una distribución.');
-      if (nivelGasto === 'DISTRIBUIBLE' && totalActual <= 0) throw new Error('Define el total del gasto antes de distribuirlo.');
-
-      let body: any = {
-        nivelGasto,
-        distribuible: nivelGasto === 'DISTRIBUIBLE',
-        obraId,
-        equipoId: equipoId || null,
-        plantillaId: nivelGasto === 'POR_PLANTILLA' ? plantillaId : null,
-        fechaInicio,
-        fechaFin: fechaFin || null,
-      };
-
-      if (nivelGasto === 'DISTRIBUIBLE') {
-        body.distribuciones = distribuciones.map((d) => ({
-          plantillaId: d.plantillaId,
-          porcentaje: Number(d.porcentaje || 0),
-          montoAsignado: Number(d.montoAsignado || 0),
-          metodoAsignacion: d.metodoAsignacion,
-        }));
-      }
-
-      if (tipoGasto === 'INSUMO') {
-        if (!productoSel) throw new Error('Selecciona un insumo del catálogo.');
-        if (!cantidadInsumo || Number(cantidadInsumo) <= 0) throw new Error('La cantidad debe ser mayor a 0.');
-        if (Number(cantidadInsumo) > Number(productoSel.stockActual)) throw new Error(`Stock insuficiente. Disponible: ${productoSel.stockActual} ${productoSel.unidad}`);
-
-        body = {
-          ...body,
-          tipoGasto: 'INSUMO',
-          categoria: extForm.categoria,
-          productoId: productoSel.id,
-          almacenId: almacenId || null,
-          cantidad: Number(cantidadInsumo),
-          moneda: productoSel.moneda,
-        };
-      } else {
-        if (!extForm.producto.trim()) throw new Error('El concepto es obligatorio.');
-        if (!extForm.precioUnitario || Number(extForm.precioUnitario) <= 0) throw new Error('El precio unitario es obligatorio.');
-        if (!extForm.cantidad || Number(extForm.cantidad) <= 0) throw new Error('La cantidad debe ser mayor a 0.');
-
-        body = {
-          ...body,
-          tipoGasto: 'EXTERNO',
-          categoria: extForm.categoria,
-          producto: extForm.producto.trim(),
-          unidad: extForm.unidad,
-          cantidad: Number(extForm.cantidad),
-          precioUnitario: Number(extForm.precioUnitario),
-          moneda: extForm.moneda,
-          tipoCambio: extForm.tipoCambio ? Number(extForm.tipoCambio) : null,
-          notas: extForm.notas || null,
-        };
-      }
-
-      setSaving(true);
-      await fetchApi('/gastos-operativos', { method: 'POST', body: JSON.stringify(body) });
-      onSaved();
-    } catch (e: any) {
-      setError(e.message || 'Error al guardar el gasto');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-6 pb-4 rounded-t-2xl flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-gray-800">Nuevo Gasto Operativo</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Define nivel del gasto y origen para mantener trazabilidad de obra.</p>
-          </div>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
-        </div>
-
-        <div className="px-6 py-5 space-y-5">
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">1 · ¿Cómo se asigna este gasto?</label>
-            <div className="grid md:grid-cols-4 gap-2">
-              {NIVELES.map((n) => (
-                <button
-                  key={n.value}
-                  type="button"
-                  onClick={() => setNivelGasto(n.value)}
-                  className={`text-left rounded-xl border p-3 transition-all ${nivelGasto === n.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}
-                >
-                  <p className={`text-sm font-semibold ${nivelGasto === n.value ? 'text-blue-700' : 'text-gray-700'}`}>{n.label}</p>
-                  <p className="text-xs text-gray-400 mt-1 leading-tight">{n.help}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t border-gray-100" />
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">2 · Origen del gasto</label>
-            <div className="grid md:grid-cols-2 gap-2">
-              <button type="button" onClick={() => setTipoGasto('INSUMO')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${tipoGasto === 'INSUMO' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <Package size={20} className={tipoGasto === 'INSUMO' ? 'text-purple-600' : 'text-gray-400'} />
-                <span className={`text-sm font-semibold ${tipoGasto === 'INSUMO' ? 'text-purple-700' : 'text-gray-600'}`}>Insumo del almacén</span>
-                <span className="text-xs text-gray-400 text-center leading-tight">Descuenta stock del inventario</span>
-              </button>
-              <button type="button" onClick={() => setTipoGasto('EXTERNO')} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${tipoGasto === 'EXTERNO' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <ShoppingCart size={20} className={tipoGasto === 'EXTERNO' ? 'text-blue-600' : 'text-gray-400'} />
-                <span className={`text-sm font-semibold ${tipoGasto === 'EXTERNO' ? 'text-blue-700' : 'text-gray-600'}`}>Gasto externo</span>
-                <span className="text-xs text-gray-400 text-center leading-tight">Servicio, compra directa o taller</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="border-t border-gray-100" />
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Obra <span className="text-red-500">*</span></label>
-              <select value={obraId} onChange={(e) => setObraId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                <option value="">— Selecciona —</option>
-                {obras.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-              </select>
-            </div>
-
-            {nivelGasto !== 'GENERAL' && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Equipo {nivelGasto === 'POR_EQUIPO' ? <span className="text-red-500">*</span> : null}</label>
-                <select value={equipoId} onChange={(e) => setEquipoId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="">— Selecciona —</option>
-                  {equiposFiltrados.map((eq) => <option key={eq.id} value={eq.id}>{eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}</option>)}
-                </select>
-              </div>
-            )}
-
-            {nivelGasto === 'POR_PLANTILLA' && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Plantilla <span className="text-red-500">*</span></label>
-                <select value={plantillaId} onChange={(e) => setPlantillaId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="">— Selecciona —</option>
-                  {plantillas.map((p) => <option key={p.id} value={p.id}>Plantilla {p.numero} · {formatDate(p.fechaInicio)} - {formatDate(p.fechaFin)}</option>)}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
-              <input type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Fecha fin (opcional)</label>
-              <input type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-            </div>
-          </div>
-
-          {tipoGasto === 'INSUMO' ? (
-            <div className="space-y-3">
-              <div className="border-t border-gray-100" />
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">3 · Selecciona el insumo</label>
-              <input type="text" placeholder="Buscar por nombre o SKU..." value={busqueda} onChange={(e) => { setBusqueda(e.target.value); setProductoSel(null); }} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              {productoSel ? (
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-purple-800">{productoSel.nombre}</p>
-                    <p className="text-xs text-purple-600 mt-0.5">Stock: <strong>{productoSel.stockActual} {productoSel.unidad}</strong> · Precio: <Money value={productoSel.precioCompra} moneda={productoSel.moneda} /></p>
-                  </div>
-                  <button onClick={() => setProductoSel(null)} className="text-purple-400 hover:text-purple-700"><X size={14} /></button>
+function GastoRow({ g, fmt, onDelete }: { g: Gasto; fmt: (n: number) => string; onDelete: (id: string) => void }) {
+    const [expanded, setExpanded] = useState(false);
+    const hasDist = g.distribuciones && g.distribuciones.length > 0;
+    const fmtDate = (s: string) => new Date(s + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
+    return (<>
+        <tr className="hover:bg-blue-50/20 transition-colors group">
+            <td className="p-3 text-xs text-gray-500">
+                {g.fechaInicio ? fmtDate(g.fechaInicio) : `S${g.semanaNum}/${g.anoNum}`}
+                {g.fechaFin && <span className="block text-gray-400">→ {fmtDate(g.fechaFin)}</span>}
+            </td>
+            <td className="p-3">
+                <div className="flex flex-col gap-1">
+                    <NivelBadge nivel={g.nivelGasto ?? 'GENERAL'}/>
+                    {g.tipoGasto === 'INSUMO'
+                        ? <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-600"><Package size={9}/> Insumo</span>
+                        : <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600"><ShoppingCart size={9}/> Externo</span>}
                 </div>
-              ) : loadingCatalogo ? (
-                <p className="text-xs text-gray-400 py-2">Cargando catálogo...</p>
-              ) : (
-                <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
-                  {catalogoFiltrado.slice(0, 25).map((p) => (
-                    <button key={p.id} type="button" onClick={() => { setProductoSel(p); setBusqueda(p.nombre); }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-purple-50 text-left">
-                      <div>
-                        <p className="text-sm text-gray-800">{p.nombre}</p>
-                        <p className="text-xs text-gray-400">{p.sku} · {p.unidad}</p>
-                      </div>
-                      <div className="text-right ml-2">
-                        <p className={`text-xs font-medium ${p.stockBajo ? 'text-amber-600' : 'text-gray-600'}`}>{p.stockActual} {p.unidad}</p>
-                        {p.stockBajo && <p className="text-xs text-amber-500">Stock bajo</p>}
-                      </div>
+            </td>
+            <td className="p-3">
+                {g.equipo
+                    ? <><p className="text-sm font-medium text-gray-700">{g.equipo.nombre}</p>
+                        {g.equipo.numeroEconomico && <p className="text-xs text-gray-400">{g.equipo.numeroEconomico}</p>}</>
+                    : <span className="text-xs text-gray-400">—</span>}
+            </td>
+            <td className="p-3">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORIAS[g.categoria]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                    {CATEGORIAS[g.categoria]?.label ?? g.categoria}
+                </span>
+            </td>
+            <td className="p-3">
+                <p className="text-sm text-gray-800">{g.producto}</p>
+                {g.notas && <p className="text-xs text-gray-400 mt-0.5">{g.notas}</p>}
+            </td>
+            <td className="p-3 text-right text-sm text-gray-600">{g.cantidad} {g.unidad}</td>
+            <td className="p-3 text-right text-sm text-gray-600">${fmt(g.precioUnitario)}</td>
+            <td className="p-3 text-right">
+                <span className="text-sm font-bold text-gray-800">${fmt(g.total)}</span>
+                <p className="text-xs text-gray-400">{g.moneda}</p>
+            </td>
+            <td className="p-3">
+                <p className="text-xs text-gray-600">{g.obra?.nombre ?? '—'}</p>
+                {g.plantilla && <p className="text-xs text-gray-400">Plt. {g.plantilla.numero}</p>}
+                {hasDist && (
+                    <button onClick={() => setExpanded(e => !e)}
+                        className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 mt-0.5">
+                        {g.distribuciones.length} plt. {expanded ? <ChevronUp size={11}/> : <ChevronDown size={11}/>}
                     </button>
-                  ))}
-                </div>
-              )}
-              {productoSel && (
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Cantidad <span className="text-red-500">*</span></label>
-                    <input type="number" min="0.01" step="0.01" max={productoSel.stockActual} value={cantidadInsumo} onChange={(e) => setCantidadInsumo(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Almacén</label>
-                    <select value={almacenId} onChange={(e) => setAlmacenId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                      {almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
-              {totalInsumo > 0 && <div className="bg-purple-50 rounded-xl px-4 py-3 flex justify-between items-center"><span className="text-xs text-purple-600 font-medium">Total estimado</span><span className="text-sm font-bold text-purple-700"><Money value={totalInsumo} moneda={productoSel?.moneda || 'MXN'} /></span></div>}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="border-t border-gray-100" />
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">3 · Detalle del gasto</label>
-              <div className="grid md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Categoría</label>
-                  <select value={extForm.categoria} onChange={(e) => setExt('categoria', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    {Object.entries(CATEGORIAS).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Unidad</label>
-                  <input value={extForm.unidad} onChange={(e) => setExt('unidad', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">Concepto / producto <span className="text-red-500">*</span></label>
-                  <input value={extForm.producto} onChange={(e) => setExt('producto', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                  <input type="number" min="0.01" step="0.01" value={extForm.cantidad} onChange={(e) => setExt('cantidad', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Precio unitario</label>
-                  <input type="number" min="0.01" step="0.01" value={extForm.precioUnitario} onChange={(e) => setExt('precioUnitario', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Moneda</label>
-                  <select value={extForm.moneda} onChange={(e) => setExt('moneda', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    <option value="MXN">MXN</option>
-                    <option value="USD">USD</option>
-                  </select>
-                </div>
-                {extForm.moneda === 'USD' && (
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Tipo de cambio</label>
-                    <input type="number" min="0.01" step="0.01" value={extForm.tipoCambio} onChange={(e) => setExt('tipoCambio', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </div>
                 )}
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">Notas</label>
-                  <textarea value={extForm.notas} onChange={(e) => setExt('notas', e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+            </td>
+            <td className="p-3 text-right">
+                <button onClick={() => onDelete(g.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                    <Trash2 size={14}/>
+                </button>
+            </td>
+        </tr>
+        {expanded && hasDist && (
+            <tr>
+                <td colSpan={10} className="bg-emerald-50/50 px-6 py-3">
+                    <p className="text-xs font-semibold text-emerald-700 mb-2">Distribución entre plantillas</p>
+                    <div className="flex flex-wrap gap-3">
+                        {g.distribuciones.map(d => (
+                            <div key={d.id} className="bg-white border border-emerald-200 rounded-lg px-3 py-1.5 text-xs">
+                                <span className="font-medium text-gray-700">Plt. {d.plantilla.numero}</span>
+                                <span className="text-emerald-600 ml-2">{Number(d.porcentaje).toFixed(1)}%</span>
+                                <span className="text-gray-500 ml-2">${fmt(Number(d.montoAsignado))}</span>
+                            </div>
+                        ))}
+                    </div>
+                </td>
+            </tr>
+        )}
+    </>);
+}
+
+function GastoModal({ equipos, obras, onClose, onSaved }: {
+    equipos: Equipo[]; obras: Obra[]; onClose: () => void; onSaved: () => void;
+}) {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const [nivelGasto,  setNivelGasto]  = useState<NivelGasto | ''>('');
+    const [tipoGasto,   setTipoGasto]   = useState<TipoGasto | ''>('');
+    const [obraId,      setObraId]      = useState('');
+    const [equipoId,    setEquipoId]    = useState('');
+    const [plantillaId, setPlantillaId] = useState('');
+    const [fechaInicio, setFechaInicio] = useState(hoy);
+    const [fechaFin,    setFechaFin]    = useState('');
+    const [plantillas,        setPlantillas]        = useState<PlantillaResumen[]>([]);
+    const [loadingPlantillas, setLoadingPlantillas] = useState(false);
+    const [busqueda,    setBusqueda]    = useState('');
+    const [productoSel, setProductoSel] = useState<ProductoCatalogo | null>(null);
+    const [cantidadIn,  setCantidadIn]  = useState('');
+    const [almacenId,   setAlmacenId]   = useState('');
+    const [almacenes,   setAlmacenes]   = useState<Almacen[]>([]);
+    const [catFiltrado, setCatFiltrado] = useState<ProductoCatalogo[]>([]);
+    const [catTodos,    setCatTodos]    = useState<ProductoCatalogo[]>([]);
+    const [loadCat,     setLoadCat]     = useState(false);
+    const [extForm, setExtForm] = useState({ categoria:'OTRO', producto:'', unidad:'pza', cantidad:'', precioUnitario:'', moneda:'MXN', tipoCambio:'', notas:'' });
+    const [distRows, setDistRows] = useState<DistribucionRow[]>([{ plantillaId: '', porcentaje: '' }]);
+    const [saving,  setSaving]  = useState(false);
+    const [err,     setErr]     = useState('');
+
+    useEffect(() => {
+        setLoadCat(true);
+        Promise.all([fetchApi('/products'), fetchApi('/warehouse')])
+            .then(([p, a]) => { setCatTodos(p); setCatFiltrado(p); setAlmacenes(a); if (a.length) setAlmacenId(a[0].id); })
+            .catch(() => {}).finally(() => setLoadCat(false));
+    }, []);
+
+    useEffect(() => {
+        const q = busqueda.toLowerCase().trim();
+        setCatFiltrado(!q ? catTodos : catTodos.filter(p => p.nombre.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)));
+    }, [busqueda, catTodos]);
+
+    useEffect(() => {
+        if (!obraId) { setPlantillas([]); setPlantillaId(''); setEquipoId(''); return; }
+        setLoadingPlantillas(true);
+        fetchApi(`/obras/${obraId}`).then((o: any) => setPlantillas(o.plantillas ?? [])).catch(() => setPlantillas([])).finally(() => setLoadingPlantillas(false));
+        setPlantillaId(''); setEquipoId('');
+    }, [obraId]);
+
+    const equiposFilt: Equipo[] = (() => {
+        if (plantillaId) { const p = plantillas.find(x => x.id === plantillaId); return p ? p.plantillaEquipos.map(pe => pe.equipo) : []; }
+        if (obraId) { const ids = new Set<string>(); const res: Equipo[] = []; plantillas.forEach(p => p.plantillaEquipos.forEach(pe => { if (!ids.has(pe.equipoId)) { ids.add(pe.equipoId); res.push(pe.equipo); } })); return res.length ? res : equipos; }
+        return equipos;
+    })();
+
+    const totalExt  = extForm.cantidad && extForm.precioUnitario ? Number(extForm.cantidad) * Number(extForm.precioUnitario) : null;
+    const totalInsu = productoSel && cantidadIn ? Number(cantidadIn) * productoSel.precioCompra : null;
+    const totalAct  = tipoGasto === 'INSUMO' ? totalInsu : totalExt;
+    const sumaPct   = distRows.reduce((a, r) => a + (Number(r.porcentaje) || 0), 0);
+    const distOk    = nivelGasto !== 'DISTRIBUIBLE' || (distRows.every(r => r.plantillaId && Number(r.porcentaje) > 0) && Math.abs(sumaPct - 100) < 0.01);
+    const setExt    = (k: keyof typeof extForm, v: string) => setExtForm(f => ({ ...f, [k]: v }));
+    const addRow    = () => setDistRows(r => [...r, { plantillaId: '', porcentaje: '' }]);
+    const rmRow     = (i: number) => setDistRows(r => r.filter((_, idx) => idx !== i));
+    const setRow    = (i: number, k: keyof DistribucionRow, v: string) => setDistRows(r => r.map((x, idx) => idx === i ? { ...x, [k]: v } : x));
+    const distribuirEq = () => {
+        const n = distRows.length; if (!n) return;
+        const base = Math.floor(10000 / n) / 100;
+        const resto = parseFloat((100 - base * n).toFixed(2));
+        setDistRows(r => r.map((x, i) => ({ ...x, porcentaje: i === 0 ? String(base + resto) : String(base) })));
+    };
+    const fmtD = (s: string) => new Date(s + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+
+    const handleSave = async () => {
+        setErr('');
+        if (!nivelGasto) { setErr('Selecciona el nivel del gasto'); return; }
+        if (!tipoGasto)  { setErr('Selecciona si es insumo o gasto externo'); return; }
+        if (!obraId)     { setErr('La obra es obligatoria'); return; }
+        if (nivelGasto === 'POR_EQUIPO'    && !equipoId)    { setErr('Selecciona el equipo'); return; }
+        if (nivelGasto === 'POR_PLANTILLA' && !plantillaId) { setErr('Selecciona la plantilla'); return; }
+        if (nivelGasto === 'DISTRIBUIBLE') {
+            if (distRows.some(r => !r.plantillaId)) { setErr('Selecciona la plantilla en cada fila'); return; }
+            if (Math.abs(sumaPct - 100) > 0.01) { setErr(`Los % deben sumar 100%. Suma actual: ${sumaPct.toFixed(2)}%`); return; }
+        }
+        setSaving(true);
+        try {
+            const base: Record<string, unknown> = {
+                obraId, equipoId: equipoId || null,
+                plantillaId: nivelGasto === 'POR_PLANTILLA' ? plantillaId : null,
+                fechaInicio, fechaFin: fechaFin || null,
+                nivelGasto, distribuible: nivelGasto === 'DISTRIBUIBLE',
+                distribuciones: nivelGasto === 'DISTRIBUIBLE'
+                    ? distRows.map(r => ({ plantillaId: r.plantillaId, porcentaje: Number(r.porcentaje), metodoAsignacion: 'MANUAL' }))
+                    : [],
+            };
+            if (tipoGasto === 'INSUMO') {
+                if (!productoSel) { setErr('Selecciona un producto'); setSaving(false); return; }
+                if (!cantidadIn || Number(cantidadIn) <= 0) { setErr('Cantidad inválida'); setSaving(false); return; }
+                if (Number(cantidadIn) > productoSel.stockActual) { setErr(`Stock insuficiente (disp: ${productoSel.stockActual})`); setSaving(false); return; }
+                await fetchApi('/gastos-operativos', { method: 'POST', body: JSON.stringify({ ...base, tipoGasto: 'INSUMO', productoId: productoSel.id, almacenId: almacenId || null, cantidad: Number(cantidadIn), moneda: productoSel.moneda }) });
+            } else {
+                if (!extForm.producto.trim()) { setErr('El concepto es requerido'); setSaving(false); return; }
+                if (!extForm.precioUnitario)  { setErr('El precio es requerido'); setSaving(false); return; }
+                if (!extForm.cantidad || Number(extForm.cantidad) <= 0) { setErr('La cantidad debe ser > 0'); setSaving(false); return; }
+                await fetchApi('/gastos-operativos', { method: 'POST', body: JSON.stringify({ ...base, tipoGasto: 'EXTERNO', categoria: extForm.categoria, producto: extForm.producto, unidad: extForm.unidad, cantidad: Number(extForm.cantidad), precioUnitario: Number(extForm.precioUnitario), moneda: extForm.moneda, tipoCambio: extForm.tipoCambio ? Number(extForm.tipoCambio) : null, notas: extForm.notas || null }) });
+            }
+            onSaved();
+        } catch (e: any) { setErr(e.message || 'Error al guardar'); } finally { setSaving(false); }
+    };
+
+    const sel = (nivel: NivelGasto) => nivelGasto === nivel ? NIVEL_INFO[nivel].sel + ' border-2' : 'border-gray-200 hover:border-gray-300';
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[94vh] overflow-y-auto">
+                <div className="sticky top-0 bg-white border-b border-gray-100 px-6 pt-5 pb-4 rounded-t-2xl flex items-start justify-between z-10">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800">Nuevo Gasto Operativo</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">{nivelGasto ? NIVEL_INFO[nivelGasto].label : 'Selecciona el nivel del gasto'}</p>
+                    </div>
+                    <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={18}/></button>
                 </div>
-              </div>
-              {totalExterno > 0 && <div className="bg-blue-50 rounded-xl px-4 py-3 flex justify-between items-center"><span className="text-xs text-blue-600 font-medium">Total estimado</span><span className="text-sm font-bold text-blue-700"><Money value={totalExterno} moneda={extForm.moneda as 'MXN' | 'USD'} /></span></div>}
-            </div>
-          )}
+                <div className="px-6 py-5 space-y-6">
 
-          {nivelGasto === 'DISTRIBUIBLE' && (
-            <div className="space-y-3 border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">4 · Distribución manual por plantillas</label>
-                <button type="button" onClick={addDistribucion} disabled={!obraId || plantillas.length === 0} className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50">Agregar plantilla</button>
-              </div>
-              {loadingPlantillas ? <p className="text-xs text-gray-400">Cargando plantillas...</p> : null}
-              {distribuciones.length === 0 ? <p className="text-sm text-gray-400">Agrega una o más plantillas para repartir el gasto.</p> : null}
-              {distribuciones.map((d, index) => (
-                <div key={`${d.plantillaId}-${index}`} className="grid md:grid-cols-12 gap-2 items-end border border-gray-100 rounded-xl p-3">
-                  <div className="md:col-span-4">
-                    <label className="block text-xs text-gray-500 mb-1">Plantilla</label>
-                    <select value={d.plantillaId} onChange={(e) => updateDistribucion(index, { plantillaId: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                      {plantillas.map((p) => <option key={p.id} value={p.id}>Plantilla {p.numero}</option>)}
-                    </select>
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-xs text-gray-500 mb-1">Porcentaje</label>
-                    <input type="number" min="0" max="100" step="0.01" value={d.porcentaje} onChange={(e) => updateDistribucion(index, { porcentaje: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-xs text-gray-500 mb-1">Monto asignado</label>
-                    <input type="number" min="0" step="0.01" value={d.montoAsignado} onChange={(e) => updateDistribucion(index, { montoAsignado: e.target.value })} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                  </div>
-                  <div className="md:col-span-2 flex justify-end">
-                    <button type="button" onClick={() => removeDistribucion(index)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
-                  </div>
+                    {/* PASO 1: Nivel */}
+                    <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">1 · Nivel del gasto <span className="text-red-500">*</span></p>
+                        <div className="grid grid-cols-2 gap-2">
+                            {(Object.entries(NIVEL_INFO) as [NivelGasto, typeof NIVEL_INFO[NivelGasto]][]).map(([key, def]) => (
+                                <button key={key} onClick={() => setNivelGasto(key)} className={`flex items-start gap-2.5 p-3 rounded-xl border-2 transition-all text-left ${sel(key)}`}>
+                                    {def.icon}
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-700 leading-tight">{def.label}</p>
+                                        <p className="text-xs text-gray-400 mt-0.5 leading-tight">{def.desc}</p>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {nivelGasto && (<>
+                        <div className="border-t border-gray-100"/>
+                        {/* PASO 2: Tipo */}
+                        <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">2 · Tipo de gasto <span className="text-red-500">*</span></p>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button onClick={() => { setTipoGasto('INSUMO'); setProductoSel(null); setBusqueda(''); }}
+                                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${tipoGasto === 'INSUMO' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                                    <Package size={18} className={tipoGasto === 'INSUMO' ? 'text-purple-600' : 'text-gray-400'}/>
+                                    <span className={`text-sm font-semibold ${tipoGasto === 'INSUMO' ? 'text-purple-700' : 'text-gray-600'}`}>Insumo del almacén</span>
+                                    <span className="text-xs text-gray-400 text-center leading-tight">Descuenta stock</span>
+                                </button>
+                                <button onClick={() => { setTipoGasto('EXTERNO'); setProductoSel(null); }}
+                                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all ${tipoGasto === 'EXTERNO' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                                    <ShoppingCart size={18} className={tipoGasto === 'EXTERNO' ? 'text-blue-600' : 'text-gray-400'}/>
+                                    <span className={`text-sm font-semibold ${tipoGasto === 'EXTERNO' ? 'text-blue-700' : 'text-gray-600'}`}>Gasto externo</span>
+                                    <span className="text-xs text-gray-400 text-center leading-tight">Compra directa / servicio</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {tipoGasto && (<>
+                            <div className="border-t border-gray-100"/>
+                            {/* PASO 3: Contexto */}
+                            <div className="space-y-3">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">3 · Contexto</p>
+                                {/* Obra */}
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Obra <span className="text-red-500">*</span></label>
+                                    <select value={obraId} onChange={e => setObraId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                        <option value="">— Selecciona una obra —</option>
+                                        {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                                    </select>
+                                </div>
+                                {/* Equipo — obligatorio POR_EQUIPO, opcional resto (excepto POR_PLANTILLA que lo muestra debajo) */}
+                                {nivelGasto !== 'POR_PLANTILLA' && (
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">
+                                            Equipo {nivelGasto === 'POR_EQUIPO' ? <span className="text-red-500">*</span> : <span className="text-gray-400">(opcional)</span>}
+                                        </label>
+                                        <select value={equipoId} onChange={e => setEquipoId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                            <option value="">— Sin equipo específico —</option>
+                                            {equiposFilt.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                                {/* Plantilla POR_PLANTILLA */}
+                                {nivelGasto === 'POR_PLANTILLA' && obraId && (
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Plantilla <span className="text-red-500">*</span></label>
+                                        {loadingPlantillas ? <p className="text-xs text-gray-400 py-1">Cargando...</p>
+                                        : plantillas.length === 0 ? <p className="text-xs text-amber-600 italic py-1">Esta obra no tiene plantillas.</p>
+                                        : <div className="space-y-1">
+                                            {plantillas.map(p => {
+                                                const ini = p.fechaInicio ? fmtD(String(p.fechaInicio).slice(0,10)) : null;
+                                                const fin = p.fechaFin    ? fmtD(String(p.fechaFin).slice(0,10))    : null;
+                                                return (
+                                                    <label key={p.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${plantillaId===p.id ? 'bg-purple-50 border-purple-300' : 'border-gray-100 hover:border-gray-200'}`}>
+                                                        <input type="radio" name="plt" checked={plantillaId===p.id} onChange={() => setPlantillaId(p.id)} className="accent-purple-600 flex-shrink-0"/>
+                                                        <span className="text-sm font-semibold text-gray-700 flex-1">Plantilla {p.numero}</span>
+                                                        {ini && fin && <span className="text-xs text-gray-400">{ini}–{fin}</span>}
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>}
+                                        {plantillaId && (
+                                            <div className="mt-2">
+                                                <label className="block text-xs text-gray-400 mb-1">Equipo (opcional)</label>
+                                                <select value={equipoId} onChange={e => setEquipoId(e.target.value)} className="w-full px-3 py-2 border border-gray-100 rounded-lg text-sm focus:outline-none">
+                                                    <option value="">— Sin equipo —</option>
+                                                    {equiposFilt.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}{eq.numeroEconomico ? ` (${eq.numeroEconomico})` : ''}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {/* Fechas */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Fecha inicio</label>
+                                        <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Fecha fin <span className="text-gray-400">(opcional)</span></label>
+                                        <input type="date" value={fechaFin} min={fechaInicio} onChange={e => setFechaFin(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-gray-100"/>
+
+                            {/* PASO 4A: INSUMO */}
+                            {tipoGasto === 'INSUMO' && (
+                                <div className="space-y-3">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">4 · Insumo del catálogo</p>
+                                    <input type="text" placeholder="Buscar por nombre o SKU..." value={busqueda} onChange={e => { setBusqueda(e.target.value); setProductoSel(null); }} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"/>
+                                    {productoSel ? (
+                                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-start justify-between gap-2">
+                                            <div>
+                                                <p className="text-sm font-semibold text-purple-800">{productoSel.nombre}</p>
+                                                <p className="text-xs text-purple-600 mt-0.5">
+                                                    Stock: <strong>{productoSel.stockActual} {productoSel.unidad}</strong>
+                                                    {productoSel.stockBajo && <span className="ml-2 inline-flex items-center gap-1 text-amber-600"><AlertTriangle size={11}/> Stock bajo</span>}
+                                                    &nbsp;· ${productoSel.precioCompra.toLocaleString('es-MX', { minimumFractionDigits: 2 })} {productoSel.moneda}
+                                                </p>
+                                            </div>
+                                            <button onClick={() => setProductoSel(null)} className="text-purple-400 hover:text-purple-700"><X size={14}/></button>
+                                        </div>
+                                    ) : loadCat ? <p className="text-xs text-gray-400">Cargando catálogo...</p>
+                                    : <div className="max-h-44 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
+                                        {catFiltrado.slice(0, 30).map(p => (
+                                            <button key={p.id} onClick={() => { setProductoSel(p); setBusqueda(p.nombre); }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-purple-50 transition-colors text-left">
+                                                <div><p className="text-sm text-gray-800">{p.nombre}</p><p className="text-xs text-gray-400">{p.sku} · {p.unidad}</p></div>
+                                                <p className={`text-xs font-medium ml-2 flex-shrink-0 ${p.stockBajo ? 'text-amber-600' : 'text-gray-500'}`}>{p.stockActual} {p.unidad}</p>
+                                            </button>
+                                        ))}
+                                        {catFiltrado.length === 0 && <p className="text-xs text-gray-400 italic p-3">No se encontraron productos.</p>}
+                                    </div>}
+                                    {productoSel && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Cantidad <span className="text-red-500">*</span> <span className="text-gray-400">(máx. {productoSel.stockActual})</span></label>
+                                                <input type="number" min="0.01" step="0.01" max={productoSel.stockActual} value={cantidadIn} onChange={e => setCantidadIn(e.target.value)} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"/>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Almacén</label>
+                                                <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20">
+                                                    {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* PASO 4B: EXTERNO */}
+                            {tipoGasto === 'EXTERNO' && (
+                                <div className="space-y-3">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">4 · Detalle del gasto</p>
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Categoría</label>
+                                        <select value={extForm.categoria} onChange={e => setExt('categoria', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                            {Object.entries(CATEGORIAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Concepto / Producto <span className="text-red-500">*</span></label>
+                                        <input type="text" value={extForm.producto} onChange={e => setExt('producto', e.target.value)} placeholder="Ej: Aceite motor SAE 15W40, Gasolina, Refacción..." className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Cantidad <span className="text-red-500">*</span></label>
+                                            <input type="number" min="0" step="0.01" value={extForm.cantidad} onChange={e => setExt('cantidad', e.target.value)} placeholder="1" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Unidad</label>
+                                            <select value={extForm.unidad} onChange={e => setExt('unidad', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                                {['pza','lt','kg','caja','día','hr','servicio','mts'].map(u => <option key={u} value={u}>{u}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Precio unit. <span className="text-red-500">*</span></label>
+                                            <input type="number" min="0" step="0.01" value={extForm.precioUnitario} onChange={e => setExt('precioUnitario', e.target.value)} placeholder="0.00" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Moneda</label>
+                                            <select value={extForm.moneda} onChange={e => setExt('moneda', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                                <option value="MXN">MXN</option><option value="USD">USD</option>
+                                            </select>
+                                        </div>
+                                        {extForm.moneda === 'USD' && (
+                                            <div>
+                                                <label className="block text-xs text-gray-500 mb-1">Tipo de cambio</label>
+                                                <input type="number" min="0" step="0.01" value={extForm.tipoCambio} onChange={e => setExt('tipoCambio', e.target.value)} placeholder="17.50" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-500 mb-1">Notas</label>
+                                        <input type="text" value={extForm.notas} onChange={e => setExt('notas', e.target.value)} placeholder="Opcional" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Total preview */}
+                            {totalAct !== null && (
+                                <div className={`rounded-xl px-4 py-3 flex justify-between items-center ${tipoGasto==='INSUMO' ? 'bg-purple-50' : 'bg-blue-50'}`}>
+                                    <span className={`text-xs font-medium ${tipoGasto==='INSUMO' ? 'text-purple-600' : 'text-blue-600'}`}>Total</span>
+                                    <span className={`text-sm font-bold ${tipoGasto==='INSUMO' ? 'text-purple-700' : 'text-blue-700'}`}>
+                                        ${totalAct.toLocaleString('es-MX', { minimumFractionDigits: 2 })} {tipoGasto==='INSUMO' ? productoSel?.moneda : extForm.moneda}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* PASO 5: Distribución */}
+                            {nivelGasto === 'DISTRIBUIBLE' && obraId && (
+                                <div className="space-y-3">
+                                    <div className="border-t border-gray-100"/>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">5 · Distribución entre plantillas</p>
+                                        <button onClick={distribuirEq} className="text-xs text-emerald-600 hover:text-emerald-800 underline">Distribuir equitativo</button>
+                                    </div>
+                                    {loadingPlantillas ? <p className="text-xs text-gray-400">Cargando plantillas...</p>
+                                    : plantillas.length === 0 ? <p className="text-xs text-amber-600 italic">Esta obra no tiene plantillas para distribuir.</p>
+                                    : <div className="space-y-2">
+                                        {distRows.map((row, i) => (
+                                            <div key={i} className="flex gap-2 items-center">
+                                                <select value={row.plantillaId} onChange={e => setRow(i, 'plantillaId', e.target.value)} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                                                    <option value="">— Plantilla —</option>
+                                                    {plantillas.map(p => <option key={p.id} value={p.id}>Plt. {p.numero}</option>)}
+                                                </select>
+                                                <div className="relative w-24">
+                                                    <input type="number" min="0" max="100" step="0.01" value={row.porcentaje} onChange={e => setRow(i, 'porcentaje', e.target.value)} placeholder="0" className="w-full pr-6 pl-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"/>
+                                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                                </div>
+                                                {distRows.length > 1 && <button onClick={() => rmRow(i)} className="p-1.5 text-gray-400 hover:text-red-500 rounded"><X size={14}/></button>}
+                                            </div>
+                                        ))}
+                                        <div className={`flex justify-between items-center px-3 py-2 rounded-lg text-xs font-medium ${Math.abs(sumaPct-100)<0.01 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                            <span>Suma de %</span>
+                                            <span className="font-bold">{sumaPct.toFixed(2)}% {Math.abs(sumaPct-100)<0.01 ? '✓' : '(debe ser 100%)'}</span>
+                                        </div>
+                                        {totalAct && distRows.some(r => r.plantillaId && r.porcentaje) && (
+                                            <div className="bg-gray-50 rounded-lg p-3 space-y-1">
+                                                <p className="text-xs text-gray-400 mb-1.5">Monto asignado por plantilla:</p>
+                                                {distRows.map((r, i) => {
+                                                    const plt = plantillas.find(p => p.id === r.plantillaId);
+                                                    const monto = totalAct * (Number(r.porcentaje)||0) / 100;
+                                                    if (!plt || !r.porcentaje) return null;
+                                                    return <div key={i} className="flex justify-between text-xs text-gray-600"><span>Plt. {plt.numero}</span><span className="font-medium">${monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span></div>;
+                                                })}
+                                            </div>
+                                        )}
+                                        <button onClick={addRow} className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-xs text-emerald-600 hover:bg-emerald-50 transition-colors">+ Agregar plantilla</button>
+                                    </div>}
+                                </div>
+                            )}
+                        </>)}
+                    </>)}
                 </div>
-              ))}
-              <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600 space-y-1">
-                <p>Total gasto: <span className="font-semibold"><Money value={totalActual || 0} moneda={tipoGasto === 'INSUMO' ? (productoSel?.moneda || 'MXN') : (extForm.moneda as 'MXN' | 'USD')} /></span></p>
-                <p>Distribuido: <span className="font-semibold">{totalPorcentaje.toFixed(2)}%</span> · <span className="font-semibold"><Money value={totalDistribuido || 0} moneda={tipoGasto === 'INSUMO' ? (productoSel?.moneda || 'MXN') : (extForm.moneda as 'MXN' | 'USD')} /></span></p>
-                <p className="text-xs text-gray-400">La API valida que la distribución sume 100% o el total del gasto.</p>
-              </div>
+                {err && <p className="text-xs text-red-500 px-6 pb-3 flex items-center gap-1"><AlertTriangle size={12}/> {err}</p>}
+                <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 rounded-b-2xl flex gap-2">
+                    <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
+                    <button onClick={handleSave} disabled={saving || !tipoGasto || !nivelGasto || (nivelGasto==='DISTRIBUIBLE' && !distOk)} className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-40 transition-colors">
+                        {saving ? 'Guardando...' : 'Registrar gasto'}
+                    </button>
+                </div>
             </div>
-          )}
-
-          {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg border border-red-100 text-sm">{error}</div>}
         </div>
+    );
+}
 
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-2 justify-end rounded-b-2xl">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
-          <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-40">{saving ? 'Guardando...' : 'Registrar gasto'}</button>
+function GastosOperativosInner() {
+    const searchParams  = useSearchParams();
+    const equipoIdParam = searchParams.get('equipoId') || '';
+    const [gastos,       setGastos]       = useState<Gasto[]>([]);
+    const [equipos,      setEquipos]      = useState<Equipo[]>([]);
+    const [obras,        setObras]        = useState<Obra[]>([]);
+    const [loading,      setLoading]      = useState(true);
+    const [error,        setError]        = useState('');
+    const [modal,        setModal]        = useState(false);
+    const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam);
+    const [filtroCateg,  setFiltroCateg]  = useState('');
+    const [filtroTipo,   setFiltroTipo]   = useState('');
+    const [filtroNivel,  setFiltroNivel]  = useState('');
+
+    const load = async () => {
+        setLoading(true);
+        try {
+            const p = new URLSearchParams();
+            if (filtroEquipo) p.set('equipoId',   filtroEquipo);
+            if (filtroCateg)  p.set('categoria',  filtroCateg);
+            if (filtroTipo)   p.set('tipoGasto',  filtroTipo);
+            if (filtroNivel)  p.set('nivelGasto', filtroNivel);
+            const [gs, eqs, obs] = await Promise.all([fetchApi(`/gastos-operativos${p.toString() ? '?' + p : ''}`), fetchApi('/equipos'), fetchApi('/obras')]);
+            setGastos(gs); setEquipos(eqs); setObras(obs);
+        } catch (e: any) { setError(e.message || 'Error al cargar gastos'); } finally { setLoading(false); }
+    };
+
+    useEffect(() => { load(); }, [filtroEquipo, filtroCateg, filtroTipo, filtroNivel]);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('¿Eliminar este gasto? Si era un insumo, el stock se restaurará automáticamente.')) return;
+        try { await fetchApi(`/gastos-operativos/${id}`, { method: 'DELETE' }); setGastos(g => g.filter(x => x.id !== id)); }
+        catch (e: any) { alert(e.message || 'Error al eliminar'); }
+    };
+
+    const fmt = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalMXN = gastos.filter(g => g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
+    const totalUSD = gastos.filter(g => g.moneda === 'USD').reduce((a, g) => a + g.total, 0);
+    const totalInsumos  = gastos.filter(g => g.tipoGasto === 'INSUMO'  && g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
+    const totalExternos = gastos.filter(g => g.tipoGasto === 'EXTERNO' && g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
+    const totalDist     = gastos.filter(g => g.distribuible && g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
+
+    return (
+        <div className="space-y-5 animate-in fade-in duration-500">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Gastos Operativos</h1>
+                    <p className="text-sm text-gray-500 mt-1">Gastos generales de obra por nivel: general, equipo, plantilla o distribuible.</p>
+                </div>
+                <button onClick={() => setModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
+                    <Plus size={16}/> Nuevo gasto
+                </button>
+            </div>
+            {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
+            {!loading && gastos.length > 0 && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Total MXN</p><p className="text-2xl font-bold text-gray-800">${fmt(totalMXN)}</p></div>
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Insumos almacén</p><p className="text-xl font-bold text-purple-700">${fmt(totalInsumos)}</p></div>
+                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Gastos externos</p><p className="text-xl font-bold text-blue-700">${fmt(totalExternos)}</p></div>
+                    {totalUSD > 0
+                        ? <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Total USD</p><p className="text-xl font-bold text-green-700">${fmt(totalUSD)}</p></div>
+                        : <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Con distribución</p><p className="text-xl font-bold text-emerald-700">${fmt(totalDist)}</p></div>}
+                </div>
+            )}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                <AlertTriangle size={15} className="text-amber-500 mt-0.5 flex-shrink-0"/>
+                <p className="text-xs text-amber-700"><strong>Gastos directos</strong> (diésel, operadores, peones, renta de equipo) ya están en <strong>Registros Diarios</strong> — no duplicar aquí.</p>
+            </div>
+            <div className="flex gap-3 flex-wrap items-center">
+                <Filter size={14} className="text-gray-400 flex-shrink-0"/>
+                <select value={filtroNivel} onChange={e => setFiltroNivel(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <option value="">Todos los niveles</option>
+                    <option value="GENERAL">General de obra</option>
+                    <option value="POR_EQUIPO">Por equipo</option>
+                    <option value="POR_PLANTILLA">Por plantilla</option>
+                    <option value="DISTRIBUIBLE">Distribuible</option>
+                </select>
+                <select value={filtroEquipo} onChange={e => setFiltroEquipo(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <option value="">Todos los equipos</option>
+                    {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
+                </select>
+                <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <option value="">Todos los tipos</option>
+                    <option value="INSUMO">Insumo del almacén</option>
+                    <option value="EXTERNO">Gasto externo</option>
+                </select>
+                <select value={filtroCateg} onChange={e => setFiltroCateg(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <option value="">Todas las categorías</option>
+                    {Object.entries(CATEGORIAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                {(filtroEquipo || filtroCateg || filtroTipo || filtroNivel) && (
+                    <button onClick={() => { setFiltroEquipo(''); setFiltroCateg(''); setFiltroTipo(''); setFiltroNivel(''); }} className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"><X size={13}/> Limpiar</button>
+                )}
+            </div>
+            <Card>
+                {loading ? <div className="p-10 text-center text-gray-400 text-sm">Cargando gastos...</div>
+                : gastos.length === 0 ? (
+                    <div className="p-10 text-center">
+                        <Receipt size={36} className="text-gray-300 mx-auto mb-3"/>
+                        <p className="text-sm font-semibold text-gray-600">No hay gastos registrados</p>
+                        <p className="text-xs text-gray-400 mt-1">Registra el primer gasto operativo con el botón de arriba.</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-gray-50/50 border-b border-gray-100">
+                                    {['Fecha','Nivel / Tipo','Equipo','Categoría','Concepto','Cant.','P. Unit.','Total','Obra / Plt.','Acciones'].map((h, i) => (
+                                        <th key={h} className={`p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider ${i >= 5 && i <= 7 ? 'text-right' : ''} ${i === 9 ? 'text-right' : ''}`}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {gastos.map(g => <GastoRow key={g.id} g={g} fmt={fmt} onDelete={handleDelete}/>)}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
+            {modal && <GastoModal equipos={equipos} obras={obras} onClose={() => setModal(false)} onSaved={() => { setModal(false); load(); }}/>}
         </div>
-      </div>
-    </div>
-  );
+    );
 }
 
 export default function GastosOperativosPage() {
-  const [gastos, setGastos] = useState<Gasto[]>([]);
-  const [equipos, setEquipos] = useState<Equipo[]>([]);
-  const [obras, setObras] = useState<Obra[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [modal, setModal] = useState(false);
-  const [filtroEquipo, setFiltroEquipo] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [filtroNivel, setFiltroNivel] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('');
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (filtroEquipo) params.set('equipoId', filtroEquipo);
-      if (filtroTipo) params.set('tipoGasto', filtroTipo);
-      if (filtroNivel) params.set('nivelGasto', filtroNivel);
-      if (filtroCategoria) params.set('categoria', filtroCategoria);
-      const [gs, eqs, obs] = await Promise.all([
-        fetchApi(`/gastos-operativos${params.toString() ? `?${params.toString()}` : ''}`),
-        fetchApi('/equipos'),
-        fetchApi('/obras'),
-      ]);
-      setGastos(Array.isArray(gs) ? gs : []);
-      setEquipos(Array.isArray(eqs) ? eqs : []);
-      setObras(Array.isArray(obs) ? obs : []);
-    } catch (e: any) {
-      setError(e.message || 'Error al cargar gastos');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, [filtroEquipo, filtroTipo, filtroNivel, filtroCategoria]);
-
-  const totalMXN = gastos.filter((g) => g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
-  const totalInsumos = gastos.filter((g) => g.tipoGasto === 'INSUMO' && g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
-  const totalExternos = gastos.filter((g) => g.tipoGasto === 'EXTERNO' && g.moneda === 'MXN').reduce((a, g) => a + g.total, 0);
-  const totalDistribuibles = gastos.filter((g) => g.nivelGasto === 'DISTRIBUIBLE').length;
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('¿Eliminar este gasto? Si era un insumo, el stock se restaurará automáticamente.')) return;
-    try {
-      await fetchApi(`/gastos-operativos/${id}`, { method: 'DELETE' });
-      setGastos((prev) => prev.filter((g) => g.id !== id));
-    } catch (e: any) {
-      alert(e.message || 'Error al eliminar');
-    }
-  };
-
-  return (
-    <div className="space-y-5 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Gastos Operativos</h1>
-          <p className="text-sm text-gray-500 mt-1">Separa origen del gasto (almacén / externo) del nivel operativo (obra / equipo / plantilla / distribuible).</p>
-        </div>
-        <button onClick={() => setModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm text-sm">
-          <Plus size={16} /> Nuevo gasto
-        </button>
-      </div>
-
-      {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
-
-      {!loading && gastos.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Total MXN</p><p className="text-2xl font-bold text-gray-800"><Money value={totalMXN} /></p></div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Insumos desde almacén</p><p className="text-xl font-bold text-purple-700"><Money value={totalInsumos} /></p></div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Gastos externos</p><p className="text-xl font-bold text-blue-700"><Money value={totalExternos} /></p></div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"><p className="text-xs text-gray-400 mb-1">Distribuibles</p><p className="text-2xl font-bold text-gray-800">{totalDistribuibles}</p></div>
-        </div>
-      )}
-
-      <div className="flex gap-3 flex-wrap items-center">
-        <Filter size={14} className="text-gray-400 flex-shrink-0" />
-        <select value={filtroEquipo} onChange={(e) => setFiltroEquipo(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700">
-          <option value="">Todos los equipos</option>
-          {equipos.map((eq) => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
-        </select>
-        <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700">
-          <option value="">Todos los orígenes</option>
-          <option value="INSUMO">Insumo del almacén</option>
-          <option value="EXTERNO">Gasto externo</option>
-        </select>
-        <select value={filtroNivel} onChange={(e) => setFiltroNivel(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700">
-          <option value="">Todos los niveles</option>
-          {NIVELES.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
-        </select>
-        <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)} className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700">
-          <option value="">Todas las categorías</option>
-          {Object.entries(CATEGORIAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        {(filtroEquipo || filtroTipo || filtroNivel || filtroCategoria) && (
-          <button onClick={() => { setFiltroEquipo(''); setFiltroTipo(''); setFiltroNivel(''); setFiltroCategoria(''); }} className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600">
-            <X size={13} /> Limpiar
-          </button>
-        )}
-      </div>
-
-      <Card>
-        {loading ? (
-          <div className="p-10 text-center text-gray-400 text-sm">Cargando gastos...</div>
-        ) : gastos.length === 0 ? (
-          <div className="p-10 text-center">
-            <Receipt size={36} className="text-gray-300 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-gray-600">No hay gastos registrados</p>
-            <p className="text-xs text-gray-400 mt-1">Registra el primer gasto operativo con el botón de arriba.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Origen</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Nivel</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra / contexto</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Concepto</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Total</th>
-                  <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {gastos.map((g) => (
-                  <tr key={g.id} className="border-b border-gray-50 hover:bg-gray-50/60">
-                    <td className="p-3 text-sm text-gray-700">
-                      <div>{formatDate(g.fechaInicio)}</div>
-                      <div className="text-xs text-gray-400">{g.fechaFin ? `→ ${formatDate(g.fechaFin)}` : 'Sin rango'}</div>
-                    </td>
-                    <td className="p-3 text-sm text-gray-700">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${g.tipoGasto === 'INSUMO' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {g.tipoGasto === 'INSUMO' ? 'Almacén' : 'Externo'}
-                      </span>
-                    </td>
-                    <td className="p-3 text-sm text-gray-700">
-                      <div className="font-medium">{NIVELES.find((n) => n.value === g.nivelGasto)?.label || g.nivelGasto}</div>
-                      {g.distribuible && <div className="text-xs text-gray-400">{g.distribuciones.length} distribución(es)</div>}
-                    </td>
-                    <td className="p-3 text-sm text-gray-700">
-                      <div className="font-medium">{g.obra?.nombre || '—'}</div>
-                      <div className="text-xs text-gray-400">{g.equipo?.nombre || 'Sin equipo'}{g.plantilla ? ` · Plantilla ${g.plantilla.numero}` : ''}</div>
-                    </td>
-                    <td className="p-3 text-sm text-gray-700">
-                      <div className="font-medium">{g.producto}</div>
-                      <div className="text-xs text-gray-400">{g.cantidad} {g.unidad} × <Money value={g.precioUnitario} moneda={g.moneda} /></div>
-                      {g.distribuciones.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {g.distribuciones.map((d) => (
-                            <span key={d.id} className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">P{d.plantilla?.numero || '?'} · {d.porcentaje.toFixed(0)}%</span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 text-sm font-semibold text-gray-800"><Money value={g.total} moneda={g.moneda} /></td>
-                    <td className="p-3 text-right">
-                      <button onClick={() => handleDelete(g.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {modal && <GastoModal obras={obras} equipos={equipos} onClose={() => setModal(false)} onSaved={() => { setModal(false); load(); }} />}
-    </div>
-  );
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando...</div>}>
+            <GastosOperativosInner/>
+        </Suspense>
+    );
 }
