@@ -1131,7 +1131,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 const costoTotalMov = Number(selectedMov.cantidad) * costoUnitMov;
                                 const costoUnitBase = convertirABase(costoUnitMov, mDocMov, monedaBase, mTcMov);
                                 const costoTotalBase = convertirABase(costoTotalMov, mDocMov, monedaBase, mTcMov);
-                                const rows: [string, string | JSX.Element][] = [
+                                const rows: [string, string | React.ReactElement][] = [
                                     ['Producto', product?.nombre ?? ''],
                                     ['Fecha', new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],
                                     ['Almacén', selectedMov.almacen?.nombre],
