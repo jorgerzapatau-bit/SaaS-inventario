@@ -1291,8 +1291,7 @@ function TabCostos({ obraId }: { obraId: string }) {
     }, [obraId]);
 
     const totalCosto = movimientos
-        .filter(m => m.tipoMovimiento === 'SALIDA' || m.tipoMovimiento === 'AJUSTE_NEGATIVO')
-        .reduce((a, m) => a + (m.cantidad * m.costoUnitario), 0);
+    .reduce((a, m) => a + (m.cantidad * m.costoUnitario), 0);
 
     if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Cargando costos...</div>;
 

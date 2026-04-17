@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
 import { useCompany } from '@/context/CompanyContext';
+import React from "react";
 import {
     ArrowLeft, Plus, Minus, Edit, AlertTriangle, X,
     TrendingUp, TrendingDown, DollarSign, FileDown,

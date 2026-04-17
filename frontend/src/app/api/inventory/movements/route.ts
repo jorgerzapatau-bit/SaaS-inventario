@@ -48,11 +48,15 @@ export async function GET(req: NextRequest) {
         const productoId = searchParams.get('productoId') || undefined;
         const moneda     = searchParams.get('moneda') || undefined;
 
+        // ─── (filtra por obraId) ────────────────────────────────────────
+        const obraId = searchParams.get('obraId') || undefined;
+
         const movements = await prisma.movimientoInventario.findMany({
             where: {
                 empresaId: user.empresaId,
                 ...(productoId && { productoId }),
                 ...(moneda     && { moneda: moneda as 'MXN' | 'USD' }),
+                ...(obraId     && { obraId }),          // ← línea nueva
             },
             orderBy: { fecha: 'desc' },
             ...(limit ? { take: limit } : {}),
