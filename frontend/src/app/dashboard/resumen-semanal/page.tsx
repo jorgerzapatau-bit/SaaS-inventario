@@ -88,6 +88,7 @@ type ResumenSemana = {
     costoGastosOp: number;
     costoTotal: number;
     volumenRocaTotal: number | null;
+    volumenRocaTotalCalculado: boolean;   // true si algún valor fue calculado en cliente
     profundidadPromProm: number | null;
     kpi: {
         litrosPorHora: number | null;
@@ -148,6 +149,31 @@ function categColor(cat: string) {
     return map[cat] ?? 'bg-gray-100 text-gray-600';
 }
 
+/**
+ * calcVolumenRoca — calcula el volumen de roca en el frontend cuando el
+ * backend devuelve null (el campo no fue ingresado manualmente).
+ *
+ * Fórmula: bordo × espaciamiento × profundidadPromedio
+ *
+ * Si falta profundidadPromedio se devuelve null (no podemos completar el cálculo).
+ * Se marca con `calculado: true` para mostrar un indicador visual al usuario.
+ */
+function calcVolumenRoca(r: {
+    volumenRoca: number | null;
+    bordo: number | null;
+    espaciamiento: number | null;
+    profundidadPromedio: number | null;
+}): { valor: number | null; calculado: boolean } {
+    // El backend ya lo calculó — usarlo directamente
+    if (r.volumenRoca != null) return { valor: r.volumenRoca, calculado: false };
+    // Intentar calcular con los campos disponibles
+    if (r.bordo != null && r.espaciamiento != null && r.profundidadPromedio != null) {
+        return { valor: r.bordo * r.espaciamiento * r.profundidadPromedio, calculado: true };
+    }
+    // Sin profundidad no podemos calcular
+    return { valor: null, calculado: false };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RegistroDiarioRow — fila idéntica al formato de Registro Diario
 // Header compacto + panel expandible con tarjetas
@@ -165,6 +191,9 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
         || r.profundidadPromedio != null || r.volumenRoca != null
         || r.porcentajePerdida != null || r.porcentajeAvance != null
         || r.rentaEquipoDiaria != null;
+
+    // Calcula volumen en el cliente si el backend devolvió null
+    const volRoca = calcVolumenRoca(r);
 
     return (
         <>
@@ -217,11 +246,18 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
                     <p className="text-[10px] text-gray-400">m</p>
                 </td>
 
-                {/* Vol. roca */}
+                {/* Vol. roca — usa valor del backend; si es null, calcula bordo×espa×prof */}
                 <td className="px-2 py-3 text-right">
-                    {r.volumenRoca != null
-                        ? <span className="text-sm font-semibold text-indigo-600">{Number(r.volumenRoca).toFixed(2)}</span>
-                        : <span className="text-gray-200 text-sm">—</span>}
+                    {volRoca.valor != null ? (
+                        <span className={`text-sm font-semibold ${volRoca.calculado ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                            {Number(volRoca.valor).toFixed(2)}
+                            {volRoca.calculado && (
+                                <span className="ml-0.5 text-[9px] font-normal text-indigo-300 align-super">calc.</span>
+                            )}
+                        </span>
+                    ) : (
+                        <span className="text-gray-200 text-sm">—</span>
+                    )}
                 </td>
 
                 {/* Diésel lt */}
@@ -361,10 +397,12 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
                                             <p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p>
                                         </div>
                                     )}
-                                    {r.volumenRoca != null && (
+                                    {(r.volumenRoca != null || volRoca.calculado) && (
                                         <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">Vol. roca</p>
-                                            <p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p>
+                                            <p className="text-indigo-400 mb-0.5">
+                                                Vol. roca{volRoca.calculado && <span className="ml-1 text-[9px] text-indigo-300">calc.</span>}
+                                            </p>
+                                            <p className="font-bold text-indigo-700">{Number(volRoca.valor).toFixed(2)} m³</p>
                                         </div>
                                     )}
                                     {r.porcentajePerdida != null && (
@@ -436,7 +474,12 @@ function TablaRegistrosDiarios({ semana }: { semana: ResumenSemana }) {
                         <td className="px-2 py-2 text-right text-blue-700 text-xs">{semana.metrosLineales.toFixed(1)}</td>
                         <td className="px-2 py-2 text-right text-indigo-700 text-xs">
                             {semana.volumenRocaTotal != null
-                                ? semana.volumenRocaTotal.toFixed(2)
+                                ? <>
+                                    {semana.volumenRocaTotal.toFixed(2)}
+                                    {semana.volumenRocaTotalCalculado && (
+                                        <span className="ml-0.5 text-[9px] font-normal text-indigo-400 align-super">calc.</span>
+                                    )}
+                                  </>
                                 : <span className="font-normal text-blue-300">—</span>}
                         </td>
                         <td className="px-2 py-2 text-right text-blue-700 text-xs">{semana.litrosDiesel}</td>
@@ -460,7 +503,8 @@ function TablaRegistrosDiarios({ semana }: { semana: ResumenSemana }) {
                 <Info size={10} className="mt-0.5 flex-shrink-0 text-gray-300" />
                 <span>
                     <strong className="text-gray-500">Vol. roca (m³)</strong> = bordo × espaciamiento × profundidad.
-                    Aparece <strong>—</strong> cuando no se capturaron datos de perforación en ese día.
+                    Aparece <strong>—</strong> cuando no hay profundidad capturada.
+                    Los valores marcados con <span className="text-indigo-400 font-semibold">calc.</span> son calculados en tiempo real con los datos del registro.
                 </span>
             </div>
         </div>
@@ -654,7 +698,12 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                 {semana.volumenRocaTotal !== null && (
                                     <div className="bg-indigo-50 rounded-lg p-3 text-center">
-                                        <p className="text-xs text-indigo-400 mb-1">Volumen roca total</p>
+                                        <p className="text-xs text-indigo-400 mb-1">
+                                            Volumen roca total
+                                            {semana.volumenRocaTotalCalculado && (
+                                                <span className="ml-1 text-[9px] text-indigo-300">calc.</span>
+                                            )}
+                                        </p>
                                         <p className="text-lg font-bold text-indigo-700">{semana.volumenRocaTotal.toFixed(2)} m³</p>
                                     </div>
                                 )}
@@ -847,10 +896,14 @@ function ResumenSemanalInner() {
                 const costoGastosOp = gastosEnSem.reduce((a, g) => a + g.total, 0);
                 const costoTotal    = costoDiesel + costoOps + costoPeones + costoRenta + costoGastosOp;
 
-                const regsConVol = regs.filter(r => r.volumenRoca != null);
+                // Volumen de roca: usa valor del backend si existe,
+                // si no calcula bordo × espaciamiento × profundidad en el cliente.
+                const volsRoca = regs.map(r => calcVolumenRoca(r));
+                const regsConVol = volsRoca.filter(v => v.valor != null);
                 const volumenRocaTotal = regsConVol.length > 0
-                    ? regsConVol.reduce((a, r) => a + (r.volumenRoca ?? 0), 0)
+                    ? regsConVol.reduce((a, v) => a + (v.valor ?? 0), 0)
                     : null;
+                const volumenRocaTotalCalculado = regsConVol.some(v => v.calculado);
 
                 const regsConProf = regs.filter(r => r.profundidadPromedio != null);
                 const profundidadPromProm = regsConProf.length > 0
@@ -875,6 +928,7 @@ function ResumenSemanalInner() {
                     costoGastosOp,
                     costoTotal,
                     volumenRocaTotal,
+                    volumenRocaTotalCalculado,
                     profundidadPromProm,
                     kpi: {
                         litrosPorHora:  totalHoras  > 0 ? +(totalLitros / totalHoras).toFixed(2)  : null,
