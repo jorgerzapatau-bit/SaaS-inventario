@@ -2,10 +2,16 @@
 
 import { useEffect, useState, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BarChart2, Gauge, Droplets, DollarSign, ChevronDown, ChevronUp, Calendar, HardHat } from 'lucide-react';
+import {
+    BarChart2, Gauge, Droplets, DollarSign, ChevronDown, ChevronUp,
+    Calendar, HardHat, Receipt, Info,
+} from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos
+// ─────────────────────────────────────────────────────────────────────────────
 type Registro = {
     id: string;
     fecha: string;
@@ -20,7 +26,6 @@ type Registro = {
     peones: number;
     semanaNum: number | null;
     anoNum: number | null;
-    // Campos de perforación (Fase 4)
     bordo: number | null;
     espaciamiento: number | null;
     profundidadPromedio: number | null;
@@ -34,6 +39,23 @@ type Registro = {
         metrosPorHora: number | null;
         metrosPorDia: number | null;
     };
+};
+
+type GastoOperativo = {
+    id: string;
+    fechaInicio: string | null;
+    fechaFin: string | null;
+    semanaNum: number | null;
+    anoNum: number | null;
+    nivelGasto: string;
+    tipoGasto: string;
+    categoria: string;
+    producto: string;
+    cantidad: number;
+    precioUnitario: number;
+    total: number;
+    unidad: string;
+    equipo: { nombre: string } | null;
 };
 
 type Equipo = { id: string; nombre: string; numeroEconomico: string | null };
@@ -56,9 +78,9 @@ type ResumenSemana = {
     costoDiesel: number;
     costoOperadores: number;
     costoPeones: number;
-    costoRenta: number;      // Fase 5: renta equipo acumulada
+    costoRenta: number;
+    costoGastosOp: number;
     costoTotal: number;
-    // Perforación acumulada
     volumenRocaTotal: number | null;
     profundidadPromProm: number | null;
     kpi: {
@@ -68,14 +90,18 @@ type ResumenSemana = {
         metrosPorDia: number | null;
     };
     registros: Registro[];
+    gastosOp: GastoOperativo[];
 };
 
-// Costo de operador y peón por jornada
-const COSTO_OPERADOR = 450;    // 2700/6
-const COSTO_PEON     = 283.33; // 1700/6
+// ─────────────────────────────────────────────────────────────────────────────
+// Constantes
+// ─────────────────────────────────────────────────────────────────────────────
+const COSTO_OPERADOR = 450;
+const COSTO_PEON     = 283.33;
 
-// Calcula el número de semana ISO — mismo algoritmo que el backend
-// Se usa como fallback para registros que tengan semanaNum/anoNum null
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 function getISOWeek(date: Date): number {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -83,6 +109,13 @@ function getISOWeek(date: Date): number {
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
+/**
+ * kpiColor — semáforo de eficiencia:
+ *  Verde  ≤ bueno   → eficiente
+ *  Ámbar  ≤ malo    → moderado
+ *  Rojo   > malo    → elevado
+ * Ej: Lt/Hr: bueno=15, malo=20 → 26.11 aparece ROJO porque supera 20 lt/hr
+ */
 function kpiColor(val: number | null, bueno: number, malo: number) {
     if (val === null) return 'text-gray-400';
     if (val <= bueno) return 'text-green-600';
@@ -90,8 +123,32 @@ function kpiColor(val: number | null, bueno: number, malo: number) {
     return 'text-red-500';
 }
 
+function categLabel(cat: string) {
+    const map: Record<string, string> = {
+        COMBUSTIBLE: 'Combustible', LUBRICANTE: 'Lubricante', HERRAMIENTA: 'Herramienta',
+        REFACCION: 'Refacción', VEHICULO: 'Vehículo', OTRO: 'Otro',
+    };
+    return map[cat] ?? cat;
+}
+
+function categColor(cat: string) {
+    const map: Record<string, string> = {
+        COMBUSTIBLE: 'bg-red-100 text-red-700',
+        LUBRICANTE:  'bg-yellow-100 text-yellow-700',
+        HERRAMIENTA: 'bg-blue-100 text-blue-700',
+        REFACCION:   'bg-purple-100 text-purple-700',
+        VEHICULO:    'bg-indigo-100 text-indigo-700',
+        OTRO:        'bg-gray-100 text-gray-600',
+    };
+    return map[cat] ?? 'bg-gray-100 text-gray-600';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SemanaCard
+// ─────────────────────────────────────────────────────────────────────────────
 function SemanaCard({ semana }: { semana: ResumenSemana }) {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded,      setExpanded]      = useState(false);
+    const [seccionActiva, setSeccionActiva] = useState<'registros' | 'gastos'>('registros');
 
     const tienePerforacion = semana.registros.some(r =>
         r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
@@ -133,11 +190,24 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         <p className="text-xs text-gray-400">Diésel</p>
                         <p className="text-sm font-bold text-blue-600">{semana.litrosDiesel.toLocaleString()} lt</p>
                     </div>
+                    {semana.costoGastosOp > 0 && (
+                        <div className="hidden md:block">
+                            <p className="text-xs text-gray-400">Gastos Op.</p>
+                            <p className="text-sm font-bold text-teal-600">
+                                ${semana.costoGastosOp.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                            </p>
+                        </div>
+                    )}
                     <div>
                         <p className="text-xs text-gray-400">Costo total</p>
-                        <p className="text-sm font-bold text-gray-800">${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-sm font-bold text-gray-800">
+                            ${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                        </p>
                     </div>
-                    {expanded ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" /> : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />}
+                    {expanded
+                        ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" />
+                        : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />
+                    }
                 </div>
             </button>
 
@@ -146,13 +216,17 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
 
                     {/* KPIs operacionales */}
                     <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                             <Gauge size={12} /> KPIs operacionales
+                        </p>
+                        <p className="text-[10px] text-gray-400 mb-3 flex items-center gap-1">
+                            <Info size={9} />
+                            Lt/Hr: 🟢 ≤15 eficiente · 🟡 ≤20 moderado · 🔴 &gt;20 elevado
                         </p>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             {[
-                                { label: 'Lt / Hr',  val: semana.kpi.litrosPorHora,  unit: '',   bueno: 15,   malo: 20 },
-                                { label: 'Lt / Mt',  val: semana.kpi.litrosPorMetro, unit: '',   bueno: 1.5,  malo: 2 },
+                                { label: 'Lt / Hr',  val: semana.kpi.litrosPorHora,  unit: '',   bueno: 15,   malo: 20   },
+                                { label: 'Lt / Mt',  val: semana.kpi.litrosPorMetro, unit: '',   bueno: 1.5,  malo: 2    },
                                 { label: 'Mt / Hr',  val: semana.kpi.metrosPorHora,  unit: '',   bueno: null, malo: null },
                                 { label: 'Mt / Día', val: semana.kpi.metrosPorDia,   unit: ' m', bueno: null, malo: null },
                             ].map(k => (
@@ -166,7 +240,7 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         </div>
                     </div>
 
-                    {/* KPIs de perforación (Fase 5 — solo si hay datos) */}
+                    {/* Perforación */}
                     {tienePerforacion && (
                         <div>
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -204,17 +278,20 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         </p>
                         <div className="space-y-2">
                             {[
-                                { label: 'Diésel',     val: semana.costoDiesel,     color: 'bg-blue-500' },
-                                { label: 'Operadores', val: semana.costoOperadores, color: 'bg-purple-500' },
-                                { label: 'Peones',     val: semana.costoPeones,     color: 'bg-indigo-400' },
+                                { label: 'Diésel',            val: semana.costoDiesel,     color: 'bg-blue-500'   },
+                                { label: 'Operadores',        val: semana.costoOperadores, color: 'bg-purple-500' },
+                                { label: 'Peones',            val: semana.costoPeones,     color: 'bg-indigo-400' },
                                 ...(semana.costoRenta > 0
-                                    ? [{ label: 'Renta equipo', val: semana.costoRenta, color: 'bg-orange-400' }]
+                                    ? [{ label: 'Renta equipo',      val: semana.costoRenta,      color: 'bg-orange-400' }]
+                                    : []),
+                                ...(semana.costoGastosOp > 0
+                                    ? [{ label: 'Gastos Operativos', val: semana.costoGastosOp,   color: 'bg-teal-400'   }]
                                     : []),
                             ].map(c => {
                                 const pct = semana.costoTotal > 0 ? (c.val / semana.costoTotal) * 100 : 0;
                                 return (
                                     <div key={c.label} className="flex items-center gap-3">
-                                        <span className="text-xs text-gray-500 w-28 flex-shrink-0">{c.label}</span>
+                                        <span className="text-xs text-gray-500 w-36 flex-shrink-0">{c.label}</span>
                                         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                                             <div className={`h-full rounded-full ${c.color}`} style={{ width: `${pct}%` }} />
                                         </div>
@@ -226,7 +303,7 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                                 );
                             })}
                             <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                                <span className="text-xs font-bold text-gray-700 w-28 flex-shrink-0">TOTAL</span>
+                                <span className="text-xs font-bold text-gray-700 w-36 flex-shrink-0">TOTAL</span>
                                 <div className="flex-1" />
                                 <span className="text-sm font-bold text-gray-800 w-24 text-right">
                                     ${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
@@ -236,71 +313,226 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                         </div>
                     </div>
 
-                    {/* Registros diarios de la semana */}
+                    {/* Pestañas */}
                     <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <Droplets size={12} /> Registros diarios
-                        </p>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-100">
-                                        <th className="p-2 font-semibold text-gray-400">Fecha</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Hrs</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Barrenos</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Metros</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Vol. roca (m³)</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Diésel (lt)</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Lt/Hr</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Mt/Hr</th>
-                                        <th className="p-2 font-semibold text-gray-400 text-right">Renta ($)</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {semana.registros.map(r => (
-                                        <tr key={r.id} className="hover:bg-gray-50">
-                                            <td className="p-2 text-gray-600">
-                                                {new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' })}
+                        <div className="flex gap-1 mb-3 border-b border-gray-100">
+                            <button
+                                onClick={() => setSeccionActiva('registros')}
+                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-1.5 ${
+                                    seccionActiva === 'registros'
+                                        ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
+                                        : 'text-gray-400 hover:text-gray-600'
+                                }`}
+                            >
+                                <Droplets size={12} /> Registros diarios ({semana.registros.length})
+                            </button>
+                            <button
+                                onClick={() => setSeccionActiva('gastos')}
+                                className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-1.5 ${
+                                    seccionActiva === 'gastos'
+                                        ? 'text-teal-700 border-b-2 border-teal-600 bg-teal-50/50'
+                                        : 'text-gray-400 hover:text-gray-600'
+                                }`}
+                            >
+                                <Receipt size={12} /> Gastos Operativos ({semana.gastosOp.length})
+                                {semana.costoGastosOp > 0 && (
+                                    <span className="ml-1 px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded-full text-[10px]">
+                                        ${semana.costoGastosOp.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* ── Tabla Registros Diarios — formato igual a Registro Diario ── */}
+                        {seccionActiva === 'registros' && (
+                            <div className="overflow-x-auto rounded-xl border border-gray-100">
+                                <table className="w-full text-left text-xs border-collapse" style={{ minWidth: 700 }}>
+                                    <thead>
+                                        <tr className="bg-gray-50 border-b border-gray-100">
+                                            <th className="pl-3 pr-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px]">Fecha</th>
+                                            <th className="px-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px] text-center">Hrs</th>
+                                            <th className="px-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px] text-right">Bar.</th>
+                                            <th className="px-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px] text-right">Metros</th>
+                                            <th className="px-2 py-2.5 font-semibold text-indigo-400 uppercase tracking-wider text-[10px] text-right">Vol. roca (m³)</th>
+                                            <th className="px-2 py-2.5 font-semibold text-blue-400 uppercase tracking-wider text-[10px] text-right">Diésel (lt)</th>
+                                            <th className="px-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px] text-right">Lt/Hr</th>
+                                            <th className="px-2 py-2.5 font-semibold text-gray-400 uppercase tracking-wider text-[10px] text-right">Mt/Hr</th>
+                                            <th className="pr-3 py-2.5 font-semibold text-emerald-500 uppercase tracking-wider text-[10px] text-right">Renta ($)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {semana.registros.map(r => (
+                                            <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
+                                                {/* Fecha — mismo estilo que RegistroRow */}
+                                                <td className="pl-3 pr-2 py-2.5">
+                                                    <p className="font-semibold text-gray-800">
+                                                        {new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                                                    </p>
+                                                    <p className="text-[10px] text-gray-400 capitalize">
+                                                        {new Date(r.fecha + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short' })}
+                                                    </p>
+                                                </td>
+                                                <td className="px-2 py-2.5 text-center">
+                                                    <p className="font-bold text-gray-800">{r.horasTrabajadas}</p>
+                                                    <p className="text-[10px] text-gray-400">hrs</p>
+                                                </td>
+                                                <td className="px-2 py-2.5 text-right">
+                                                    <p className="font-bold text-gray-800">{r.barrenos}</p>
+                                                    <p className="text-[10px] text-gray-400">bar.</p>
+                                                </td>
+                                                <td className="px-2 py-2.5 text-right">
+                                                    <p className="font-bold text-gray-800">{r.metrosLineales.toFixed(1)}</p>
+                                                    <p className="text-[10px] text-gray-400">m</p>
+                                                </td>
+                                                {/*
+                                                 * Vol. roca: campo calculado = bordo × espaciamiento × profundidad
+                                                 * Muestra — si no se capturaron esos campos en el registro diario.
+                                                 * No es un error; simplemente no hay datos de perforación en ese día.
+                                                 */}
+                                                <td className="px-2 py-2.5 text-right">
+                                                    {r.volumenRoca != null
+                                                        ? <span className="font-semibold text-indigo-600">{r.volumenRoca.toFixed(2)}</span>
+                                                        : <span className="text-gray-300">—</span>
+                                                    }
+                                                </td>
+                                                <td className="px-2 py-2.5 text-right">
+                                                    <p className="font-semibold text-blue-600">{r.litrosDiesel}</p>
+                                                    <p className="text-[10px] text-gray-400">lt</p>
+                                                </td>
+                                                {/* Lt/Hr: ROJO cuando > 20 lt/hr (consumo elevado) */}
+                                                <td className={`px-2 py-2.5 text-right font-bold ${kpiColor(r.kpi.litrosPorHora, 15, 20)}`}>
+                                                    {r.kpi.litrosPorHora ?? '—'}
+                                                </td>
+                                                <td className="px-2 py-2.5 text-right text-gray-600">
+                                                    {r.kpi.metrosPorHora ?? '—'}
+                                                </td>
+                                                {/* Renta — color emerald como en Registro Diario */}
+                                                <td className="pr-3 py-2.5 text-right">
+                                                    {r.rentaEquipoDiaria != null ? (
+                                                        <>
+                                                            <p className="font-semibold text-emerald-700">
+                                                                ${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                                                            </p>
+                                                            <p className="text-[10px] text-gray-400">renta</p>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-gray-200">—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr className="bg-blue-50 font-bold border-t-2 border-blue-200">
+                                            <td className="pl-3 pr-2 py-2 text-blue-700 text-xs">SEMANA {semana.semanaNum}</td>
+                                            <td className="px-2 py-2 text-center text-blue-700 text-xs">{semana.horasTotales.toFixed(1)}</td>
+                                            <td className="px-2 py-2 text-right text-blue-700 text-xs">{semana.barrenos}</td>
+                                            <td className="px-2 py-2 text-right text-blue-700 text-xs">{semana.metrosLineales.toFixed(1)}</td>
+                                            <td className="px-2 py-2 text-right text-indigo-700 text-xs">
+                                                {semana.volumenRocaTotal != null
+                                                    ? semana.volumenRocaTotal.toFixed(2)
+                                                    : <span className="font-normal text-blue-300">—</span>}
                                             </td>
-                                            <td className="p-2 text-right font-semibold text-gray-700">{r.horasTrabajadas}</td>
-                                            <td className="p-2 text-right text-gray-600">{r.barrenos}</td>
-                                            <td className="p-2 text-right text-gray-600">{r.metrosLineales.toFixed(1)}</td>
-                                            <td className="p-2 text-right text-indigo-600">
-                                                {r.volumenRoca != null ? r.volumenRoca.toFixed(2) : '—'}
+                                            <td className="px-2 py-2 text-right text-blue-700 text-xs">{semana.litrosDiesel}</td>
+                                            <td className={`px-2 py-2 text-right text-xs font-bold ${semana.kpi.litrosPorHora ? kpiColor(semana.kpi.litrosPorHora, 15, 20) : 'text-blue-700'}`}>
+                                                {semana.kpi.litrosPorHora?.toFixed(2) ?? '—'}
                                             </td>
-                                            <td className="p-2 text-right text-blue-600 font-semibold">{r.litrosDiesel}</td>
-                                            <td className={`p-2 text-right font-semibold ${kpiColor(r.kpi.litrosPorHora, 15, 20)}`}>
-                                                {r.kpi.litrosPorHora ?? '—'}
+                                            <td className="px-2 py-2 text-right text-blue-700 text-xs">
+                                                {semana.kpi.metrosPorHora?.toFixed(2) ?? '—'}
                                             </td>
-                                            <td className="p-2 text-right text-gray-600">{r.kpi.metrosPorHora ?? '—'}</td>
-                                            <td className="p-2 text-right text-orange-600">
-                                                {r.rentaEquipoDiaria != null
-                                                    ? `$${r.rentaEquipoDiaria.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
-                                                    : '—'}
+                                            <td className="pr-3 py-2 text-right text-orange-700 text-xs">
+                                                {semana.costoRenta > 0
+                                                    ? `$${semana.costoRenta.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
+                                                    : <span className="font-normal text-blue-300">—</span>}
                                             </td>
                                         </tr>
-                                    ))}
-                                    {/* Fila totales */}
-                                    <tr className="bg-blue-50 font-bold border-t-2 border-blue-200">
-                                        <td className="p-2 text-blue-700">SEMANA {semana.semanaNum}</td>
-                                        <td className="p-2 text-right text-blue-700">{semana.horasTotales.toFixed(1)}</td>
-                                        <td className="p-2 text-right text-blue-700">{semana.barrenos}</td>
-                                        <td className="p-2 text-right text-blue-700">{semana.metrosLineales.toFixed(1)}</td>
-                                        <td className="p-2 text-right text-indigo-700">
-                                            {semana.volumenRocaTotal != null ? semana.volumenRocaTotal.toFixed(2) : '—'}
-                                        </td>
-                                        <td className="p-2 text-right text-blue-700">{semana.litrosDiesel}</td>
-                                        <td className="p-2 text-right text-blue-700">{semana.kpi.litrosPorHora?.toFixed(2) ?? '—'}</td>
-                                        <td className="p-2 text-right text-blue-700">{semana.kpi.metrosPorHora?.toFixed(2) ?? '—'}</td>
-                                        <td className="p-2 text-right text-orange-700">
-                                            {semana.costoRenta > 0
-                                                ? `$${semana.costoRenta.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`
-                                                : '—'}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                                    </tfoot>
+                                </table>
+                                {/* Leyenda Vol. roca */}
+                                <div className="flex items-start gap-1.5 px-3 py-2 bg-gray-50/80 border-t border-gray-100 text-[10px] text-gray-400">
+                                    <Info size={10} className="mt-0.5 flex-shrink-0 text-gray-300" />
+                                    <span>
+                                        <strong className="text-gray-500">Vol. roca (m³)</strong> = bordo × espaciamiento × profundidad.
+                                        Aparece <strong>—</strong> cuando no se capturaron datos de perforación en ese día.
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Tabla Gastos Operativos ── */}
+                        {seccionActiva === 'gastos' && (
+                            <div className="overflow-x-auto rounded-xl border border-gray-100">
+                                {semana.gastosOp.length === 0 ? (
+                                    <div className="py-8 text-center text-sm text-gray-400">
+                                        <Receipt size={28} className="mx-auto mb-2 text-gray-200" />
+                                        <p>Sin gastos operativos para esta semana</p>
+                                    </div>
+                                ) : (
+                                    <table className="w-full text-left text-xs border-collapse" style={{ minWidth: 580 }}>
+                                        <thead>
+                                            <tr className="bg-teal-50 border-b border-teal-100">
+                                                <th className="pl-3 pr-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px]">Período</th>
+                                                <th className="px-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px]">Nivel</th>
+                                                <th className="px-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px]">Categoría</th>
+                                                <th className="px-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px]">Concepto</th>
+                                                <th className="px-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px] text-right">Cant.</th>
+                                                <th className="px-2 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px] text-right">P. Unit.</th>
+                                                <th className="pr-3 py-2.5 font-semibold text-teal-500 uppercase tracking-wider text-[10px] text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {semana.gastosOp.map(g => (
+                                                <tr key={g.id} className="hover:bg-teal-50/40 transition-colors">
+                                                    <td className="pl-3 pr-2 py-2">
+                                                        <p className="text-gray-600">
+                                                            {g.fechaInicio
+                                                                ? new Date(g.fechaInicio + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+                                                                : '—'}
+                                                        </p>
+                                                        {g.fechaFin && g.fechaFin !== g.fechaInicio && (
+                                                            <p className="text-[10px] text-gray-400">
+                                                                → {new Date(g.fechaFin + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                                                            </p>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-semibold">
+                                                            {g.nivelGasto === 'GENERAL'       ? 'General'   :
+                                                             g.nivelGasto === 'POR_EQUIPO'    ? 'Equipo'    :
+                                                             g.nivelGasto === 'POR_PLANTILLA' ? 'Plantilla' : g.nivelGasto}
+                                                        </span>
+                                                        {g.equipo && (
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{g.equipo.nombre}</p>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${categColor(g.categoria)}`}>
+                                                            {categLabel(g.categoria)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-2 py-2 text-gray-700 font-medium">{g.producto}</td>
+                                                    <td className="px-2 py-2 text-right text-gray-600">{g.cantidad} {g.unidad}</td>
+                                                    <td className="px-2 py-2 text-right text-gray-600">
+                                                        ${g.precioUnitario.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="pr-3 py-2 text-right font-bold text-teal-700">
+                                                        ${g.total.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr className="bg-teal-50 border-t-2 border-teal-200 font-bold">
+                                                <td colSpan={6} className="pl-3 py-2 text-teal-700 text-xs">TOTAL GASTOS OPERATIVOS</td>
+                                                <td className="pr-3 py-2 text-right text-teal-800 text-xs">
+                                                    ${semana.costoGastosOp.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -308,17 +540,21 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Página con carga de datos
+// ─────────────────────────────────────────────────────────────────────────────
 function ResumenSemanalInner() {
     const searchParams  = useSearchParams();
     const equipoIdParam = searchParams.get('equipoId') || 'todos';
 
     const [registros,    setRegistros]    = useState<Registro[]>([]);
+    const [gastosOp,     setGastosOp]     = useState<GastoOperativo[]>([]);
     const [equipos,      setEquipos]      = useState<Equipo[]>([]);
     const [obras,        setObras]        = useState<ObraSimple[]>([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
     const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam);
-    const [filtroObra,   setFiltroObra]   = useState('');  // Mejora 7
+    const [filtroObra,   setFiltroObra]   = useState('');
 
     useEffect(() => {
         const load = async () => {
@@ -326,14 +562,16 @@ function ResumenSemanalInner() {
             try {
                 const params = new URLSearchParams();
                 if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
-                if (filtroObra)              params.set('obraId',   filtroObra);   // Mejora 7
+                if (filtroObra)              params.set('obraId',   filtroObra);
 
-                const [regs, eqs, obs] = await Promise.all([
+                const [regs, gastos, eqs, obs] = await Promise.all([
                     fetchApi(`/registros-diarios${params.toString() ? '?' + params.toString() : ''}`),
+                    fetchApi(`/gastos-operativos${filtroObra ? `?obraId=${filtroObra}` : ''}`),
                     fetchApi('/equipos'),
                     fetchApi('/obras'),
                 ]);
                 setRegistros(regs);
+                setGastosOp(gastos);
                 setEquipos(eqs);
                 setObras(obs);
             } catch (e: any) {
@@ -343,22 +581,30 @@ function ResumenSemanalInner() {
             }
         };
         load();
-    }, [filtroEquipo, filtroObra]);  // Mejora 7: re-fetch al cambiar filtroObra
+    }, [filtroEquipo, filtroObra]);
+
+    /** Verifica si un gasto pertenece a la semana dada */
+    const gastoEnSemana = (g: GastoOperativo, semanaNum: number, anoNum: number): boolean => {
+        if (g.semanaNum != null && g.anoNum != null) {
+            return g.semanaNum === semanaNum && g.anoNum === anoNum;
+        }
+        if (g.fechaInicio) {
+            const d = new Date(g.fechaInicio + 'T12:00:00');
+            return getISOWeek(d) === semanaNum && d.getFullYear() === anoNum;
+        }
+        return false;
+    };
 
     const semanas = useMemo<ResumenSemana[]>(() => {
         if (!registros.length) return [];
 
         const mapa: Record<string, Registro[]> = {};
         for (const r of registros) {
-            // Si el registro no tiene semanaNum/anoNum (registros viejos o con datos incompletos),
-            // los calculamos desde la fecha usando el mismo algoritmo ISO que el backend.
             const fechaDate = new Date(r.fecha + 'T12:00:00');
             const semana    = r.semanaNum ?? getISOWeek(fechaDate);
             const ano       = r.anoNum    ?? fechaDate.getFullYear();
             const key = `${ano}-${String(semana).padStart(2, '0')}-${r.equipo.nombre}`;
             if (!mapa[key]) mapa[key] = [];
-            // Enriquecer el registro con los valores calculados para que las
-            // referencias posteriores a r.semanaNum / r.anoNum funcionen siempre.
             mapa[key].push({ ...r, semanaNum: semana, anoNum: ano });
         }
 
@@ -373,17 +619,21 @@ function ResumenSemanalInner() {
                 const costoDiesel = regs.reduce((a, r) => a + r.costoDiesel,     0);
                 const totalOps    = regs.reduce((a, r) => a + r.operadores,      0);
                 const totalPeones = regs.reduce((a, r) => a + r.peones,          0);
-                const costoOps    = totalOps * COSTO_OPERADOR;
+                const costoOps    = totalOps    * COSTO_OPERADOR;
                 const costoPeones = totalPeones * COSTO_PEON;
-
-                // Fase 5: renta equipo acumulada
                 const costoRenta  = regs.reduce((a, r) => a + (r.rentaEquipoDiaria ?? 0), 0);
-
-                const costoTotal  = costoDiesel + costoOps + costoPeones + costoRenta;
                 const dias        = regs.filter(r => r.horasTrabajadas > 0).length;
 
-                // Perforación acumulada
-                const regsConVol  = regs.filter(r => r.volumenRoca != null);
+                const semanaNum = regs[0].semanaNum!;
+                const anoNum    = regs[0].anoNum!;
+
+                // Gastos operativos de esta semana
+                const gastosEnSem   = gastosOp.filter(g => gastoEnSemana(g, semanaNum, anoNum));
+                const costoGastosOp = gastosEnSem.reduce((a, g) => a + g.total, 0);
+
+                const costoTotal = costoDiesel + costoOps + costoPeones + costoRenta + costoGastosOp;
+
+                const regsConVol = regs.filter(r => r.volumenRoca != null);
                 const volumenRocaTotal = regsConVol.length > 0
                     ? regsConVol.reduce((a, r) => a + (r.volumenRoca ?? 0), 0)
                     : null;
@@ -394,11 +644,11 @@ function ResumenSemanalInner() {
                     : null;
 
                 return {
-                    semanaNum:    regs[0].semanaNum!,
-                    anoNum:       regs[0].anoNum!,
-                    equipoNombre: regs[0].equipo.nombre,
-                    fechaInicio:  regs[0].fecha.slice(0, 10),
-                    fechaFin:     regs[regs.length - 1].fecha.slice(0, 10),
+                    semanaNum,
+                    anoNum,
+                    equipoNombre:    regs[0].equipo.nombre,
+                    fechaInicio:     regs[0].fecha.slice(0, 10),
+                    fechaFin:        regs[regs.length - 1].fecha.slice(0, 10),
                     dias,
                     horasTotales:    totalHoras,
                     barrenos:        totalBarr,
@@ -408,6 +658,7 @@ function ResumenSemanalInner() {
                     costoOperadores: costoOps,
                     costoPeones,
                     costoRenta,
+                    costoGastosOp,
                     costoTotal,
                     volumenRocaTotal,
                     profundidadPromProm,
@@ -418,42 +669,35 @@ function ResumenSemanalInner() {
                         metrosPorDia:   dias        > 0 ? +(totalMetros / dias).toFixed(2)        : null,
                     },
                     registros: regs,
+                    gastosOp:  gastosEnSem,
                 } as ResumenSemana;
             })
             .sort((a, b) => {
                 if (b.anoNum !== a.anoNum) return b.anoNum - a.anoNum;
                 return b.semanaNum - a.semanaNum;
             });
-    }, [registros]);
+    }, [registros, gastosOp]);
 
     const totales = useMemo(() => {
-        const horas      = semanas.reduce((a, s) => a + s.horasTotales,   0);
-        const metros     = semanas.reduce((a, s) => a + s.metrosLineales,  0);
-        const litros     = semanas.reduce((a, s) => a + s.litrosDiesel,    0);
-        const costoTotal = semanas.reduce((a, s) => a + s.costoTotal,      0);
-        const costoRenta = semanas.reduce((a, s) => a + s.costoRenta,      0);
+        const horas      = semanas.reduce((a, s) => a + s.horasTotales,  0);
+        const metros     = semanas.reduce((a, s) => a + s.metrosLineales, 0);
+        const litros     = semanas.reduce((a, s) => a + s.litrosDiesel,   0);
+        const costoTotal = semanas.reduce((a, s) => a + s.costoTotal,     0);
         return {
             semanas: semanas.length,
-            horas, metros, litros, costoTotal, costoRenta,
+            horas, metros, litros, costoTotal,
             ltHr: horas > 0 ? +(litros / horas).toFixed(2) : null,
-            mtHr: horas > 0 ? +(metros / horas).toFixed(2) : null,
         };
     }, [semanas]);
 
-    // Mejora 8: plantilla activa de la obra seleccionada para comparativo
-    const obraSeleccionada = obras.find(o => o.id === filtroObra);
-    const plantillaActiva = obraSeleccionada?.plantillas?.[0] ?? null;
-    const metrosTotalesAcum = semanas.reduce((a, s) => a + s.metrosLineales, 0);
-    const barrTotalesAcum   = semanas.reduce((a, s) => a + s.barrenos, 0);
-
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Resumen Semanal</h1>
                     <p className="text-sm text-gray-500 mt-1">KPIs y costos agrupados por semana.</p>
                 </div>
-                {/* Mejora 7: Filtros por equipo y por obra */}
                 <div className="flex gap-2 flex-wrap">
                     <select
                         value={filtroObra}
@@ -482,77 +726,23 @@ function ResumenSemanalInner() {
 
             {/* Totales acumulados */}
             {!loading && semanas.length > 0 && (
-                <>
                 <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                     {[
-                        { label: 'Semanas',        val: totales.semanas,                                                                           unit: '',     icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
-                        { label: 'Horas totales',  val: totales.horas.toFixed(1),                                                                  unit: ' hrs', icon: <Gauge size={14}/>,    color: 'text-gray-800' },
-                        { label: 'Metros totales', val: totales.metros.toFixed(1),                                                                  unit: ' m',   icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
-                        { label: 'Diésel total',   val: totales.litros.toLocaleString('es-MX'),                                                     unit: ' lt',  icon: <Droplets size={14}/>, color: 'text-blue-600' },
-                        { label: 'Lt/hr prom.',    val: totales.ltHr ?? '—',                                                                        unit: '',     icon: <Gauge size={14}/>,    color: 'text-gray-700' },
-                        { label: 'Costo total',    val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`,              unit: '',     icon: <DollarSign size={14}/>, color: 'text-gray-800' },
+                        { label: 'Semanas',        val: totales.semanas,                                                                            unit: '',     icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
+                        { label: 'Horas totales',  val: totales.horas.toFixed(1),                                                                   unit: ' hrs', icon: <Gauge size={14}/>,    color: 'text-gray-800' },
+                        { label: 'Metros totales', val: totales.metros.toFixed(1),                                                                   unit: ' m',   icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
+                        { label: 'Diésel total',   val: totales.litros.toLocaleString('es-MX'),                                                      unit: ' lt',  icon: <Droplets size={14}/>, color: 'text-blue-600' },
+                        { label: 'Lt/hr prom.',    val: totales.ltHr ?? '—',                                                                         unit: '',     icon: <Gauge size={14}/>,    color: 'text-gray-700' },
+                        { label: 'Costo total',    val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`,               unit: '',     icon: <DollarSign size={14}/>, color: 'text-gray-800' },
                     ].map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                             <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">{k.icon}{k.label}</p>
-                            <p className={`text-xl font-bold ${k.color}`}>{k.val}<span className="text-sm font-normal text-gray-400">{k.unit}</span></p>
+                            <p className={`text-xl font-bold ${k.color}`}>
+                                {k.val}<span className="text-sm font-normal text-gray-400">{k.unit}</span>
+                            </p>
                         </div>
                     ))}
                 </div>
-                {/* Mejora 8: Comparativo vs plantilla activa */}
-                {filtroObra && plantillaActiva && (
-                    <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-4">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                            <HardHat size={13} className="text-blue-500" />
-                            Comparativo Plantilla {plantillaActiva.numero} — {obraSeleccionada!.nombre}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {/* Metros */}
-                            <div>
-                                <div className="flex justify-between items-end mb-1">
-                                    <span className="text-xs text-gray-500">Metros perforados</span>
-                                    <span className={`text-xs font-bold ${metrosTotalesAcum >= plantillaActiva.metrosContratados ? 'text-green-600' : 'text-blue-600'}`}>
-                                        {metrosTotalesAcum.toFixed(1)} / {plantillaActiva.metrosContratados} m
-                                        {metrosTotalesAcum >= plantillaActiva.metrosContratados && ' ✓'}
-                                    </span>
-                                </div>
-                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full transition-all ${metrosTotalesAcum >= plantillaActiva.metrosContratados ? 'bg-green-500' : 'bg-blue-500'}`}
-                                        style={{ width: `${Math.min(100, plantillaActiva.metrosContratados > 0 ? (metrosTotalesAcum / plantillaActiva.metrosContratados) * 100 : 0)}%` }} />
-                                </div>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    {plantillaActiva.metrosContratados > 0
-                                        ? `${((metrosTotalesAcum / plantillaActiva.metrosContratados) * 100).toFixed(1)}% completado`
-                                        : '—'}
-                                </p>
-                            </div>
-                            {/* Barrenos */}
-                            {plantillaActiva.barrenos > 0 && (
-                                <div>
-                                    <div className="flex justify-between items-end mb-1">
-                                        <span className="text-xs text-gray-500">Barrenos</span>
-                                        <span className={`text-xs font-bold ${barrTotalesAcum >= plantillaActiva.barrenos ? 'text-green-600' : 'text-blue-600'}`}>
-                                            {barrTotalesAcum} / {plantillaActiva.barrenos}
-                                            {barrTotalesAcum >= plantillaActiva.barrenos && ' ✓'}
-                                        </span>
-                                    </div>
-                                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={`h-full rounded-full transition-all ${barrTotalesAcum >= plantillaActiva.barrenos ? 'bg-green-500' : 'bg-blue-500'}`}
-                                            style={{ width: `${Math.min(100, (barrTotalesAcum / plantillaActiva.barrenos) * 100)}%` }} />
-                                    </div>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        {((barrTotalesAcum / plantillaActiva.barrenos) * 100).toFixed(1)}% completado
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                        {metrosTotalesAcum >= plantillaActiva.metrosContratados && barrTotalesAcum >= plantillaActiva.barrenos && (
-                            <div className="mt-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2 text-xs font-semibold text-green-700">
-                                ✓ Plantilla {plantillaActiva.numero} completa — {plantillaActiva.metrosContratados} m / {plantillaActiva.barrenos} barrenos
-                            </div>
-                        )}
-                    </div>
-                )}
-                </>
             )}
 
             {/* Lista de semanas */}
