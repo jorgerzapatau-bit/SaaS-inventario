@@ -76,26 +76,70 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
         });
 
-        // Costo acumulado de insumos (movimientos SALIDA vinculados a la obra)
-        const costoInsumos = await prisma.movimientoInventario.aggregate({
-            where: {
-                obraId:         id,
-                empresaId:      user.empresaId,
-                tipoMovimiento: { in: ['SALIDA', 'AJUSTE_NEGATIVO'] },
-            },
-            _sum: { costoUnitario: true, cantidad: true },
-        });
-
         // Monto total facturado
         const facturacion = await prisma.corteFacturacion.aggregate({
             where: { obraId: id },
             _sum: { montoFacturado: true },
         });
 
+        // ── resumenFinanciero: costo de producción por registros diarios ──────
+        // Traemos los campos necesarios para calcular el costo registro por registro
+        const registrosDiarios = await prisma.registroDiario.findMany({
+            where: { obraId: id, empresaId: user.empresaId },
+            select: {
+                litrosDiesel:      true,
+                precioDiesel:      true,
+                operadores:        true,
+                peones:            true,
+                rentaEquipoDiaria: true,
+            },
+        });
+
+        const costoProduccion = registrosDiarios.reduce((acc, r) => {
+            const diesel  = Number(r.litrosDiesel ?? 0) * Number(r.precioDiesel ?? 0);
+            const ops     = Number(r.operadores ?? 0) * 450;
+            const peones  = Number(r.peones ?? 0) * 283.33;
+            const renta   = Number(r.rentaEquipoDiaria ?? 0);
+            return acc + diesel + ops + peones + renta;
+        }, 0);
+
+        // ── Gastos adicionales manuales (excluir los que vienen del registro) ─
+        const gastosAdicRaw = await prisma.gastoOperativo.aggregate({
+            where: {
+                obraId:    id,
+                empresaId: user.empresaId,
+                origen:    'GENERAL_MANUAL',
+            },
+            _sum: { total: true },
+        });
+        const gastosAdicionales = Number(gastosAdicRaw._sum.total ?? 0);
+
+        // ── Costo real de insumos: suma(cantidad * costoUnitario) por fila ────
+        const movimientosInsumos = await prisma.movimientoInventario.findMany({
+            where: {
+                obraId:         id,
+                empresaId:      user.empresaId,
+                tipoMovimiento: { in: ['SALIDA', 'AJUSTE_NEGATIVO'] },
+            },
+            select: { cantidad: true, costoUnitario: true },
+        });
+
+        const costoInsumos = movimientosInsumos.reduce((acc, m) => {
+            return acc + Number(m.cantidad) * Number(m.costoUnitario);
+        }, 0);
+
+        // ── Resumen financiero derivado ───────────────────────────────────────
+        const facturado   = Number(facturacion._sum.montoFacturado ?? 0);
+        const costoTotal  = costoProduccion + gastosAdicionales + costoInsumos;
+        const utilidad    = facturado - costoTotal;
+        const margenPct   = facturado > 0 ? (utilidad / facturado) * 100 : null;
+
         const metrosPerforados = Number(agg._sum.metrosLineales ?? 0);
         const pctAvance = obra.metrosContratados && Number(obra.metrosContratados) > 0
             ? (metrosPerforados / Number(obra.metrosContratados)) * 100
             : null;
+
+        const costoPorMetro = metrosPerforados > 0 ? costoTotal / metrosPerforados : null;
 
         return Response.json({
             ...obra,
@@ -145,8 +189,18 @@ export async function GET(req: NextRequest, { params }: Params) {
                 litrosDiesel:   Number(agg._sum.litrosDiesel    ?? 0),
                 barrenos:       Number(agg._sum.barrenos        ?? 0),
                 pctAvance,
-                montoFacturado: Number(facturacion._sum.montoFacturado ?? 0),
-                costoInsumos:   Number(costoInsumos._sum.costoUnitario ?? 0),
+                montoFacturado: facturado,
+                costoInsumos,
+            },
+            resumenFinanciero: {
+                facturado,
+                costoProduccion,
+                gastosAdicionales,
+                costoInsumos,
+                costoTotal,
+                utilidad,
+                margenPct,
+                costoPorMetro,
             },
         });
     } catch (error) {
