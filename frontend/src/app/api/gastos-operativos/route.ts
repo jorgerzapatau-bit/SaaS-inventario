@@ -8,8 +8,16 @@ async function getDefaultAlmacen(empresaId: string): Promise<string | null> {
 }
 
 function serializeGasto(g: any) {
+    const toDateStr = (v: any): string | null => {
+        if (!v) return null;
+        if (typeof v === 'string') return v.slice(0, 10);
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        return null;
+    };
     return {
         ...g,
+        fechaInicio:    toDateStr(g.fechaInicio),
+        fechaFin:       toDateStr(g.fechaFin),
         cantidad:       Number(g.cantidad),
         precioUnitario: Number(g.precioUnitario),
         total:          g.total ? Number(g.total) : Number(g.cantidad) * Number(g.precioUnitario),
