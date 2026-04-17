@@ -8,6 +8,7 @@ interface CompanyInfo {
     url: string;
     logo?: string | null;
     moneda: string;
+    tipoCambio?: number | null;
 }
 
 interface CompanyContextType {
@@ -15,6 +16,7 @@ interface CompanyContextType {
     companySlug: string | null;
     loading: boolean;
     moneda: string;
+    tipoCambio: number;
 }
 
 const CompanyContext = createContext<CompanyContextType>({
@@ -22,6 +24,7 @@ const CompanyContext = createContext<CompanyContextType>({
     companySlug: null,
     loading: true,
     moneda: 'MXN',
+    tipoCambio: 17,
 });
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
@@ -35,7 +38,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
         if (slug) {
             fetchApi(`/company/${slug}`)
-                .then((data) => setCompany({ ...data, moneda: data.moneda || 'MXN' }))
+                .then((data) =>
+                    setCompany({
+                        ...data,
+                        moneda: data.moneda || 'MXN',
+                        tipoCambio: data.tipoCambio ?? 17,
+                    })
+                )
                 .catch(() => {})
                 .finally(() => setLoading(false));
         } else {
@@ -44,7 +53,15 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }, []);
 
     return (
-        <CompanyContext.Provider value={{ company, companySlug, loading, moneda: company?.moneda || 'MXN' }}>
+        <CompanyContext.Provider
+            value={{
+                company,
+                companySlug,
+                loading,
+                moneda: company?.moneda || 'MXN',
+                tipoCambio: company?.tipoCambio ?? 17,
+            }}
+        >
             {children}
         </CompanyContext.Provider>
     );

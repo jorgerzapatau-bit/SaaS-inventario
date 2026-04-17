@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { fetchApi } from "@/lib/api";
+import { useCompany } from "@/context/CompanyContext";
 import { ArrowLeft, Save, Upload, X, ToggleLeft, ToggleRight } from "lucide-react";
 
 // ── Image compression ────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ async function compressImage(file: File): Promise<{ base64: string; error?: stri
 export default function NuevoInsumoPage() {
     const router       = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { moneda: monedaEmpresa, tipoCambio } = useCompany();
 
     const [loading,      setLoading]      = useState(false);
     const [error,        setError]        = useState("");
@@ -64,6 +66,7 @@ export default function NuevoInsumoPage() {
         unidad:       "litro",
         imagen:       null as string | null,
         activo:       true,
+        moneda:       "MXN" as "MXN" | "USD",
     });
 
     useEffect(() => {
@@ -105,6 +108,7 @@ export default function NuevoInsumoPage() {
                     precioCompra: formData.costoUnitario ? Number(formData.costoUnitario) : undefined,
                     imagen:       formData.imagen,
                     activo:       formData.activo,
+                    moneda:       formData.moneda,
                 }),
             });
             router.replace(`/dashboard/products/${created.id}`);
@@ -115,6 +119,14 @@ export default function NuevoInsumoPage() {
     };
 
     const costoUnitario = Number(formData.costoUnitario) || 0;
+
+    // Equivalente en moneda opuesta para mostrar referencia
+    const costoEquivalente = costoUnitario > 0
+        ? formData.moneda === "USD"
+            ? costoUnitario * tipoCambio          // USD → MXN
+            : costoUnitario / tipoCambio          // MXN → USD
+        : 0;
+    const monedaEquivalente = formData.moneda === "USD" ? "MXN" : "USD";
 
     return (
         <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-500">
@@ -271,19 +283,66 @@ export default function NuevoInsumoPage() {
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Costos y reabastecimiento</p>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                                {/* ── Moneda del producto ── */}
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                                        Moneda del costo
+                                    </label>
+                                    <div className="flex rounded-lg overflow-hidden border border-gray-200 h-[38px]">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData(p => ({ ...p, moneda: "MXN" }))}
+                                            className={`flex-1 text-sm font-semibold transition-colors ${
+                                                formData.moneda === "MXN"
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                            }`}
+                                        >
+                                            MXN
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData(p => ({ ...p, moneda: "USD" }))}
+                                            className={`flex-1 text-sm font-semibold transition-colors border-l border-gray-200 ${
+                                                formData.moneda === "USD"
+                                                    ? "bg-blue-600 text-white"
+                                                    : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                            }`}
+                                        >
+                                            USD
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        Moneda en que se registran las compras
+                                    </p>
+                                </div>
+
+                                {/* ── Costo unitario ── */}
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">
                                         Costo unitario <span className="text-gray-400 font-normal text-xs">(referencia, opcional)</span>
                                     </label>
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
+                                            {formData.moneda === "USD" ? "US$" : "$"}
+                                        </span>
                                         <input type="number" step="0.01" min="0" name="costoUnitario"
                                             value={formData.costoUnitario} onChange={handleChange}
                                             placeholder="Ej: 77.92"
-                                            className="w-full pl-7 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                            className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
                                     </div>
-                                    <p className="text-xs text-gray-400 mt-1">Se actualizará automáticamente al registrar compras</p>
+                                    {costoUnitario > 0 && (
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            ≈ {monedaEquivalente === "USD" ? "US$" : "$"}
+                                            {costoEquivalente.toLocaleString("es-MX", { maximumFractionDigits: 2 })} {monedaEquivalente}
+                                        </p>
+                                    )}
+                                    {!costoUnitario && (
+                                        <p className="text-xs text-gray-400 mt-1">Se actualizará automáticamente al registrar compras</p>
+                                    )}
                                 </div>
+
+                                {/* ── Stock mínimo ── */}
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">Stock mínimo *</label>
                                     <input required type="number" min="0" name="stockMinimo"
@@ -291,6 +350,9 @@ export default function NuevoInsumoPage() {
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
                                     <p className="text-xs text-gray-400 mt-1">Alerta cuando el stock baja de este nivel</p>
                                 </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">Nivel de reorden</label>
                                     <input type="number" min="0" name="nivelReorden"
@@ -298,9 +360,6 @@ export default function NuevoInsumoPage() {
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
                                     <p className="text-xs text-gray-400 mt-1">Cantidad a pedir cuando se activa la alerta</p>
                                 </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 block mb-1.5">
                                         Días de reorden <span className="text-gray-400 font-normal text-xs">(tiempo de entrega)</span>
@@ -316,10 +375,17 @@ export default function NuevoInsumoPage() {
                                         <div className="w-full bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
                                             <p className="text-xs text-blue-500 font-medium mb-1">Costo de reabastecimiento estimado</p>
                                             <p className="text-xl font-bold text-blue-700">
-                                                ${(costoUnitario * (Number(formData.nivelReorden) || Number(formData.stockMinimo) || 0)).toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+                                                {formData.moneda === "USD" ? "US$" : "$"}
+                                                {(costoUnitario * (Number(formData.nivelReorden) || Number(formData.stockMinimo) || 0)).toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+                                                {" "}<span className="text-sm font-normal text-blue-500">{formData.moneda}</span>
                                             </p>
+                                            {formData.moneda !== monedaEmpresa && (
+                                                <p className="text-xs text-blue-400 mt-0.5">
+                                                    ≈ ${(costoEquivalente * (Number(formData.nivelReorden) || Number(formData.stockMinimo) || 0)).toLocaleString("es-MX", { maximumFractionDigits: 2 })} {monedaEquivalente}
+                                                </p>
+                                            )}
                                             <p className="text-xs text-blue-400 mt-0.5">
-                                                {formData.nivelReorden || formData.stockMinimo} {formData.unidad} × ${costoUnitario.toLocaleString("es-MX")}
+                                                {formData.nivelReorden || formData.stockMinimo} {formData.unidad} × {formData.moneda === "USD" ? "US$" : "$"}{costoUnitario.toLocaleString("es-MX")}
                                             </p>
                                         </div>
                                     </div>
