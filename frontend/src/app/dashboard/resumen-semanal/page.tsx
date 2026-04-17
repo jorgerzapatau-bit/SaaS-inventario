@@ -74,6 +74,15 @@ type ResumenSemana = {
 const COSTO_OPERADOR = 450;    // 2700/6
 const COSTO_PEON     = 283.33; // 1700/6
 
+// Calcula el número de semana ISO — mismo algoritmo que el backend
+// Se usa como fallback para registros que tengan semanaNum/anoNum null
+function getISOWeek(date: Date): number {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
 function kpiColor(val: number | null, bueno: number, malo: number) {
     if (val === null) return 'text-gray-400';
     if (val <= bueno) return 'text-green-600';
@@ -341,10 +350,16 @@ function ResumenSemanalInner() {
 
         const mapa: Record<string, Registro[]> = {};
         for (const r of registros) {
-            if (!r.semanaNum || !r.anoNum) continue;
-            const key = `${r.anoNum}-${String(r.semanaNum).padStart(2, '0')}-${r.equipo.nombre}`;
+            // Si el registro no tiene semanaNum/anoNum (registros viejos o con datos incompletos),
+            // los calculamos desde la fecha usando el mismo algoritmo ISO que el backend.
+            const fechaDate = new Date(r.fecha + 'T12:00:00');
+            const semana    = r.semanaNum ?? getISOWeek(fechaDate);
+            const ano       = r.anoNum    ?? fechaDate.getFullYear();
+            const key = `${ano}-${String(semana).padStart(2, '0')}-${r.equipo.nombre}`;
             if (!mapa[key]) mapa[key] = [];
-            mapa[key].push(r);
+            // Enriquecer el registro con los valores calculados para que las
+            // referencias posteriores a r.semanaNum / r.anoNum funcionen siempre.
+            mapa[key].push({ ...r, semanaNum: semana, anoNum: ano });
         }
 
         return Object.entries(mapa)
