@@ -160,12 +160,24 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
             const obra = obras.find(o => o.id === obraId);
             if (!obra?.plantillas?.length) { setAvancePlantilla(null); return; }
             const ahora = new Date().toISOString().slice(0, 10);
+            // Plantilla activa según fecha, con fallback a la primera
             const activa = obra.plantillas.find(p =>
+                p.status !== 'TERMINADA' &&
                 (!p.fechaFin || p.fechaFin >= ahora) && (!p.fechaInicio || p.fechaInicio <= ahora)
-            ) ?? obra.plantillas[0];
+            ) ?? obra.plantillas.find(p => p.status !== 'TERMINADA') ?? obra.plantillas[0];
             const registros = await fetchApi(`/registros-diarios?obraId=${obraId}`);
-            const metrosAcumulados = registros.reduce((a: number, r: { metrosLineales?: number }) => a + (r.metrosLineales ?? 0), 0);
-            const barrenosAcumulados = registros.reduce((a: number, r: { barrenos?: number }) => a + (r.barrenos ?? 0), 0);
+            // Filtrar SOLO los registros que pertenecen a esta plantilla (por plantillaId primero,
+            // luego por rango de fecha como fallback para registros legacy sin plantillaId)
+            const regsPlantilla = registros.filter((r: { plantillaId?: string | null; fecha?: string }) => {
+                if (r.plantillaId) return r.plantillaId === activa.id;
+                // Fallback por rango de fecha para registros anteriores a la asignación de plantillaId
+                const iso = (r.fecha || '').slice(0, 10);
+                const desde = activa.fechaInicio ? activa.fechaInicio.slice(0, 10) : null;
+                const hasta = activa.fechaFin   ? activa.fechaFin.slice(0, 10)   : null;
+                return desde && iso >= desde && (!hasta || iso <= hasta);
+            });
+            const metrosAcumulados = regsPlantilla.reduce((a: number, r: { metrosLineales?: number }) => a + (r.metrosLineales ?? 0), 0);
+            const barrenosAcumulados = regsPlantilla.reduce((a: number, r: { barrenos?: number }) => a + (r.barrenos ?? 0), 0);
             setAvancePlantilla({ plantilla: activa, metrosAcumulados, barrenosAcumulados });
         } catch {
             setAvancePlantilla(null);
@@ -202,9 +214,10 @@ export function RegistroFormInner({ mode, registroId, initialValues, equipoIdPar
                         setObraDetalleCache(prev => ({ ...prev, [obraIdParam]: ob }));
                         setObras(prev => prev.map(o => o.id === obraIdParam ? { ...o, ...ob } : o));
                         const plantillaSugerida = ob.plantillas?.find(p =>
+                            p.status !== 'TERMINADA' &&
                             (!p.fechaInicio || p.fechaInicio <= hoy) &&
                             (!p.fechaFin    || p.fechaFin   >= hoy)
-                        ) ?? ob.plantillas?.[0];
+                        ) ?? ob.plantillas?.find(p => p.status !== 'TERMINADA') ?? ob.plantillas?.[0];
                         setForm(f => ({
                             ...f,
                             obraId: obraIdParam,

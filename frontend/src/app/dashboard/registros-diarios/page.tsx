@@ -82,6 +82,7 @@ type RegistroExistente = {
     litrosTanqueInicio: number | null;
     tanqueFin: number | null;
     litrosTanqueFin: number | null;
+    plantillaId: string | null;
 };
 
 // EditingRow expandida con TODOS los campos
@@ -128,9 +129,16 @@ function calcularAvancePorPlantilla(
     const map = new Map<number, { metros: number; barrenos: number }>();
     for (const p of plantillas) map.set(p.numero, { metros: 0, barrenos: 0 });
     for (const r of registros) {
-        const p = plantillaDeRegistro(r.fecha, plantillas);
-        if (p) {
-            const cur = map.get(p.numero)!;
+        // Usar plantillaId del registro si existe; si no, inferir por rango de fecha como fallback
+        let plantilla: Plantilla | null = null;
+        if (r.plantillaId) {
+            plantilla = plantillas.find(p => p.id === r.plantillaId) ?? null;
+        }
+        if (!plantilla) {
+            plantilla = plantillaDeRegistro(r.fecha, plantillas);
+        }
+        if (plantilla) {
+            const cur = map.get(plantilla.numero)!;
             cur.metros   += r.metrosLineales;
             cur.barrenos += r.barrenos;
         }
@@ -1639,6 +1647,7 @@ function RegistrosDiariosInner() {
             litrosTanqueInicio: r.litrosTanqueInicio,
             tanqueFin: r.tanqueFin,
             litrosTanqueFin: r.litrosTanqueFin,
+            plantillaId: r.plantillaId ?? null,
         }));
         return calcularAvancePorPlantilla(regsExistentes, plantillas);
     }, [registros, obraId, plantillas]);
@@ -1706,6 +1715,7 @@ function RegistrosDiariosInner() {
             litrosTanqueInicio: r.litrosTanqueInicio,
             tanqueFin: r.tanqueFin,
             litrosTanqueFin: r.litrosTanqueFin,
+            plantillaId: r.plantillaId ?? null,
         };
         setHistEditingRow(editingRowFromRegistro(re));
         setHistEditingId(id);
