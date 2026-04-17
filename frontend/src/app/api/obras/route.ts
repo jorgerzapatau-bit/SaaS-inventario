@@ -22,7 +22,15 @@ export async function GET(req: NextRequest) {
                     where: { fechaFin: null },
                     include: { equipo: { select: { nombre: true, numeroEconomico: true } } },
                 },
-                plantillas: { orderBy: { numero: 'asc' } },       // C1-B
+                plantillas: {                                      // C1-B
+                    orderBy: { numero: 'asc' },
+                    include: {
+                        plantillaEquipos: {
+                            where: { fechaFin: null },
+                            include: { equipo: { select: { id: true, nombre: true, numeroEconomico: true } } },
+                        },
+                    },
+                },
                 _count: {
                     select: {
                         registrosDiarios:  true,

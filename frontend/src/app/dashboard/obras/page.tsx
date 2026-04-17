@@ -474,23 +474,26 @@ function ObraModal({
                 await fetchApi(`/obras/${obra!.id}`, { method: 'PUT', body: JSON.stringify(body) });
             }
 
-            // Asignar equipos a plantillas — upsert directo, la API maneja duplicados
-            const plantillasConEquipos = plantillasValidas.filter(p => p.equipos.filter(e => e.equipoId).length > 0);
-            if (plantillasConEquipos.length > 0) {
-                setSavingPlantillaEquipo(true);
-                try {
-                    // Re-fetch para tener los IDs reales de plantillas (especialmente las recien creadas)
-                    const obraActualizada: any = await fetchApi(`/obras/${obraId}`);
-                    const plantillasDB: any[] = obraActualizada.plantillas ?? [];
+            // Sincronizar equipos de plantillas (POST para nuevos, DELETE para eliminados)
+            setSavingPlantillaEquipo(true);
+            try {
+                // Re-fetch para tener los IDs reales de plantillas (especialmente las recién creadas)
+                const obraActualizada: any = await fetchApi(`/obras/${obraId}`);
+                const plantillasDB: any[] = obraActualizada.plantillas ?? [];
 
-                    for (const plt of plantillasConEquipos) {
-                        // En edicion buscar por id; en creacion buscar por numero
-                        const pDB = plt.id
-                            ? plantillasDB.find((p: any) => p.id === plt.id)
-                            : plantillasDB.find((p: any) => p.numero === plt.numero);
-                        if (!pDB) continue;
+                for (const plt of plantillasValidas) {
+                    // En edición buscar por id; en creación buscar por numero
+                    const pDB = plt.id
+                        ? plantillasDB.find((p: any) => p.id === plt.id)
+                        : plantillasDB.find((p: any) => p.numero === plt.numero);
+                    if (!pDB) continue;
 
-                        for (const eq of plt.equipos.filter(e => e.equipoId)) {
+                    const equiposActualesDB: string[] = (pDB.plantillaEquipos ?? []).map((pe: any) => pe.equipoId);
+                    const equiposDeseados: string[]   = plt.equipos.filter(e => e.equipoId).map(e => e.equipoId);
+
+                    // POST: equipos nuevos que no estaban antes
+                    for (const eq of plt.equipos.filter(e => e.equipoId)) {
+                        if (!equiposActualesDB.includes(eq.equipoId)) {
                             await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
                                 method: 'POST',
                                 body: JSON.stringify({
@@ -500,9 +503,19 @@ function ObraModal({
                             });
                         }
                     }
-                } finally {
-                    setSavingPlantillaEquipo(false);
+
+                    // DELETE: equipos que estaban antes y ya no están
+                    for (const equipoId of equiposActualesDB) {
+                        if (!equiposDeseados.includes(equipoId)) {
+                            await fetchApi(`/obras/${obraId}/plantillas/${pDB.id}/equipos`, {
+                                method: 'DELETE',
+                                body: JSON.stringify({ equipoId }),
+                            });
+                        }
+                    }
                 }
+            } finally {
+                setSavingPlantillaEquipo(false);
             }
 
             onSaved();
