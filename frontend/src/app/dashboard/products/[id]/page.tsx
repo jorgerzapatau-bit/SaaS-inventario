@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
 import { useCompany } from '@/context/CompanyContext';
@@ -1131,7 +1131,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 const costoTotalMov = Number(selectedMov.cantidad) * costoUnitMov;
                                 const costoUnitBase = convertirABase(costoUnitMov, mDocMov, monedaBase, mTcMov);
                                 const costoTotalBase = convertirABase(costoTotalMov, mDocMov, monedaBase, mTcMov);
-                                const rows: [string, string | JSX.Element][] = [
+                                const rows: [string, string | ReactNode][] = [
                                     ['Producto', product?.nombre ?? ''],
                                     ['Fecha', new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],
                                     ['Almacén', selectedMov.almacen?.nombre],
