@@ -1093,6 +1093,7 @@ function CapturaGrid({
                     litrosTanqueInicio: r.litrosTanqueInicio ?? null,
                     tanqueFin: r.tanqueFin ?? null,
                     litrosTanqueFin: r.litrosTanqueFin ?? null,
+                    plantillaId: r.plantillaId ?? null,
                 })));
             })
             .catch(() => {})
@@ -1194,6 +1195,7 @@ function CapturaGrid({
                 litrosTanqueInicio:  nuevaFila.litrosTanqueInicio  ? Number(nuevaFila.litrosTanqueInicio)  : null,
                 tanqueFin:           nuevaFila.tanqueFin           ? Number(nuevaFila.tanqueFin)           : null,
                 litrosTanqueFin:     nuevaFila.litrosTanqueFin     ? Number(nuevaFila.litrosTanqueFin)     : null,
+                plantillaId:         plantilla.id,
             };
             setRegistrosExistentes(prev => [...prev, nuevoRegistro]);
             setShowSuccess(true);
