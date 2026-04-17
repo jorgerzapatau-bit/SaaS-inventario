@@ -2168,7 +2168,8 @@ function RegistrosDiariosInner() {
                                                     let lastObraId: string | null = null;
                                                     let lastPlantillaKey: string | null = null;
 
-                                                    const sorted = [...paginated].sort((a, b) => {
+                                                    // ── Ordenar TODOS los filtrados (no solo la página) ──
+                                                    const sortedAll = [...filtrados].sort((a, b) => {
                                                         const obraA = a.obra?.nombre || a.obraNombre || '~Sin obra';
                                                         const obraB = b.obra?.nombre || b.obraNombre || '~Sin obra';
                                                         if (obraA !== obraB) return obraA.localeCompare(obraB);
@@ -2180,6 +2181,32 @@ function RegistrosDiariosInner() {
                                                         if (eA !== eB) return eA.localeCompare(eB);
                                                         return a.fecha.localeCompare(b.fecha);
                                                     });
+
+                                                    // Paginar sobre el array ya ordenado
+                                                    const sorted = sortedAll.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+                                                    // Pre-calcular totales reales (sobre TODOS los filtrados ordenados)
+                                                    const totalsPorObra = new Map<string, number>();
+                                                    const totalsPorPlantilla = new Map<string, { dias: number; metros: number; barrenos: number; horas: number }>();
+                                                    for (const x of sortedAll) {
+                                                        const oId = x.obra?.id || 'sin-obra';
+                                                        totalsPorObra.set(oId, (totalsPorObra.get(oId) ?? 0) + 1);
+                                                        const pk = `${oId}-p${x.plantilla?.numero ?? 'x'}`;
+                                                        const cur = totalsPorPlantilla.get(pk) ?? { dias: 0, metros: 0, barrenos: 0, horas: 0 };
+                                                        cur.dias++;
+                                                        cur.metros   += x.metrosLineales;
+                                                        cur.barrenos += x.barrenos;
+                                                        cur.horas    += x.horasTrabajadas;
+                                                        totalsPorPlantilla.set(pk, cur);
+                                                    }
+
+                                                    // Si estamos en página > 1, inicializar los separadores con el contexto
+                                                    // del primer registro de la página (para no perder la jerarquía visual)
+                                                    if (page > 1 && sorted.length > 0) {
+                                                        const first = sorted[0];
+                                                        lastObraId = first.obra?.id || 'sin-obra';
+                                                        lastPlantillaKey = `${lastObraId}-p${first.plantilla?.numero ?? 'x'}`;
+                                                    }
 
                                                     sorted.forEach((r, i) => {
                                                         const oId = r.obra?.id || 'sin-obra';
@@ -2197,7 +2224,7 @@ function RegistrosDiariosInner() {
                                                                             <Building2 size={13} className="text-gray-300 flex-shrink-0"/>
                                                                             <span className="text-xs font-bold text-white tracking-wide uppercase">{obraLabel}</span>
                                                                             <span className="ml-auto text-[10px] text-gray-400">
-                                                                                {sorted.filter(x => (x.obra?.id || 'sin-obra') === oId).length} registros
+                                                                                {totalsPorObra.get(oId) ?? 0} registros
                                                                             </span>
                                                                         </div>
                                                                     </td>
@@ -2208,13 +2235,7 @@ function RegistrosDiariosInner() {
                                                         // Separador PLANTILLA
                                                         if (plantillaKey !== lastPlantillaKey) {
                                                             lastPlantillaKey = plantillaKey;
-                                                            const regsP = sorted.filter(x =>
-                                                                (x.obra?.id || 'sin-obra') === oId &&
-                                                                (x.plantilla?.numero ?? 'x') === (r.plantilla?.numero ?? 'x')
-                                                            );
-                                                            const totM = regsP.reduce((s, x) => s + x.metrosLineales, 0);
-                                                            const totB = regsP.reduce((s, x) => s + x.barrenos, 0);
-                                                            const totH = regsP.reduce((s, x) => s + x.horasTrabajadas, 0);
+                                                            const tots = totalsPorPlantilla.get(plantillaKey) ?? { dias: 0, metros: 0, barrenos: 0, horas: 0 };
                                                             rows.push(
                                                                 <tr key={`plant-${plantillaKey}-${i}`} className="bg-indigo-50 border-t border-indigo-100">
                                                                     <td colSpan={11} className="pl-6 pr-3 py-1.5">
@@ -2228,7 +2249,7 @@ function RegistrosDiariosInner() {
                                                                                 )}
                                                                             </div>
                                                                             <span className="text-gray-300">·</span>
-                                                                            <span className="text-[10px] text-indigo-500">{regsP.length} días · {totH} hrs · {totM.toFixed(1)} m · {totB} bar.</span>
+                                                                            <span className="text-[10px] text-indigo-500">{tots.dias} días · {tots.horas} hrs · {tots.metros.toFixed(1)} m · {tots.barrenos} bar.</span>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
