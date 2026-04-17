@@ -23,6 +23,7 @@ interface Movimiento {
     cantidad: number; costoUnitario: number; precioVenta?: number;
     proveedorId?: string; proveedor?: Proveedor; clienteNombre?: string;
     referencia?: string; fecha: string;
+    moneda?: string; tipoCambio?: number | null;
     almacen: { nombre: string }; usuario: { nombre: string }; saldo?: number;
 }
 interface Producto {
@@ -30,6 +31,8 @@ interface Producto {
     stockMinimo: number; ultimoPrecioCompra?: number | null; ultimoPrecioVenta?: number | null;
     activo: boolean; stock: number; imagen?: string | null;
     descripcion?: string; categoriaId: string;
+    moneda?: string;
+    ultimaEntrada?: { tipoCambio?: number | null; moneda?: string } | null;
     categoria: { id: string; nombre: string };
 }
 
@@ -66,13 +69,107 @@ async function compressImage(file: File): Promise<{base64:string;error?:string}>
     });
 }
 
+// ── Helpers de doble moneda ───────────────────────────────────────────────────
+
+/**
+ * Convierte un valor de monedaDoc a monedaBase usando tipoCambio (USD/MXN).
+ * Retorna null si no hay tipo de cambio o no aplica conversión.
+ */
+function convertirABase(
+    valor: number,
+    monedaDoc: string,
+    monedaBase: string,
+    tipoCambio: number | null | undefined
+): number | null {
+    if (!monedaDoc || monedaDoc === monedaBase) return valor;
+    if (!tipoCambio) return null;
+    if (monedaDoc === 'USD' && monedaBase === 'MXN') return valor * tipoCambio;
+    if (monedaDoc === 'MXN' && monedaBase === 'USD') return tipoCambio > 0 ? valor / tipoCambio : null;
+    return null;
+}
+
+/** Chip de moneda extranjera */
+function MonedaBadge({ moneda, monedaBase }: { moneda?: string; monedaBase: string }) {
+    if (!moneda || moneda === monedaBase) return null;
+    return (
+        <span className="inline-block ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 align-middle leading-none">
+            {moneda}
+        </span>
+    );
+}
+
+/**
+ * Muestra un importe con su equivalente en moneda base debajo (en gris pequeño).
+ * Usado en KPIs y detalles del historial.
+ */
+function PrecioDoble({
+    valor,
+    monedaDoc,
+    monedaBase,
+    tipoCambio,
+    className = 'text-2xl font-bold text-gray-800',
+    subClassName = 'text-xs text-gray-400 mt-0.5',
+    fallback = '—',
+}: {
+    valor: number | null | undefined;
+    monedaDoc?: string;
+    monedaBase: string;
+    tipoCambio?: number | null;
+    className?: string;
+    subClassName?: string;
+    fallback?: string;
+}) {
+    if (valor == null || isNaN(Number(valor))) return <span className="text-gray-400">{fallback}</span>;
+    const v = Number(valor);
+    const mDoc = monedaDoc || monedaBase;
+
+    const fmt = (amount: number, currency: string) =>
+        new Intl.NumberFormat('es-MX', {
+            style: 'currency', currency, maximumFractionDigits: 2,
+        }).format(amount);
+
+    const fmtBase = (amount: number) =>
+        new Intl.NumberFormat('es-MX', {
+            style: 'currency', currency: monedaBase, maximumFractionDigits: 0,
+        }).format(amount);
+
+    const principal = fmt(v, mDoc);
+    const valorBase = convertirABase(v, mDoc, monedaBase, tipoCambio);
+    const mostrarEquiv = valorBase !== null && mDoc !== monedaBase;
+
+    return (
+        <span>
+            <span className={className}>
+                {principal}
+                <MonedaBadge moneda={mDoc} monedaBase={monedaBase} />
+            </span>
+            {mostrarEquiv && (
+                <span className={`block ${subClassName}`}>
+                    ≈ {fmtBase(valorBase!)} {monedaBase}
+                    {tipoCambio && (
+                        <span className="ml-1 text-gray-300">· TC {tipoCambio.toFixed(2)}</span>
+                    )}
+                </span>
+            )}
+        </span>
+    );
+}
+
 export default function ProductDetailPage({ isNew = false }: { isNew?: boolean } = {}) {
     const {id}=useParams();
     const router=useRouter();
     const fileInputRef=useRef<HTMLInputElement>(null);
-    const { moneda } = useCompany();
-    const currencyFmt = (v: number) =>
-        new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(v);
+    const { moneda: monedaBase } = useCompany();
+
+    // Formatear en moneda base
+    const fmtBase = (v: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: monedaBase, maximumFractionDigits: 0 }).format(v);
+    // Formatear en moneda específica
+    const fmt = (v: number, currency: string) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v);
+
+    // Mantener currencyFmt para compatibilidad con código existente
+    const currencyFmt = (v: number) => fmtBase(v);
 
     const [product,setProduct]=useState<Producto|null>(null);
     const [movements,setMovements]=useState<Movimiento[]>([]);
@@ -105,53 +202,62 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const [pagina,setPagina]=useState(1);
     const POR_PAGINA=25;
 
-    const [editData,setEditData]=useState({sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',unidad:'litro',imagen:null as string|null,activo:true,precioReferencia:''});
+    const [editData,setEditData]=useState({
+        sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',
+        unidad:'litro',imagen:null as string|null,activo:true,precioReferencia:'',
+        moneda:'MXN' as 'MXN'|'USD',
+    });
 
-    useEffect(()=>{
-        const load=async()=>{
-            try{
-                // ── FIX: siempre cargar categorías desde el endpoint dedicado ──
-                const cats = await fetchApi('/categories');
-                setCategorias(cats);
-
-                if(isNew){
-                    // Solo necesitábamos las categorías, listo
-                    return;
-                }
-                const [prod,movs,products,totalMovs]=await Promise.all([
-                    fetchApi(`/products/${id}`),
-                    fetchApi(`/inventory/kardex/${id}`),
-                    fetchApi('/products'),
-                    fetchApi('/inventory/movements').catch(()=>[]),
-                ]);
-                let saldo=0;
-                const movsWithBalance=[...movs].sort((a:Movimiento,b:Movimiento)=>new Date(a.fecha).getTime()-new Date(b.fecha).getTime()).map((m:Movimiento)=>{saldo+=(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?Number(m.cantidad):-Number(m.cantidad));return{...m,saldo};});
-                const fp=products.find((p:any)=>p.id===id);
-                setProduct({...prod,stock:fp?.stock??0,ultimoPrecioCompra:fp?.ultimoPrecioCompra,ultimoPrecioVenta:fp?.ultimoPrecioVenta});
-                setMovements([...movsWithBalance].reverse());
-                // Cargar notas internas desde la base de datos (campo producto.notas)
-                const notasGuardadas = prod.notas || '';
-                setNotas(notasGuardadas);
-                setNotasTemp(notasGuardadas);
-                // Valor total del inventario para % de contexto
-                if(Array.isArray(totalMovs)){
-                    const totalVal=totalMovs.reduce((a:number,m:any)=>{
-                        const q=Number(m.cantidad||0),c=Number(m.costoUnitario||0);
-                        if(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento))return a+q*c;
-                        if(['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))return a-q*c;
-                        return a;
-                    },0);
-                    setTotalInventarioValor(totalVal);
-                }
-            }catch(err){console.error(err);}
-            finally{setLoading(false);}
-        };
-        load();
-    },[id,isNew]);
+    useEffect(()=>{ const load=async()=>{
+        try{
+            const cats = await fetchApi('/categories');
+            setCategorias(cats);
+            if(isNew){ return; }
+            const [prod,movs,products,totalMovs]=await Promise.all([
+                fetchApi(`/products/${id}`),
+                fetchApi(`/inventory/kardex/${id}`),
+                fetchApi('/products'),
+                fetchApi('/inventory/movements').catch(()=>[]),
+            ]);
+            let saldo=0;
+            const movsWithBalance=[...movs].sort((a:Movimiento,b:Movimiento)=>new Date(a.fecha).getTime()-new Date(b.fecha).getTime()).map((m:Movimiento)=>{saldo+=(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?Number(m.cantidad):-Number(m.cantidad));return{...m,saldo};});
+            const fp=products.find((p:any)=>p.id===id);
+            setProduct({...prod,stock:fp?.stock??0,ultimoPrecioCompra:fp?.ultimoPrecioCompra,ultimoPrecioVenta:fp?.ultimoPrecioVenta,moneda:fp?.moneda||prod.moneda,ultimaEntrada:fp?.ultimaEntrada||prod.ultimaEntrada});
+            setMovements([...movsWithBalance].reverse());
+            const notasGuardadas = prod.notas || '';
+            setNotas(notasGuardadas);
+            setNotasTemp(notasGuardadas);
+            if(Array.isArray(totalMovs)){
+                const totalVal=totalMovs.reduce((a:number,m:any)=>{
+                    const q=Number(m.cantidad||0),c=Number(m.costoUnitario||0);
+                    const tc=m.tipoCambio??1;
+                    const mDoc=m.moneda||monedaBase;
+                    let cBase=c;
+                    if(mDoc==='USD'&&monedaBase==='MXN')cBase=c*tc;
+                    else if(mDoc==='MXN'&&monedaBase==='USD')cBase=tc>0?c/tc:c;
+                    if(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento))return a+q*cBase;
+                    if(['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))return a-q*cBase;
+                    return a;
+                },0);
+                setTotalInventarioValor(totalVal);
+            }
+        }catch(err){console.error(err);}
+        finally{setLoading(false);}
+    }; load(); },[id,isNew]);
 
     const startEdit=()=>{
         if(!product)return;
-        setEditData({sku:product?.sku??'',nombre:product?.nombre??'',descripcion:(product as any)?.descripcion||'',categoriaId:product?.categoria?.id||'',stockMinimo:String(product?.stockMinimo??5),unidad:product?.unidad??'litro',imagen:product?.imagen??null,activo:product?.activo??true,precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):''});
+        setEditData({
+            sku:product?.sku??'',nombre:product?.nombre??'',
+            descripcion:(product as any)?.descripcion||'',
+            categoriaId:product?.categoria?.id||'',
+            stockMinimo:String(product?.stockMinimo??5),
+            unidad:product?.unidad??'litro',
+            imagen:product?.imagen??null,
+            activo:product?.activo??true,
+            precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):'',
+            moneda:(product?.moneda||'MXN') as 'MXN'|'USD',
+        });
         setEditing(true);setSaveError('');setImgError('');
     };
 
@@ -169,33 +275,36 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     };
 
     const handleSave=async()=>{
-        // ── FIX 1: validar nombre y SKU ──
-        if(isNew&&(!editData.nombre||!editData.sku)){
-            setSaveError('SKU y nombre son obligatorios');
-            return;
-        }
-        // ── FIX 2: validar que se haya seleccionado una categoría ──
-        if(isNew&&!editData.categoriaId){
-            setSaveError('Debes seleccionar una categoría');
-            return;
-        }
+        if(isNew&&(!editData.nombre||!editData.sku)){setSaveError('SKU y nombre son obligatorios');return;}
+        if(isNew&&!editData.categoriaId){setSaveError('Debes seleccionar una categoría');return;}
         setSaving(true);setSaveError('');
         try{
             if(isNew){
-                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,categoriaId:editData.categoriaId,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo)||5,imagen:editData.imagen,activo:editData.activo,precioCompra:editData.precioReferencia?Number(editData.precioReferencia):undefined})});
+                const created=await fetchApi('/products',{method:'POST',body:JSON.stringify({
+                    sku:editData.sku,nombre:editData.nombre,descripcion:editData.descripcion,
+                    categoriaId:editData.categoriaId,unidad:editData.unidad,
+                    stockMinimo:Number(editData.stockMinimo)||5,
+                    imagen:editData.imagen,activo:editData.activo,
+                    precioCompra:editData.precioReferencia?Number(editData.precioReferencia):undefined,
+                    moneda:editData.moneda,
+                })});
                 router.replace(`/dashboard/products/${created.id}`);
                 return;
             }
             if(!product)return;
-            const updated=await fetchApi(`/products/${id}`,{method:'PUT',body:JSON.stringify({nombre:editData.nombre,categoriaId:editData.categoriaId,unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo),imagen:editData.imagen,activo:editData.activo})});
+            const updated=await fetchApi(`/products/${id}`,{method:'PUT',body:JSON.stringify({
+                nombre:editData.nombre,categoriaId:editData.categoriaId,
+                unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo),
+                imagen:editData.imagen,activo:editData.activo,
+                moneda:editData.moneda,
+            })});
             const cat=categorias.find((c:any)=>c.id===editData.categoriaId);
-            setProduct(p=>p?{...p,...updated,stock:p.stock,categoria:cat||p.categoria}:p);
+            setProduct(p=>p?{...p,...updated,stock:p.stock,categoria:cat||p.categoria,moneda:editData.moneda}:p);
             setEditing(false);setSaved(true);setTimeout(()=>setSaved(false),2500);
         }catch(err:any){setSaveError(err.message||'Error al guardar');}
         finally{setSaving(false);}
     };
 
-    // Carga dinámica de scripts CDN (igual que reports/page.tsx)
     const cargarScriptKardex=(src:string):Promise<void>=>new Promise((resolve,reject)=>{
         if(document.querySelector(`script[src="${src}"]`)){resolve();return;}
         const s=document.createElement('script');s.src=src;
@@ -206,7 +315,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const exportPDF=async()=>{
         if(!product)return;
         try{
-            // Usar CDN v2.5.1 — mismo patrón que reports/page.tsx
             await cargarScriptKardex('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
             await cargarScriptKardex('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
             const {jsPDF}=(window as any).jspdf;
@@ -214,33 +322,46 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
             const empresa=localStorage.getItem('companySlug')||'Empresa';
             const ultimaEntradaLocal=movements.find(m=>m.tipoMovimiento==='ENTRADA');
             const costoRef=Number(ultimaEntradaLocal?.costoUnitario??product?.ultimoPrecioCompra??0);
+            const monedaDoc=product?.moneda||monedaBase;
+            const tc=product?.ultimaEntrada?.tipoCambio??null;
             const pageW=doc.internal.pageSize.getWidth();
-            // ── Header ──
             doc.setFillColor(15,23,42);doc.rect(0,0,pageW,22,'F');
             doc.setTextColor(255,255,255);doc.setFontSize(14);doc.setFont('helvetica','bold');
             doc.text('Kardex de Producto',14,10);
             doc.setFontSize(8);doc.setFont('helvetica','normal');
             doc.text(`Empresa: ${empresa.toUpperCase()}`,14,16);
             doc.text(`Generado: ${new Date().toLocaleDateString('es-MX',{dateStyle:'long'})}`,pageW-14,16,{align:'right'});
-            // ── Info producto ──
             doc.setTextColor(30,41,59);
             doc.setFillColor(245,247,250);doc.roundedRect(14,26,pageW-28,22,2,2,'F');
             doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text(product?.nombre??'',18,34);
             doc.setFontSize(8);doc.setFont('helvetica','normal');
-            doc.text(`SKU: ${product?.sku}  ·  Categoría: ${product?.categoria?.nombre}`,18,40);
-            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}  ·  Valor almacén: ${currencyFmt((product?.stock??0)*costoRef)}`,pageW/2,40);
-            // ── Tabla ──
-            const tableData=[...movements].reverse().map(m=>[
-                new Date(m.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
-                tipoLabel(m.tipoMovimiento),
-                m.referencia||'—',
-                m.proveedor?.nombre||m.clienteNombre||'—',
-                m.almacen?.nombre||'—',
-                (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
-                currencyFmt(Number(m.costoUnitario)),
-                String(m.saldo??''),
-                m.usuario?.nombre||'',
-            ]);
+            doc.text(`SKU: ${product?.sku}  ·  Categoría: ${product?.categoria?.nombre}  ·  Moneda: ${monedaDoc}`,18,40);
+            // Valor en moneda doc y en base
+            const valorStock = (product?.stock??0)*costoRef;
+            const valorStockBase = tc && monedaDoc !== monedaBase
+                ? (monedaDoc==='USD'&&monedaBase==='MXN' ? valorStock*tc : tc>0?valorStock/tc:null)
+                : valorStock;
+            const valorStockStr = `${fmt(valorStock, monedaDoc)}${valorStockBase!==null&&monedaDoc!==monedaBase?` ≈ ${fmtBase(valorStockBase!)}`:''}`; 
+            doc.text(`Stock actual: ${product?.stock} ${product?.unidad}  ·  Valor almacén: ${valorStockStr}`,pageW/2,40);
+            const tableData=[...movements].reverse().map(m=>{
+                const mDoc=m.moneda||monedaDoc;
+                const mTc=m.tipoCambio??null;
+                const costoUsd=Number(m.costoUnitario);
+                const costoBaseStr = mTc && mDoc!==monedaBase
+                    ? ` ≈${fmtBase(convertirABase(costoUsd,mDoc,monedaBase,mTc)??costoUsd)}`
+                    : '';
+                return [
+                    new Date(m.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}),
+                    tipoLabel(m.tipoMovimiento),
+                    m.referencia||'—',
+                    m.proveedor?.nombre||m.clienteNombre||'—',
+                    m.almacen?.nombre||'—',
+                    (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
+                    `${fmt(costoUsd, mDoc)}${costoBaseStr}`,
+                    String(m.saldo??''),
+                    m.usuario?.nombre||'',
+                ];
+            });
             (doc as any).autoTable({
                 startY:52,
                 head:[['Fecha','Tipo','Referencia','Prov/Obra','Almacén','Cant.','Costo','Saldo','Usuario']],
@@ -259,18 +380,27 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
 
     const exportCSV=()=>{
         if(!product||movements.length===0)return;
-        const headers=['Fecha','Tipo','Referencia','Proveedor/Obra','Almacén','Cantidad','Costo Unitario','Saldo','Usuario'];
-        const rows=[...movements].reverse().map(m=>[
-            new Date(m.fecha).toLocaleDateString('es-MX'),
-            tipoLabel(m.tipoMovimiento),
-            m.referencia||'',
-            m.proveedor?.nombre||m.clienteNombre||'',
-            m.almacen?.nombre||'',
-            (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
-            Number(m.costoUnitario).toFixed(2),
-            String(m.saldo??''),
-            m.usuario?.nombre||''
-        ]);
+        const monedaDoc=product?.moneda||monedaBase;
+        const headers=['Fecha','Tipo','Referencia','Proveedor/Obra','Almacén','Cantidad',`Costo Unitario (${monedaDoc})`,`Costo Unitario (${monedaBase})`,`Tipo Cambio`,'Saldo','Usuario'];
+        const rows=[...movements].reverse().map(m=>{
+            const mDoc=m.moneda||monedaDoc;
+            const mTc=m.tipoCambio??null;
+            const costoUsd=Number(m.costoUnitario);
+            const costoBase=convertirABase(costoUsd,mDoc,monedaBase,mTc);
+            return[
+                new Date(m.fecha).toLocaleDateString('es-MX'),
+                tipoLabel(m.tipoMovimiento),
+                m.referencia||'',
+                m.proveedor?.nombre||m.clienteNombre||'',
+                m.almacen?.nombre||'',
+                (['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento)?'+':'-')+m.cantidad,
+                costoUsd.toFixed(2),
+                costoBase!==null?costoBase.toFixed(2):'',
+                mTc!=null?mTc.toFixed(4):'',
+                String(m.saldo??''),
+                m.usuario?.nombre||''
+            ];
+        });
         const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
         const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
         const url=URL.createObjectURL(blob);
@@ -302,11 +432,16 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const pC=Number(product?.ultimoPrecioCompra??0);
     const CATEGORY_COLORS: Record<string,string>={'Electrónicos':'#3b82f6','Periféricos':'#8b5cf6','Consumibles':'#f59e0b','Accesorios':'#10b981','default':'#6b7280'};
 
+    // ── Moneda del producto ───────────────────────────────────────────────────
+    const monedaDoc = product?.moneda || monedaBase;
+    const tipoCambioProducto = product?.ultimaEntrada?.tipoCambio ?? ultimaEntrada?.tipoCambio ?? null;
+
     // ── Métricas de contexto ──────────────────────────────────────────────────
     const ultimoCosto = Number(ultimaEntrada?.costoUnitario ?? 0);
     const valorEsteProducto = (product?.stock ?? 0) * ultimoCosto;
+    // Valor en moneda base para % del inventario
+    const valorEsteProductoBase = convertirABase(valorEsteProducto, monedaDoc, monedaBase, tipoCambioProducto) ?? valorEsteProducto;
 
-    // Rotación individual: salidas últimos 30d / stock actual
     const hace30d = new Date(Date.now() - 30 * 86400000);
     const salidasUltimos30d = !isNew ? movements
         .filter(m => ['SALIDA','CONSUMO_INTERNO','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
@@ -315,13 +450,39 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         ? (salidasUltimos30d / product.stock * 100).toFixed(1)
         : null;
 
-    // Días de inventario: stock / promedio salidas diarias (últimos 30d)
     const promedioSalidasDiarias = salidasUltimos30d / 30;
     const diasStock = promedioSalidasDiarias > 0 && product?.stock
         ? Math.round(product.stock / promedioSalidasDiarias)
         : null;
     const diasStockAlerta = diasStock !== null && diasStock <= (product?.stockMinimo ?? 5) * 2;
     const catColor=CATEGORY_COLORS[product?.categoria?.nombre||'']||CATEGORY_COLORS['default'];
+
+    // ── Valor almacén en moneda base ──────────────────────────────────────────
+    const costoUltimaEntrada = Number(ultimaEntrada?.costoUnitario ?? product?.ultimoPrecioCompra ?? 0);
+    const valorAlmacenDoc = (product?.stock ?? 0) * costoUltimaEntrada;
+    const valorAlmacenBase = convertirABase(valorAlmacenDoc, monedaDoc, monedaBase, tipoCambioProducto) ?? valorAlmacenDoc;
+
+    // ── Valor histórico acumulado (normalizado a base) ────────────────────────
+    const valorHistoricoBase = movements.reduce((a, m) => {
+        const q = Number(m.cantidad || 0);
+        const c = Number(m.costoUnitario || 0);
+        const mDoc = m.moneda || monedaDoc;
+        const mTc = m.tipoCambio ?? tipoCambioProducto;
+        const cBase = convertirABase(c, mDoc, monedaBase, mTc) ?? c;
+        if (['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + q * cBase;
+        if (['SALIDA', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)) return a - q * cBase;
+        return a;
+    }, 0);
+
+    // Valor total compras en base
+    const valorTotalComprasBase = movements.filter(m => m.tipoMovimiento === 'ENTRADA').reduce((a, m) => {
+        const q = Number(m.cantidad || 0);
+        const c = Number(m.costoUnitario || 0);
+        const mDoc = m.moneda || monedaDoc;
+        const mTc = m.tipoCambio ?? tipoCambioProducto;
+        const cBase = convertirABase(c, mDoc, monedaBase, mTc) ?? c;
+        return a + q * cBase;
+    }, 0);
 
     // ── Filtros y paginación del historial ────────────────────────────────────
     const movimientosFiltrados=movements.filter(m=>{
@@ -341,7 +502,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const movPagina=movimientosFiltrados.slice((paginaActual-1)*POR_PAGINA,paginaActual*POR_PAGINA);
     const hayFiltrosActivos=filtroTipo!=='todos'||filtroDesde||filtroHasta||filtroBusqueda;
 
-    // ── Datos para botón reorden rápido ────────────────────────────────────────
     const ultimaEntradaConProveedor=movements.find(m=>m.tipoMovimiento==='ENTRADA'&&m.proveedorId);
     const cantidadReordenSugerida=product?(product.stockMinimo*3-product.stock>0?product.stockMinimo*3-product.stock:product.stockMinimo*2):0;
 
@@ -353,7 +513,14 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <div className="flex items-start gap-4">
                     <button onClick={()=>router.back()} className="mt-1 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><ArrowLeft size={20}/></button>
                     <div>
-                        <p className="text-sm text-gray-500">{isNew ? 'Nuevo insumo' : `${product?.sku} · ${product?.categoria?.nombre}`}</p>
+                        <p className="text-sm text-gray-500">
+                            {isNew ? 'Nuevo insumo' : `${product?.sku} · ${product?.categoria?.nombre}`}
+                            {!isNew && monedaDoc !== monedaBase && (
+                                <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">
+                                    {monedaDoc}
+                                </span>
+                            )}
+                        </p>
                         <h1 className="text-3xl font-bold text-gray-900">{isNew ? (editData.nombre || 'Nuevo Insumo') : product?.nombre}</h1>
                         <div className="flex items-center gap-2 mt-1">
                             {!product?.activo&&<span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Inactivo</span>}
@@ -435,7 +602,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 {/* Datos del producto */}
                 <div className={`bg-white rounded-xl border shadow-sm p-5 ${editing?'border-blue-200':'border-gray-100'}`}>
                     {editing?(
-                        // ── Modo edición ──
                         <div className="space-y-4">
                             {saveError&&<div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs border border-red-100">{saveError}</div>}
                             <div className="flex items-center gap-2 pb-2 border-b border-blue-100">
@@ -461,9 +627,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 <label className="text-xs font-medium text-gray-700 block mb-1">Descripción</label>
                                 <textarea name="descripcion" value={editData.descripcion} onChange={handleEditChange} rows={2} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none" placeholder="Características del producto..."/>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-3 gap-3">
                                 <div>
-                                    {/* ── FIX: borde rojo si no se ha seleccionado categoría ── */}
                                     <label className="text-xs font-medium text-gray-700 block mb-1">Categoría *</label>
                                     <select
                                         name="categoriaId"
@@ -484,12 +649,30 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                         {['litro','pieza','jornal','kg','metro','caja','unidad','rollo'].map(u=><option key={u} value={u}>{u}</option>)}
                                     </select>
                                 </div>
+                                {/* ── Moneda del producto ── */}
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700 block mb-1">Moneda del insumo</label>
+                                    <select
+                                        name="moneda"
+                                        value={editData.moneda}
+                                        onChange={handleEditChange}
+                                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        <option value="MXN">MXN — Peso mexicano</option>
+                                        <option value="USD">USD — Dólar americano</option>
+                                    </select>
+                                    {editData.moneda !== monedaBase && (
+                                        <p className="text-xs text-blue-500 mt-1">
+                                            El precio se guardará en {editData.moneda}. El tipo de cambio se toma de cada movimiento.
+                                        </p>
+                                    )}
+                                </div>
                             </div>
                             <div className="grid grid-cols-3 gap-3">
                                 <div className={isNew ? '' : 'bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200'}>
                                     {isNew ? (
                                         <>
-                                            <label className="text-xs font-medium text-gray-700 block mb-1">Costo unitario <span className="text-gray-400 font-normal">(referencia, opcional)</span></label>
+                                            <label className="text-xs font-medium text-gray-700 block mb-1">Costo unitario <span className="text-gray-400 font-normal">(referencia, en {editData.moneda})</span></label>
                                             <input
                                                 type="number" step="0.01" min="0"
                                                 value={editData.precioReferencia}
@@ -502,7 +685,16 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     ) : (
                                         <>
                                             <p className="text-xs text-gray-400 mb-1">Costo unitario <span className="text-gray-300 text-xs">(última compra)</span></p>
-                                            <p className="text-sm font-bold text-gray-700">{ultimaEntrada ? currencyFmt(Number(ultimaEntrada.costoUnitario)) : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}</p>
+                                            {ultimaEntrada ? (
+                                                <PrecioDoble
+                                                    valor={Number(ultimaEntrada.costoUnitario)}
+                                                    monedaDoc={ultimaEntrada.moneda || monedaDoc}
+                                                    monedaBase={monedaBase}
+                                                    tipoCambio={ultimaEntrada.tipoCambio}
+                                                    className="text-sm font-bold text-gray-700"
+                                                    subClassName="text-xs text-gray-400 mt-0.5"
+                                                />
+                                            ) : <span className="text-gray-400 italic text-xs">Sin entradas aún</span>}
                                         </>
                                     )}
                                 </div>
@@ -515,15 +707,18 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <input required type="number" min="0" name="stockMinimo" value={editData.stockMinimo} onChange={handleEditChange} className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
                                 </div>
                             </div>
-                            {/* Campos calculados — solo lectura */}
+                            {/* Campos calculados */}
                             <div className="grid grid-cols-3 gap-3 pt-3 border-t border-gray-100">
                                 <div className="bg-gray-50 rounded-lg px-3 py-2">
                                     <p className="text-xs text-gray-400 mb-0.5">Stock actual <span className="text-gray-300">(calculado)</span></p>
                                     <p className="text-sm font-bold text-gray-700">{isNew ? `0 ${editData.unidad}` : `${product?.stock ?? 0} ${editData.unidad}`}</p>
                                 </div>
                                 <div className="bg-gray-50 rounded-lg px-3 py-2">
-                                    <p className="text-xs text-gray-400 mb-0.5">Valor almacén <span className="text-gray-300">(calculado)</span></p>
-                                    <p className="text-sm font-bold text-gray-700">{currencyFmt((product?.stock??0)*pC)}</p>
+                                    <p className="text-xs text-gray-400 mb-0.5">Valor almacén ({monedaBase})</p>
+                                    <p className="text-sm font-bold text-gray-700">{fmtBase(valorAlmacenBase)}</p>
+                                    {monedaDoc !== monedaBase && (
+                                        <p className="text-xs text-gray-400">{fmt(valorAlmacenDoc, monedaDoc)} {monedaDoc}</p>
+                                    )}
                                 </div>
                                 <div className={`rounded-lg px-3 py-2 ${diasStockAlerta?'bg-orange-50':'bg-gray-50'}`}>
                                     <p className="text-xs text-gray-400 mb-0.5">Días de stock</p>
@@ -537,7 +732,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     {editData.activo?<ToggleRight size={32} className="text-green-500"/>:<ToggleLeft size={32} className="text-gray-300"/>}
                                 </button>
                             </div>
-                            {/* Notas internas — editable en modo edición */}
+                            {/* Notas internas en modo edición */}
                             {!isNew && (
                                 <div className="pt-1">
                                     <label className="text-xs font-medium text-gray-700 block mb-1 flex items-center gap-1.5">
@@ -559,41 +754,115 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         // ── Modo vista ──
                         <div>
                             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+                                {/* Stock actual */}
                                 <div className={`rounded-xl border p-4 ${lowStock?'bg-red-50 border-red-200':'bg-gray-50 border-gray-100'}`}>
                                     <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Stock actual</p><InfoTooltip text="Suma de todas las entradas y ajustes positivos menos todas las salidas y ajustes negativos registrados en el kardex." position="bottom" /></div>{lowStock&&<AlertTriangle size={14} className="text-red-500"/>}</div>
                                     <p className={`text-2xl font-bold ${lowStock?'text-red-600':'text-gray-800'}`}>{product?.stock}</p>
                                     <p className="text-xs text-gray-400">{product?.unidad} · mín {product?.stockMinimo}</p>
                                 </div>
+
+                                {/* Último precio compra con doble moneda */}
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Último precio compra</p><InfoTooltip text="CostoUnitario del último movimiento de ENTRADA registrado. Se actualiza automáticamente cada vez que registras una nueva entrada." position="bottom" /></div><TrendingDown size={14} className="text-blue-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt(Number(ultimaEntrada?.costoUnitario ?? product?.ultimoPrecioCompra ?? 0))}</p>
-                                    <p className="text-xs text-gray-400">{ultimaEntrada?`${new Date(ultimaEntrada.fecha).toLocaleDateString('es-MX')}${ultimaEntrada.proveedor?` · ${ultimaEntrada.proveedor.nombre}`:''}`:  'Sin entradas'}</p>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-1">
+                                            <p className="text-xs text-gray-500">Último precio compra</p>
+                                            <InfoTooltip text="CostoUnitario del último movimiento de ENTRADA. Si el insumo es en USD, se muestra el precio en USD y su equivalente en MXN usando el tipo de cambio del movimiento." position="bottom" />
+                                        </div>
+                                        <TrendingDown size={14} className="text-blue-400"/>
+                                    </div>
+                                    {ultimaEntrada ? (
+                                        <PrecioDoble
+                                            valor={Number(ultimaEntrada.costoUnitario)}
+                                            monedaDoc={ultimaEntrada.moneda || monedaDoc}
+                                            monedaBase={monedaBase}
+                                            tipoCambio={ultimaEntrada.tipoCambio}
+                                        />
+                                    ) : (
+                                        <>
+                                            <p className="text-2xl font-bold text-gray-400">—</p>
+                                        </>
+                                    )}
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {ultimaEntrada
+                                            ? `${new Date(ultimaEntrada.fecha).toLocaleDateString('es-MX')}${ultimaEntrada.proveedor?` · ${ultimaEntrada.proveedor.nombre}`:''}`
+                                            : 'Sin entradas'}
+                                    </p>
                                 </div>
+
+                                {/* Consumo últimos 30d */}
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
                                     <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Consumo últimos 30 días</p><InfoTooltip text="Total de unidades consumidas en obra en los últimos 30 días." position="bottom" /></div><TrendingDown size={14} className="text-orange-400"/></div>
                                     <p className="text-2xl font-bold text-gray-800">{salidasUltimos30d}</p>
                                     <p className="text-xs text-gray-400">{product?.unidad} · {salidasUltimos30d===0?'sin consumo reciente':'en los últimos 30 días'}</p>
                                 </div>
+
+                                {/* Valor actual en stock — doble moneda */}
                                 <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor actual en stock</p><InfoTooltip text="Stock actual × costo unitario de la última entrada. Representa cuánto vale el inventario de este producto a precio de costo." position="bottom" /></div><DollarSign size={14} className="text-gray-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt((product?.stock??0)*Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0))}</p>
-                                    <p className="text-xs text-gray-400">{product?.stock} × {currencyFmt(Number(ultimaEntrada?.costoUnitario??product?.ultimoPrecioCompra??0))}</p>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-1">
+                                            <p className="text-xs text-gray-500">Valor actual en stock</p>
+                                            <InfoTooltip text="Stock actual × costo unitario de la última entrada. Si el insumo está en USD, se muestra el valor en USD y su equivalente en MXN." position="bottom" />
+                                        </div>
+                                        <DollarSign size={14} className="text-gray-400"/>
+                                    </div>
+                                    <PrecioDoble
+                                        valor={valorAlmacenDoc}
+                                        monedaDoc={monedaDoc}
+                                        monedaBase={monedaBase}
+                                        tipoCambio={tipoCambioProducto}
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {product?.stock} × {fmt(costoUltimaEntrada, monedaDoc)}
+                                    </p>
                                 </div>
+
+                                {/* Valor histórico — en moneda base */}
                                 <div className="bg-amber-50 rounded-xl border border-amber-100 p-4">
-                                    <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-1"><p className="text-xs text-gray-500">Valor histórico acumulado</p><InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos de este producto. Misma fórmula que el KPI 'Valor inventario' del dashboard." position="bottom" /></div><DollarSign size={14} className="text-amber-400"/></div>
-                                    <p className="text-2xl font-bold text-gray-800">{currencyFmt(movements.reduce((a,m)=>{ const q=Number(m.cantidad||0),c=Number(m.costoUnitario||0); if(['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento))return a+q*c; if(['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento))return a-q*c; return a; },0))}</p>
-                                    <p className="text-xs text-gray-400">Desde todos los movimientos</p>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-1">
+                                            <p className="text-xs text-gray-500">Valor histórico acumulado</p>
+                                            <InfoTooltip text="Σ(entradas×costo) − Σ(salidas×costo) sobre todos los movimientos. Todos los importes se convierten a la moneda base de la empresa usando el tipo de cambio de cada movimiento." position="bottom" />
+                                        </div>
+                                        <DollarSign size={14} className="text-amber-400"/>
+                                    </div>
+                                    <p className="text-2xl font-bold text-gray-800">{fmtBase(valorHistoricoBase)}</p>
+                                    <p className="text-xs text-gray-400 mt-1">Desde todos los movimientos · {monedaBase}</p>
                                 </div>
                             </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Información general</p>
                                     <table className="w-full text-sm"><tbody className="divide-y divide-gray-50">
-                                        {[['Nombre',product?.nombre??''],['Categoría',product?.categoria?.nombre??''],['Unidad',product?.unidad??''],['Stock mínimo',`${product?.stockMinimo} ${product?.unidad}`],['Estado',product?.activo?'Activo':'Inactivo']].map(([l,v])=>(
-                                            <tr key={l}><td className="py-1.5 text-gray-500 text-xs">{l}</td><td className="py-1.5 text-right font-medium text-gray-800 text-xs">{v}</td></tr>
+                                        {[
+                                            ['Nombre', product?.nombre??''],
+                                            ['Categoría', product?.categoria?.nombre??''],
+                                            ['Unidad', product?.unidad??''],
+                                            ['Moneda', monedaDoc],
+                                            ['Stock mínimo', `${product?.stockMinimo} ${product?.unidad}`],
+                                            ['Estado', product?.activo?'Activo':'Inactivo'],
+                                        ].map(([l,v])=>(
+                                            <tr key={l}>
+                                                <td className="py-1.5 text-gray-500 text-xs">{l}</td>
+                                                <td className="py-1.5 text-right font-medium text-gray-800 text-xs">
+                                                    {l === 'Moneda' && v !== monedaBase
+                                                        ? <span className="font-bold text-blue-600">{v} <span className="text-gray-400 font-normal">(base: {monedaBase})</span></span>
+                                                        : v
+                                                    }
+                                                </td>
+                                            </tr>
                                         ))}
+                                        {/* Tipo de cambio si aplica */}
+                                        {tipoCambioProducto && monedaDoc !== monedaBase && (
+                                            <tr>
+                                                <td className="py-1.5 text-gray-500 text-xs">Tipo de cambio (último mov.)</td>
+                                                <td className="py-1.5 text-right font-medium text-gray-800 text-xs">
+                                                    1 {monedaDoc} = {tipoCambioProducto.toFixed(4)} {monedaBase}
+                                                </td>
+                                            </tr>
+                                        )}
                                     </tbody></table>
-                                    {/* Notas internas — dentro de Información General */}
+                                    {/* Notas internas */}
                                     <div className="mt-4 pt-3 border-t border-gray-100">
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center gap-1.5">
@@ -627,7 +896,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total consumos</td><td className="py-1.5 text-right font-medium text-orange-500 text-xs">-{totalSalidas} {product?.unidad}</td></tr>
                                         <tr className="border-t-2 border-gray-200"><td className="py-1.5 font-semibold text-gray-800 text-xs">Stock actual</td><td className="py-1.5 text-right font-bold text-gray-800 text-xs">= {product?.stock} {product?.unidad}</td></tr>
                                         <tr><td className="py-1.5 text-gray-500 text-xs">Total movimientos</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">{movements.length}</td></tr>
-                                        <tr><td className="py-1.5 text-gray-500 text-xs">Valor total compras</td><td className="py-1.5 text-right font-medium text-gray-700 text-xs">{currencyFmt(movements.filter(m=>m.tipoMovimiento==='ENTRADA').reduce((a,m)=>a+Number(m.cantidad)*Number(m.costoUnitario),0))}</td></tr>
+                                        <tr>
+                                            <td className="py-1.5 text-gray-500 text-xs">Valor total compras ({monedaBase})</td>
+                                            <td className="py-1.5 text-right font-medium text-gray-700 text-xs">{fmtBase(valorTotalComprasBase)}</td>
+                                        </tr>
                                     </tbody></table>
                                 </div>
                             </div>
@@ -639,18 +911,17 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
             {/* ── Métricas de contexto ─────────────────────────────────────── */}
             {!isNew && !editing && (
                 <div className="grid grid-cols-3 gap-4">
-                    {/* % del inventario */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1.5 mb-2">
                             <p className="text-xs text-gray-500">% del inventario total</p>
-                            <InfoTooltip text="Qué porcentaje del valor total del inventario representa este producto. Calculado como (stock × último costo) ÷ valor total inventario × 100." position="bottom" />
+                            <InfoTooltip text="Qué porcentaje del valor total del inventario (en moneda base) representa este producto." position="bottom" />
                         </div>
-                        {valorEsteProducto > 0 && ultimoCosto > 0 && totalInventarioValor > 0 ? (
+                        {valorEsteProductoBase > 0 && ultimoCosto > 0 && totalInventarioValor > 0 ? (
                             <>
                                 <p className="text-2xl font-bold text-gray-800">
-                                    {((valorEsteProducto / totalInventarioValor) * 100).toFixed(1)}%
+                                    {((valorEsteProductoBase / totalInventarioValor) * 100).toFixed(1)}%
                                 </p>
-                                <p className="text-xs text-gray-400 mt-1">{currencyFmt(valorEsteProducto)} de valor actual en stock</p>
+                                <p className="text-xs text-gray-400 mt-1">{fmtBase(valorEsteProductoBase)} de {fmtBase(totalInventarioValor)}</p>
                             </>
                         ) : (
                             <>
@@ -660,11 +931,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         )}
                     </div>
 
-                    {/* Rotación individual */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1.5 mb-2">
                             <p className="text-xs text-gray-500">Rotación últimos 30 días</p>
-                            <InfoTooltip text="(Salidas de los últimos 30 días ÷ stock actual) × 100. Compara con la rotación general del dashboard para saber si este producto rota rápido o lento." position="bottom" />
+                            <InfoTooltip text="(Salidas de los últimos 30 días ÷ stock actual) × 100." position="bottom" />
                         </div>
                         {rotacionProducto !== null ? (
                             <>
@@ -678,11 +948,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         )}
                     </div>
 
-                    {/* Días de inventario */}
                     <div className={`bg-white rounded-xl border shadow-sm p-4 ${diasStockAlerta ? 'border-orange-200 bg-orange-50/30' : 'border-gray-100'}`}>
                         <div className="flex items-center gap-1.5 mb-2">
                             <p className={`text-xs ${diasStockAlerta ? 'text-orange-600' : 'text-gray-500'}`}>Días de stock restante</p>
-                            <InfoTooltip text="Stock actual ÷ promedio de salidas diarias de los últimos 30 días. Indica cuántos días durará el inventario al ritmo de ventas actual." position="bottom" />
+                            <InfoTooltip text="Stock actual ÷ promedio de salidas diarias de los últimos 30 días." position="bottom" />
                         </div>
                         {diasStock !== null ? (
                             <>
@@ -705,11 +974,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <ProductChart
                     movements={[...movements].reverse()}
                     unidad={product?.unidad ?? ''}
-                    moneda={moneda}
+                    moneda={monedaBase}
                 />
             )}
-
-
 
             {/* Historial */}
             {!isNew && <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -733,7 +1000,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                         </button>
                     </div>
 
-                    {/* Panel de filtros */}
                     {mostrarFiltros&&(
                         <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-2 lg:grid-cols-4 gap-3">
                             <div>
@@ -770,8 +1036,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead><tr className="bg-gray-50/50 border-b border-gray-100">
-                            {['Fecha','Tipo','Referencia','Proveedor / Obra','Almacén','Cant.','Costo unit.','Saldo','Usuario',''].map(h=>(
-                                <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
+                            {['Fecha','Tipo','Referencia','Proveedor / Obra','Almacén','Cant.',`Costo (${monedaDoc})`,monedaDoc !== monedaBase ? `≈ ${monedaBase}` : null,'Saldo','Usuario',''].filter(Boolean).map(h=>(
+                                <th key={h!} className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
                             ))}
                         </tr></thead>
                         <tbody className="divide-y divide-gray-50">
@@ -780,17 +1046,36 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 : movPagina.map(mov=>{
                                     const isPos=['ENTRADA','AJUSTE_POSITIVO'].includes(mov.tipoMovimiento);
                                     const contacto=mov.proveedor?.nombre||mov.clienteNombre;
+                                    const mDoc = mov.moneda || monedaDoc;
+                                    const mTc = mov.tipoCambio ?? tipoCambioProducto;
+                                    const costoVal = Number(mov.costoUnitario);
+                                    const costoBase = convertirABase(costoVal, mDoc, monedaBase, mTc);
                                     return(<tr key={mov.id} className="hover:bg-blue-50/40 transition-colors group">
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap cursor-pointer">{new Date(mov.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 cursor-pointer"><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tipoColor(mov.tipoMovimiento)}`}>{tipoLabel(mov.tipoMovimiento)}</span></td>
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 cursor-pointer">
+                                            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${tipoColor(mov.tipoMovimiento)}`}>{tipoLabel(mov.tipoMovimiento)}</span>
+                                            {/* Badge si la moneda del movimiento difiere del producto */}
+                                            {mDoc !== monedaDoc && (
+                                                <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded bg-purple-100 text-purple-600">{mDoc}</span>
+                                            )}
+                                        </td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 max-w-[140px] truncate cursor-pointer" title={mov.referencia||''}>{mov.referencia||'—'}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm cursor-pointer">{contacto?<span className="flex items-center gap-1.5 text-gray-700">{mov.proveedor?<Building2 size={13} className="text-blue-400 flex-shrink-0"/>:<User size={13} className="text-green-400 flex-shrink-0"/>}{contacto}</span>:<span className="text-gray-300">—</span>}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.almacen?.nombre}</td>
                                         <td onClick={()=>setSelectedMov(mov)} className={`px-4 py-3 text-sm font-bold text-right cursor-pointer ${isPos?'text-green-600':'text-red-500'}`}>{isPos?'+':'-'}{mov.cantidad}</td>
-                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer">{currencyFmt(Number(mov.costoUnitario))}</td>
+                                        {/* Costo en moneda doc */}
+                                        <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-700 text-right cursor-pointer whitespace-nowrap">
+                                            {fmt(costoVal, mDoc)}
+                                        </td>
+                                        {/* Equivalente en moneda base (columna condicional) */}
+                                        {monedaDoc !== monedaBase && (
+                                            <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-xs text-gray-400 text-right cursor-pointer whitespace-nowrap">
+                                                {costoBase !== null ? fmtBase(costoBase) : <span className="text-gray-200">—</span>}
+                                                {mTc && <span className="block text-[10px] text-gray-300">TC {mTc.toFixed(2)}</span>}
+                                            </td>
+                                        )}
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm font-semibold text-gray-800 text-right cursor-pointer">{mov.saldo} <span className="text-xs font-normal text-gray-400">{product?.unidad}</span></td>
                                         <td onClick={()=>setSelectedMov(mov)} className="px-4 py-3 text-sm text-gray-500 cursor-pointer">{mov.usuario?.nombre}</td>
-                                        {/* Acción rápida: repetir entrada */}
                                         <td className="px-3 py-3 text-right">
                                             {mov.tipoMovimiento==='ENTRADA'&&(
                                                 <button
@@ -809,7 +1094,6 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                     </table>
                 </div>
 
-                {/* Paginación */}
                 {movimientosFiltrados.length > POR_PAGINA && (
                     <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
                         <p className="text-xs text-gray-400">
@@ -833,13 +1117,59 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={()=>setSelectedMov(null)}>
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e=>e.stopPropagation()}>
                         <div className="flex justify-between items-start mb-5">
-                            <div><span className={`px-3 py-1 text-xs font-semibold rounded-full ${tipoColor(selectedMov.tipoMovimiento)}`}>{tipoLabel(selectedMov.tipoMovimiento)}</span><h3 className="text-lg font-bold text-gray-900 mt-2">{selectedMov.referencia||'Sin referencia'}</h3></div>
+                            <div>
+                                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${tipoColor(selectedMov.tipoMovimiento)}`}>{tipoLabel(selectedMov.tipoMovimiento)}</span>
+                                <h3 className="text-lg font-bold text-gray-900 mt-2">{selectedMov.referencia||'Sin referencia'}</h3>
+                            </div>
                             <button onClick={()=>setSelectedMov(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"><X size={20}/></button>
                         </div>
                         <div className="space-y-0">
-                            {([['Producto',product?.nombre],['Fecha',new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],['Almacén',selectedMov.almacen?.nombre],['Cantidad',`${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],['Costo unitario',currencyFmt(Number(selectedMov.costoUnitario))],['Costo total',currencyFmt(Number(selectedMov.cantidad)*Number(selectedMov.costoUnitario))],['Saldo después',`${selectedMov.saldo} ${product?.unidad}`],...(selectedMov.proveedor?[['Proveedor',selectedMov.proveedor.nombre],...(selectedMov.proveedor.telefono?[['Tel.',selectedMov.proveedor.telefono]]:[]),...(selectedMov.proveedor.email?[['Email',selectedMov.proveedor.email]]:[])]:  []),...(selectedMov.clienteNombre?[['Cliente',selectedMov.clienteNombre]]:[]),['Registrado por',selectedMov.usuario?.nombre]] as [string,string][]).map(([l,v])=>(
-                                <div key={l} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0"><span className="text-sm text-gray-500">{l}</span><span className="text-sm font-medium text-gray-800 text-right max-w-[220px]">{v}</span></div>
-                            ))}
+                            {(() => {
+                                const mDocMov = selectedMov.moneda || monedaDoc;
+                                const mTcMov = selectedMov.tipoCambio ?? tipoCambioProducto;
+                                const costoUnitMov = Number(selectedMov.costoUnitario);
+                                const costoTotalMov = Number(selectedMov.cantidad) * costoUnitMov;
+                                const costoUnitBase = convertirABase(costoUnitMov, mDocMov, monedaBase, mTcMov);
+                                const costoTotalBase = convertirABase(costoTotalMov, mDocMov, monedaBase, mTcMov);
+                                const rows: [string, string | JSX.Element][] = [
+                                    ['Producto', product?.nombre ?? ''],
+                                    ['Fecha', new Date(selectedMov.fecha).toLocaleString('es-MX',{dateStyle:'long',timeStyle:'short'})],
+                                    ['Almacén', selectedMov.almacen?.nombre],
+                                    ['Cantidad', `${['ENTRADA','AJUSTE_POSITIVO'].includes(selectedMov.tipoMovimiento)?'+':'-'}${selectedMov.cantidad} ${product?.unidad}`],
+                                    ['Moneda movimiento', mDocMov],
+                                    ['Costo unitario', (
+                                        <span>
+                                            {fmt(costoUnitMov, mDocMov)}
+                                            {costoUnitBase !== null && mDocMov !== monedaBase && (
+                                                <span className="block text-xs text-gray-400">≈ {fmtBase(costoUnitBase)} {monedaBase}</span>
+                                            )}
+                                        </span>
+                                    )],
+                                    ['Costo total', (
+                                        <span>
+                                            {fmt(costoTotalMov, mDocMov)}
+                                            {costoTotalBase !== null && mDocMov !== monedaBase && (
+                                                <span className="block text-xs text-gray-400">≈ {fmtBase(costoTotalBase)} {monedaBase}</span>
+                                            )}
+                                        </span>
+                                    )],
+                                    ...(mTcMov && mDocMov !== monedaBase ? [['Tipo de cambio', `1 ${mDocMov} = ${mTcMov.toFixed(4)} ${monedaBase}`] as [string, string]] : []),
+                                    ['Saldo después', `${selectedMov.saldo} ${product?.unidad}`],
+                                    ...(selectedMov.proveedor ? [
+                                        ['Proveedor', selectedMov.proveedor.nombre],
+                                        ...(selectedMov.proveedor.telefono ? [['Tel.', selectedMov.proveedor.telefono] as [string,string]] : []),
+                                        ...(selectedMov.proveedor.email ? [['Email', selectedMov.proveedor.email] as [string,string]] : []),
+                                    ] as [string, string][] : []),
+                                    ...(selectedMov.clienteNombre ? [['Cliente', selectedMov.clienteNombre] as [string, string]] : []),
+                                    ['Registrado por', selectedMov.usuario?.nombre],
+                                ];
+                                return rows.map(([l, v]) => (
+                                    <div key={l} className="flex justify-between py-2.5 border-b border-gray-50 last:border-0">
+                                        <span className="text-sm text-gray-500">{l}</span>
+                                        <span className="text-sm font-medium text-gray-800 text-right max-w-[220px]">{v}</span>
+                                    </div>
+                                ));
+                            })()}
                         </div>
                         <button onClick={()=>setSelectedMov(null)} className="mt-5 w-full py-2.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Cerrar</button>
                     </div>
@@ -873,7 +1203,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                 .sort((a: any, b: any) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
                                 .map((m: any) => { saldo += ['ENTRADA','AJUSTE_POSITIVO'].includes(m.tipoMovimiento) ? Number(m.cantidad) : -Number(m.cantidad); return { ...m, saldo }; });
                             const fp = products.find((p: any) => p.id === id);
-                            setProduct({ ...prod, stock: fp?.stock ?? 0, ultimoPrecioCompra: fp?.ultimoPrecioCompra, ultimoPrecioVenta: fp?.ultimoPrecioVenta });
+                            setProduct({ ...prod, stock: fp?.stock ?? 0, ultimoPrecioCompra: fp?.ultimoPrecioCompra, ultimoPrecioVenta: fp?.ultimoPrecioVenta, moneda: fp?.moneda || prod.moneda, ultimaEntrada: fp?.ultimaEntrada || prod.ultimaEntrada });
                             setMovements([...movsWithBalance].reverse());
                         } catch (e) { console.error(e); }
                     }}

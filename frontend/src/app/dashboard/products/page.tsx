@@ -13,6 +13,7 @@ import {
     TrendingUp, Package, Zap,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
+import { useCompany } from '@/context/CompanyContext';
 import Link from 'next/link';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -21,6 +22,90 @@ const CATEGORY_COLORS: Record<string, string> = {
     'Accesorios': '#10b981', 'Ropa': '#ec4899', 'default': '#6b7280',
 };
 function getCatColor(cat: string) { return CATEGORY_COLORS[cat] || CATEGORY_COLORS['default']; }
+
+// ── Doble moneda ──────────────────────────────────────────────────────────────
+/**
+ * Formatea un valor monetario mostrando:
+ *   - El precio en la moneda del producto (ej: USD 12.50)
+ *   - Su equivalente en la moneda base de la empresa (ej: ≈ $187 MXN)
+ *
+ * @param valor        Importe a mostrar
+ * @param monedaDoc    Moneda en que está denominado el valor ('MXN' | 'USD')
+ * @param monedaBase   Moneda base de la empresa (del contexto CompanyContext)
+ * @param tipoCambio   Tipo de cambio USD→MXN (puede venir de ultimaEntrada.tipoCambio)
+ * @param compact      Si true devuelve solo el string principal sin el equivalente
+ */
+function formatDualCurrency(
+    valor: number,
+    monedaDoc: 'MXN' | 'USD' | string,
+    monedaBase: string,
+    tipoCambio: number | null | undefined,
+    compact = false
+): { principal: string; equivalente: string | null } {
+    const fmt = (v: number, currency: string) =>
+        new Intl.NumberFormat('es-MX', {
+            style: 'currency', currency, maximumFractionDigits: 2,
+        }).format(v);
+
+    const principal = fmt(valor, monedaDoc || monedaBase);
+
+    if (compact || !tipoCambio || monedaDoc === monedaBase || !monedaDoc) {
+        return { principal, equivalente: null };
+    }
+
+    // Convertir al moneda base
+    let valorBase: number;
+    if (monedaDoc === 'USD' && monedaBase === 'MXN') {
+        valorBase = valor * tipoCambio;
+    } else if (monedaDoc === 'MXN' && monedaBase === 'USD') {
+        valorBase = valor / tipoCambio;
+    } else {
+        return { principal, equivalente: null };
+    }
+
+    return {
+        principal,
+        equivalente: `≈ ${fmt(valorBase, monedaBase)}`,
+    };
+}
+
+/** Badge de moneda para mostrar junto al precio */
+function CurrencyBadge({ moneda }: { moneda: string }) {
+    if (!moneda || moneda === 'MXN') return null;
+    return (
+        <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 align-middle">
+            {moneda}
+        </span>
+    );
+}
+
+/** Precio con doble moneda — inline para tablas/grillas */
+function DualPrice({
+    valor,
+    monedaDoc,
+    monedaBase,
+    tipoCambio,
+    className = '',
+}: {
+    valor: number | null | undefined;
+    monedaDoc?: string;
+    monedaBase: string;
+    tipoCambio?: number | null;
+    className?: string;
+}) {
+    if (valor == null || isNaN(Number(valor))) return <span className="text-gray-300">—</span>;
+    const v = Number(valor);
+    const { principal, equivalente } = formatDualCurrency(v, monedaDoc || monedaBase, monedaBase, tipoCambio);
+    return (
+        <span className={className}>
+            {principal}
+            {monedaDoc && monedaDoc !== monedaBase && <CurrencyBadge moneda={monedaDoc} />}
+            {equivalente && (
+                <span className="block text-xs text-gray-400 font-normal leading-tight">{equivalente}</span>
+            )}
+        </span>
+    );
+}
 
 function ProductImage({ imagen, nombre, categoria, size = 40 }: { imagen?: string; nombre: string; categoria?: string; size?: number }) {
     const color = getCatColor(categoria || '');
@@ -112,6 +197,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                         unidad: row.unidad || 'litro',
                         precioCompra: Number(row.costounitario || row.preciocompra || row['costo unitario'] || row.costo || 0),
                         stockMinimo: Number(row.stockminimo || row['stock minimo'] || row.minimo || 5),
+                        moneda: (row.moneda || 'MXN').toUpperCase(),
                     }),
                 });
                 ok++;
@@ -128,12 +214,12 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                 <div className="flex justify-between items-center mb-4">
                     <div>
                         <p className="font-semibold text-gray-800">Importar insumos desde CSV</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Columnas: sku, nombre, unidad, costounitario, stockminimo</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Columnas: sku, nombre, unidad, costounitario, stockminimo, moneda</p>
                     </div>
                     <button onClick={onClose} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg"><X size={16} /></button>
                 </div>
                 <button onClick={() => {
-                    const csv = 'sku,nombre,unidad,costounitario,stockminimo\nPRD-001,Insumo ejemplo,litro,100,5';
+                    const csv = 'sku,nombre,unidad,costounitario,stockminimo,moneda\nPRD-001,Insumo ejemplo,litro,100,5,MXN\nPRD-002,Insumo USD,pieza,12.50,3,USD';
                     const blob = new Blob([csv], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a'); a.href = url; a.download = 'plantilla_insumos.csv'; a.click();
@@ -156,6 +242,9 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                         {rows.slice(0, 5).map((r, i) => (
                             <div key={i} className="text-xs text-gray-600 py-1 border-b border-gray-100 last:border-0">
                                 <span className="font-mono text-gray-400 mr-2">{r.sku}</span>{r.nombre} · {r.unidad || 'pieza'} · ${r.costounitario || 0}
+                                {r.moneda && r.moneda !== 'MXN' && (
+                                    <span className="ml-1 text-[10px] font-bold px-1 py-0.5 rounded bg-blue-100 text-blue-600">{r.moneda}</span>
+                                )}
                             </div>
                         ))}
                         {rows.length > 5 && <p className="text-xs text-gray-400 mt-1">...y {rows.length - 5} más</p>}
@@ -269,6 +358,9 @@ function ProductsPageInner() {
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showImport, setShowImport] = useState(false);
 
+    // ── Moneda base de la empresa ──────────────────────────────────────────────
+    const { moneda: monedaBase } = useCompany();
+
     const searchParams = useSearchParams();
 
     useEffect(() => {
@@ -314,7 +406,6 @@ function ProductsPageInner() {
     };
     const hayFiltrosActivos = search !== '' || filterCat !== 'Todas' || filterStock !== 'Todos' || filterSinMovimiento;
 
-    // MEJORA 1: filtrar críticos desde el banner
     const handleFilterCriticos = () => {
         clearAllFilters();
         setFilterStock('Bajo mínimo');
@@ -322,13 +413,23 @@ function ProductsPageInner() {
 
     const exportCSV = () => {
         const toExport = selected.size > 0 ? sorted.filter(p => selected.has(p.id)) : sorted;
-        const header = 'SKU,Nombre,Categoría,Stock,Costo Unitario,Valor Almacén,Nivel Reorden';
-        const rows = toExport.map(p => [
-            p.sku, `"${p.nombre}"`, p.categoria?.nombre || '',
-            p.stock, Number(p.ultimoPrecioCompra ?? 0),
-            (p.stock * Number(p.ultimoPrecioCompra ?? 0)).toFixed(0),
-            p.stockMinimo
-        ].join(','));
+        const header = 'SKU,Nombre,Categoría,Stock,Moneda,Costo Unitario,Tipo Cambio,Valor Almacén (base),Nivel Reorden';
+        const rows = toExport.map(p => {
+            const monedaDoc = p.moneda || monedaBase;
+            const tc = p.ultimaEntrada?.tipoCambio ?? null;
+            const costo = Number(p.ultimoPrecioCompra ?? 0);
+            // Valor en moneda base
+            let valorBase = p.stock * costo;
+            if (monedaDoc === 'USD' && monedaBase === 'MXN' && tc) valorBase = p.stock * costo * tc;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD' && tc) valorBase = p.stock * costo / tc;
+            return [
+                p.sku, `"${p.nombre}"`, p.categoria?.nombre || '',
+                p.stock, monedaDoc, costo,
+                tc ?? '',
+                valorBase.toFixed(0),
+                p.stockMinimo,
+            ].join(',');
+        });
         const csv = [header, ...rows].join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -365,10 +466,16 @@ function ProductsPageInner() {
     });
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
+    // Valor almacén normalizado a moneda base
     const totalValor = allMovements.reduce((a, m) => {
         const qty = Number(m.cantidad || 0), costo = Number(m.costoUnitario || 0);
-        if (['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costo;
-        if (['SALIDA', 'AJUSTE_NEGATIVO', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento)) return a - qty * costo;
+        const tc = m.tipoCambio ?? 1;
+        const monedaDoc = m.moneda || monedaBase;
+        let costoBase = costo;
+        if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = costo * tc;
+        else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
+        if (['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costoBase;
+        if (['SALIDA', 'AJUSTE_NEGATIVO', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento)) return a - qty * costoBase;
         return a;
     }, 0);
 
@@ -378,16 +485,34 @@ function ProductsPageInner() {
 
     const bajosStock = filtered.filter(p => p.stock <= p.stockMinimo).length;
 
-    // MEJORA 2: consumo últimos 30 días (reemplaza KPI de categorías)
     const hace30d = new Date(Date.now() - 30 * 86400000);
     const consumo30d = allMovements
         .filter(m => ['SALIDA', 'CONSUMO_INTERNO', 'AJUSTE_NEGATIVO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
-        .reduce((a, m) => a + Number(m.cantidad || 0) * Number(m.costoUnitario || 0), 0);
+        .reduce((a, m) => {
+            const tc = m.tipoCambio ?? 1;
+            const monedaDoc = m.moneda || monedaBase;
+            let costoBase = Number(m.costoUnitario || 0);
+            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase *= tc;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costoBase / tc : costoBase;
+            return a + Number(m.cantidad || 0) * costoBase;
+        }, 0);
+
+    // ── Formateador moneda base ───────────────────────────────────────────────
+    const fmtBase = (v: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: monedaBase, maximumFractionDigits: 0 }).format(v);
 
     // ── Category stats ────────────────────────────────────────────────────────
     const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
         const prods = products.filter(p => p.categoria?.nombre === cat);
-        const valor = prods.reduce((a, p) => a + (p.stock * Number(p.ultimoPrecioCompra ?? 0)), 0);
+        const valor = prods.reduce((a, p) => {
+            const costo = Number(p.ultimoPrecioCompra ?? 0);
+            const tc = p.ultimaEntrada?.tipoCambio ?? 1;
+            const monedaDoc = p.moneda || monedaBase;
+            let costoBase = costo;
+            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = costo * tc;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
+            return a + (p.stock * costoBase);
+        }, 0);
         return { cat, count: prods.length, valor };
     }).sort((a, b) => b.valor - a.valor);
     const maxCatValor = catStats.length > 0 ? catStats[0].valor : 1;
@@ -397,7 +522,6 @@ function ProductsPageInner() {
         ? allMovements
         : allMovements.filter(m => filteredProductIds.has(m.productoId));
 
-    // MEJORA 4: consumo 30d por producto
     const consumo30dPorProducto = (productoId: string) => {
         return allMovements
             .filter(m => m.productoId === productoId && ['SALIDA', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento) && new Date(m.fecha) >= hace30d)
@@ -431,12 +555,10 @@ function ProductsPageInner() {
 
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg border border-red-100">{error}</div>}
 
-            {/* ── MEJORA 1: Banner de alerta inteligente ────────────────── */}
             {!loading && (
                 <AlertBanner productos={products} onFilter={handleFilterCriticos} />
             )}
 
-            {/* ── MEJORA 3: Acciones rápidas ───────────────────────────── */}
             {!loading && <QuickActions />}
 
             {/* ── KPIs ─────────────────────────────────────────────────── */}
@@ -452,22 +574,21 @@ function ProductsPageInner() {
                     </div>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Valor almacén</p>
-                            <InfoTooltip text="Σ(entradas×costo) − Σ(consumos×costo). Valor actual del inventario." position="bottom" />
+                            <p className="text-xs text-gray-400">Valor almacén ({monedaBase})</p>
+                            <InfoTooltip text="Σ(entradas×costo) − Σ(consumos×costo). Valores convertidos a moneda base de la empresa usando el tipo de cambio del movimiento." position="bottom" />
                         </div>
-                        <p className="text-2xl font-bold text-gray-800">${totalValor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                        <p className="text-xs text-gray-400 mt-1">mismo cálculo que dashboard</p>
+                        <p className="text-2xl font-bold text-gray-800">{fmtBase(totalValor)}</p>
+                        <p className="text-xs text-gray-400 mt-1">normalizado a {monedaBase}</p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Costo prom. unitario</p>
-                            <InfoTooltip text="Promedio del último costo de compra de los insumos visibles." position="bottom" />
+                            <InfoTooltip text="Promedio del último costo de compra de los insumos visibles (en la moneda original de cada producto)." position="bottom" />
                         </div>
-                        <p className="text-2xl font-bold text-gray-800">${costoPromUnitario.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</p>
+                        <p className="text-2xl font-bold text-gray-800">{fmtBase(costoPromUnitario)}</p>
                         <p className="text-xs text-gray-400 mt-1">insumos visibles</p>
                     </div>
 
-                    {/* MEJORA 2: KPI stock bajo con color urgente */}
                     <button
                         onClick={() => setFilterStock(filterStock === 'Bajo mínimo' ? 'Todos' : 'Bajo mínimo')}
                         className={`rounded-xl border shadow-sm p-4 text-left transition-all hover:shadow-md ${bajosStock > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'} ${filterStock === 'Bajo mínimo' ? 'ring-2 ring-red-400' : ''}`}
@@ -482,19 +603,18 @@ function ProductsPageInner() {
                         </p>
                     </button>
 
-                    {/* MEJORA 2: KPI Consumo 30 días */}
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Consumo últimos 30d</p>
-                            <InfoTooltip text="Valor total de salidas e insumos consumidos en obra en los últimos 30 días." position="bottom" />
+                            <InfoTooltip text="Valor total de salidas en los últimos 30 días, normalizado a moneda base." position="bottom" />
                         </div>
-                        <p className="text-2xl font-bold text-gray-800">${consumo30d.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                        <p className="text-2xl font-bold text-gray-800">{fmtBase(consumo30d)}</p>
                         <p className="text-xs text-gray-400 mt-1">en todas las obras</p>
                     </div>
                 </div>
             )}
 
-            {/* ── Distribución por categoría (CONSERVADA) ─────────────── */}
+            {/* ── Distribución por categoría ─────────────────────────── */}
             {!loading && catStats.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
                     <div className="flex items-center justify-between mb-4">
@@ -534,7 +654,7 @@ function ProductsPageInner() {
                                         <span className="text-xs font-semibold truncate max-w-[80px]" style={{ color }}>{cat}</span>
                                         <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 mr-5" style={{ background: color + '20', color }}>{count}</span>
                                     </div>
-                                    <p className="text-base font-bold text-gray-800 mb-0.5">${valor.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                                    <p className="text-base font-bold text-gray-800 mb-0.5">{fmtBase(valor)}</p>
                                     <p className="text-xs text-gray-400 mb-2">{count} insumo{count !== 1 ? 's' : ''}</p>
                                     <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
                                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(valor / maxCatValor) * 100}%`, background: color }} />
@@ -662,6 +782,12 @@ function ProductsPageInner() {
                             const isLow      = product.stock <= product.stockMinimo;
                             const isSelected = selected.has(product.id);
                             const c30d       = consumo30dPorProducto(product.id);
+                            const monedaDoc  = product.moneda || monedaBase;
+                            const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
+                            const costo      = Number(product.ultimoPrecioCompra ?? 0);
+                            const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
+                                costo, monedaDoc, monedaBase, tipoCambio
+                            );
                             return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
                                     <div className="relative">
@@ -672,6 +798,12 @@ function ProductsPageInner() {
                                         </Link>
                                         <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)}
                                             className="absolute top-2 left-2 w-4 h-4 cursor-pointer accent-blue-600" />
+                                        {/* Badge de moneda extranjera */}
+                                        {monedaDoc !== monedaBase && (
+                                            <span className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-600 text-white">
+                                                {monedaDoc}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="p-3">
                                         <p className="text-xs text-gray-400 font-mono mb-1">{product.sku}</p>
@@ -680,12 +812,21 @@ function ProductsPageInner() {
                                             <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: getCatColor(product.categoria?.nombre) + '18', color: getCatColor(product.categoria?.nombre) }}>{product.categoria?.nombre || 'Sin cat.'}</span>
                                             <span className="text-xs text-gray-400">{product.unidad}</span>
                                         </div>
-                                        {/* MEJORA 4: barra visual de stock en grilla */}
                                         <div className="mb-2">
                                             <StockBar stock={product.stock} stockMinimo={product.stockMinimo} />
                                         </div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                                            <span className="text-xs text-gray-400">${product.ultimoPrecioCompra ? Number(product.ultimoPrecioCompra).toLocaleString() : '—'} /u</span>
+                                        <div className="flex justify-between items-start pt-2 border-t border-gray-100">
+                                            {/* Precio con doble moneda */}
+                                            <div>
+                                                {costo > 0 ? (
+                                                    <>
+                                                        <span className="text-xs text-gray-600 font-medium">{costoPrincipal} /u</span>
+                                                        {costoEquiv && (
+                                                            <span className="block text-[10px] text-gray-400 leading-tight">{costoEquiv}</span>
+                                                        )}
+                                                    </>
+                                                ) : <span className="text-xs text-gray-300">—</span>}
+                                            </div>
                                             {c30d > 0 && <span className="text-xs text-blue-500 font-medium">{c30d} {product.unidad}/30d</span>}
                                         </div>
                                         {isLow && <div className="mt-1"><StockBadge stock={product.stock} stockMinimo={product.stockMinimo} /></div>}
@@ -724,11 +865,14 @@ function ProductsPageInner() {
                                     <th className={thClass('sku')} onClick={() => handleSort('sku')}>SKU <SortIcon col="sku" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className={thClass('nombre')} onClick={() => handleSort('nombre')}>Insumo <SortIcon col="nombre" sortKey={sortKey} sortDir={sortDir} /></th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Categoría</th>
-                                    {/* MEJORA 4: columna Stock con barra visual */}
                                     <th className={`${thClass('stock')}`} onClick={() => handleSort('stock')}>Stock <SortIcon col="stock" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>Costo unit. <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} /></th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Valor almacén</th>
-                                    {/* MEJORA 4: nueva columna consumo 30d */}
+                                    <th className={`${thClass('precioCompra')} text-right`} onClick={() => handleSort('precioCompra')}>
+                                        Costo unit.
+                                        <SortIcon col="precioCompra" sortKey={sortKey} sortDir={sortDir} />
+                                    </th>
+                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">
+                                        Valor almacén ({monedaBase})
+                                    </th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Consumo 30d</th>
                                     <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Acciones</th>
                                 </tr>
@@ -739,6 +883,22 @@ function ProductsPageInner() {
                                         const isLow      = product.stock <= product.stockMinimo;
                                         const isSelected = selected.has(product.id);
                                         const c30d       = consumo30dPorProducto(product.id);
+                                        const monedaDoc  = product.moneda || monedaBase;
+                                        const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
+                                        const costo      = Number(product.ultimoPrecioCompra ?? 0);
+
+                                        // Valor almacén en moneda base
+                                        let valorAlmacenBase = product.stock * costo;
+                                        if (monedaDoc === 'USD' && monedaBase === 'MXN' && tipoCambio) {
+                                            valorAlmacenBase = product.stock * costo * tipoCambio;
+                                        } else if (monedaDoc === 'MXN' && monedaBase === 'USD' && tipoCambio) {
+                                            valorAlmacenBase = product.stock * costo / tipoCambio;
+                                        }
+
+                                        const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
+                                            costo, monedaDoc, monedaBase, tipoCambio
+                                        );
+
                                         return (
                                             <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
                                                 <td className="p-3">
@@ -759,13 +919,30 @@ function ProductsPageInner() {
                                                         {product.categoria?.nombre || 'Sin categoría'}
                                                     </button>
                                                 </td>
-                                                {/* MEJORA 4: barra visual de stock */}
                                                 <td className="p-3">
                                                     <StockBar stock={product.stock ?? 0} stockMinimo={product.stockMinimo} />
                                                 </td>
-                                                <td className="p-3 text-sm text-gray-500 text-right">{product.ultimoPrecioCompra ? `$${Number(product.ultimoPrecioCompra).toLocaleString()}` : <span className="text-gray-300">—</span>}</td>
-                                                <td className="p-3 text-sm font-semibold text-gray-700 text-right">{product.ultimoPrecioCompra ? `$${(product.stock * Number(product.ultimoPrecioCompra)).toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>}</td>
-                                                {/* MEJORA 4: consumo 30d por fila */}
+                                                {/* Costo unitario con doble moneda */}
+                                                <td className="p-3 text-sm text-right">
+                                                    {costo > 0 ? (
+                                                        <span>
+                                                            <span className="font-medium text-gray-700">{costoPrincipal}</span>
+                                                            {monedaDoc !== monedaBase && (
+                                                                <CurrencyBadge moneda={monedaDoc} />
+                                                            )}
+                                                            {costoEquiv && (
+                                                                <span className="block text-xs text-gray-400 leading-tight">{costoEquiv}</span>
+                                                            )}
+                                                        </span>
+                                                    ) : <span className="text-gray-300">—</span>}
+                                                </td>
+                                                {/* Valor almacén en moneda base */}
+                                                <td className="p-3 text-sm font-semibold text-gray-700 text-right">
+                                                    {costo > 0
+                                                        ? fmtBase(valorAlmacenBase)
+                                                        : <span className="text-gray-300">—</span>
+                                                    }
+                                                </td>
                                                 <td className="p-3 text-right">
                                                     {c30d > 0
                                                         ? <span className="text-sm font-medium text-blue-600">{c30d} <span className="text-xs text-gray-400 font-normal">{product.unidad}</span></span>
