@@ -556,7 +556,13 @@ function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => v
 export default function EquipoDetallePage() {
     const params = useParams();
     const router = useRouter();
-    const id     = params.id as string;
+
+    const rawId = params?.id;
+    const id: string | undefined =
+        typeof rawId === 'string' && rawId.trim() !== '' ? rawId : undefined;
+
+    console.log('[EquipoDetalle] raw params:', params);
+    console.log('[EquipoDetalle] id:', id);
 
     const [equipo,      setEquipo]      = useState<Equipo | null>(null);
     const [registros,   setRegistros]   = useState<Registro[]>([]);
@@ -574,6 +580,7 @@ export default function EquipoDetallePage() {
     const [filtroHasta,  setFiltroHasta]  = useState('');
 
     const loadComponentes = useCallback(async () => {
+        if (!id) return;
         try {
             const data = await fetchApi(`/componentes?equipoId=${id}`);
             setComponentes(data);
@@ -581,7 +588,9 @@ export default function EquipoDetallePage() {
     }, [id]);
 
     const load = useCallback(async () => {
+        if (!id) return;
         setLoading(true);
+        setError('');
         try {
             const [eq, regs, comps] = await Promise.all([
                 fetchApi(`/equipos/${id}`),
@@ -599,7 +608,13 @@ export default function EquipoDetallePage() {
         }
     }, [id]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => {
+        if (!id) {
+            console.log('[EquipoDetalle] id no válido todavía, abortando fetch');
+            return;
+        }
+        load();
+    }, [load, id]);
 
     const handleDeleteRegistro = async (regId: string) => {
         if (!confirm('¿Eliminar este registro?')) return;
@@ -630,7 +645,7 @@ export default function EquipoDetallePage() {
     const ltHr = totalHoras > 0 ? (totalLitros / totalHoras).toFixed(2) : '—';
     const mtHr = totalHoras > 0 ? (totalMetros / totalHoras).toFixed(2) : '—';
 
-    if (loading) return <div className="p-10 text-center text-gray-400">Cargando...</div>;
+    if (!id || loading) return <div className="p-10 text-center text-gray-400">Cargando...</div>;
     if (error)   return <div className="p-10 text-center text-red-500">{error}</div>;
     if (!equipo) return <div className="p-10 text-center text-gray-400">Equipo no encontrado</div>;
 

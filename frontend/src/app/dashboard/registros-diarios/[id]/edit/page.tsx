@@ -6,13 +6,22 @@ import { fetchApi } from '@/lib/api';
 import { RegistroFormInner } from '../../RegistroForm';
 
 function EditRegistroInner() {
-    const params = useParams<{ id: string }>();
-    const id     = params.id;
+    const params = useParams();
+    const rawId  = params?.id;
+    const id: string | undefined =
+        typeof rawId === 'string' && rawId.trim() !== '' ? rawId : undefined;
+
+    console.log('[EditRegistro] raw params:', params);
+    console.log('[EditRegistro] id:', id);
 
     const [initialValues, setInitialValues] = useState<Record<string, string | boolean> | null>(null);
     const [error, setError] = useState('');
 
     useEffect(() => {
+        if (!id) {
+            console.log('[EditRegistro] id no válido todavía, abortando fetch');
+            return;
+        }
         fetchApi(`/registros-diarios/${id}`)
             .then((r: any) => {
                 setInitialValues({
@@ -33,7 +42,7 @@ function EditRegistroInner() {
                     peones:              String(r.peones            ?? 0),
                     obraNombre:          r.obraNombre              ?? '',
                     notas:               r.notas                   ?? '',
-                    registrarDieselEnKardex: false, // en edición no se retoca el kardex automáticamente
+                    registrarDieselEnKardex: false,
                     bordo:               r.bordo               != null ? String(r.bordo)               : '',
                     espaciamiento:       r.espaciamiento        != null ? String(r.espaciamiento)       : '',
                     volumenRoca:         r.volumenRoca          != null ? String(r.volumenRoca)         : '',
@@ -46,16 +55,17 @@ function EditRegistroInner() {
             .catch(() => setError('No se pudo cargar el registro'));
     }, [id]);
 
+    // Mientras id no esté resuelto, mostrar loading (nunca error)
+    if (!id || (!initialValues && !error)) {
+        return <div className="p-10 text-center text-gray-400 text-sm">Cargando registro...</div>;
+    }
+
     if (error) {
         return (
             <div className="max-w-3xl mx-auto p-8 text-center">
                 <p className="text-red-600 font-medium">{error}</p>
             </div>
         );
-    }
-
-    if (!initialValues) {
-        return <div className="p-10 text-center text-gray-400 text-sm">Cargando registro...</div>;
     }
 
     return (

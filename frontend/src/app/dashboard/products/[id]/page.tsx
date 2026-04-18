@@ -157,7 +157,13 @@ function PrecioDoble({
 }
 
 export default function ProductDetailPage({ isNew = false }: { isNew?: boolean } = {}) {
-    const {id}=useParams();
+    const rawParams = useParams();
+    const rawId = rawParams?.id;
+    const id: string | undefined =
+        typeof rawId === 'string' && rawId.trim() !== '' ? rawId : undefined;
+
+    console.log('[ProductDetail] raw params:', rawParams);
+    console.log('[ProductDetail] id:', id);
     const router=useRouter();
     const fileInputRef=useRef<HTMLInputElement>(null);
     const { moneda: monedaBase } = useCompany();
@@ -210,6 +216,10 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     });
 
     useEffect(()=>{ const load=async()=>{
+        if(!isNew && !id){
+            console.log('[ProductDetail] id no válido todavía, abortando fetch');
+            return;
+        }
         try{
             const cats = await fetchApi('/categories');
             setCategorias(cats);
@@ -422,6 +432,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         }
     };
 
+    if(!isNew && (!id || loading))return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Cargando producto...</p></div>;
     if(loading)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Cargando producto...</p></div>;
     if(!isNew&&!product)return<div className="flex items-center justify-center h-64"><p className="text-gray-500">Producto no encontrado.</p></div>;
 
