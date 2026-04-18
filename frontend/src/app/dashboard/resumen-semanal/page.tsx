@@ -668,19 +668,6 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                             ${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                         </p>
                     </div>
-                    {utilidadSemana != null && (
-                        <div className="hidden sm:block border-l border-gray-100 pl-4">
-                            <p className="text-xs text-gray-400">Utilidad est.</p>
-                            <p className={`text-sm font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
-                                {utilPos ? '+' : ''}{mxn(utilidadSemana)}
-                            </p>
-                            {margenSemana != null && (
-                                <p className={`text-[10px] ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
-                                    {margenSemana.toFixed(1)}% margen
-                                </p>
-                            )}
-                        </div>
-                    )}
                     {expanded
                         ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" />
                         : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />}
@@ -794,31 +781,41 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                         </div>
                     </div>
 
-                    {/* ── Utilidad estimada ──────────────────────────────────── */}
+                    {/* ── Resultado semanal ──────────────────────────────────── */}
                     {ingresoSemana != null && (
-                        <div className="grid grid-cols-3 gap-3">
-                            <div className="bg-gray-50 rounded-lg p-3 text-center">
-                                <p className="text-xs text-gray-400 mb-1">Ingreso estimado</p>
-                                <p className="text-base font-bold text-gray-700">{mxn(ingresoSemana)}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">
-                                    {semana.metrosLineales.toFixed(1)} m × {mxn(ingresoPorMetro!)}/m
-                                </p>
-                            </div>
-                            <div className={`rounded-lg p-3 text-center ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
-                                <p className="text-xs text-gray-400 mb-1">Utilidad</p>
-                                <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
-                                    {utilPos ? '+' : ''}{mxn(utilidadSemana!)}
-                                </p>
-                                <p className={`text-[10px] mt-0.5 ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
-                                    Ingreso − costo producción
-                                </p>
-                            </div>
-                            <div className={`rounded-lg p-3 text-center ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
-                                <p className="text-xs text-gray-400 mb-1">Margen semanal</p>
-                                <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
-                                    {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
-                                </p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                        <div>
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                <DollarSign size={12} /> Resultado semanal
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Ingreso estimado</p>
+                                    <p className="text-base font-bold text-gray-800">{mxn(ingresoSemana)}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                        {semana.metrosLineales.toFixed(1)} m × {mxn(ingresoPorMetro!)}/m
+                                    </p>
+                                </div>
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Costo total</p>
+                                    <p className="text-base font-bold text-gray-800">{mxn(semana.costoTotal)}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Producción + gastos</p>
+                                </div>
+                                <div className={`rounded-lg p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <p className="text-xs text-gray-400 mb-1">Utilidad</p>
+                                    <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                        {utilPos ? '+' : ''}{mxn(utilidadSemana!)}
+                                    </p>
+                                    <p className={`text-[10px] mt-0.5 ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
+                                        Ingreso − costo
+                                    </p>
+                                </div>
+                                <div className={`rounded-lg p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <p className="text-xs text-gray-400 mb-1">Margen</p>
+                                    <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                        {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                                </div>
                             </div>
                         </div>
                     )}
