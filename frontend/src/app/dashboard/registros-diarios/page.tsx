@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
+import { RegistroDiarioExpandido } from '@/components/registro-diario/RegistroDiarioExpandido';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -1181,53 +1182,28 @@ function RegistroRow({
             {/* Detalle expandido (cuando no está editando) */}
             {expanded && !isEditing && (
                 <tr className="bg-slate-50/60">
-                    <td colSpan={12} className="px-6 py-4 space-y-3 border-b border-gray-100">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
-                                <p className="text-sm font-bold text-gray-700 font-mono">
-                                    {r.horometroInicio.toLocaleString('es-MX')} → {r.horometroFin.toLocaleString('es-MX')}
-                                </p>
-                                <p className="text-xs text-gray-400">{r.horasTrabajadas} hrs efectivas</p>
-                            </div>
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</p>
-                                <p className="text-sm font-bold text-gray-700">{r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}</p>
-                            </div>
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-1">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Gauge size={10}/> KPIs</p>
-                                <div className="grid grid-cols-3 gap-1 text-center">
-                                    <div><p className="text-[10px] text-gray-400">Lt/hr</p><p className="text-xs font-bold text-gray-700">{r.kpi.litrosPorHora ?? '—'}</p></div>
-                                    <div><p className="text-[10px] text-gray-400">Lt/m</p><p className="text-xs font-bold text-gray-700">{r.kpi.litrosPorMetro ?? '—'}</p></div>
-                                    <div><p className="text-[10px] text-gray-400">m/hr</p><p className="text-xs font-bold text-gray-700">{r.kpi.metrosPorHora ?? '—'}</p></div>
-                                </div>
-                            </div>
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Droplets size={10}/> Diésel</p>
-                                <p className="text-xs text-gray-600">{r.litrosDiesel} lt × ${r.precioDiesel}/lt</p>
-                                <p className="text-sm font-bold text-gray-700">= ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                            </div>
-                        </div>
-                        {r.notas && (
-                            <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800 flex gap-2 items-start">
-                                <span className="font-semibold flex-shrink-0">📝 Notas:</span>
-                                <span>{r.notas}</span>
-                            </div>
-                        )}
-                        {(r.bordo != null || r.espaciamiento != null || r.profundidadPromedio != null || r.volumenRoca != null || r.porcentajePerdida != null || r.porcentajeAvance != null || r.rentaEquipoDiaria != null) && (
-                            <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-1"><Drill size={10}/> Datos de perforación</p>
-                                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3 text-xs">
-                                    {r.bordo != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{r.bordo} m</p></div>}
-                                    {r.espaciamiento != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Espa.</p><p className="font-bold text-indigo-700">{r.espaciamiento} m</p></div>}
-                                    {r.profundidadPromedio != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p></div>}
-                                    {r.volumenRoca != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
-                                    {r.porcentajePerdida != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">% Pérdida</p><p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p></div>}
-                                    {r.porcentajeAvance != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">% Avance</p><p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p></div>}
-                                    {r.rentaEquipoDiaria != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>}
-                                </div>
-                            </div>
-                        )}
+                    <td colSpan={12} className="px-6 py-4 border-b border-gray-100">
+                        <RegistroDiarioExpandido
+                            data={{
+                                horometroInicio:     r.horometroInicio,
+                                horometroFin:        r.horometroFin,
+                                horasTrabajadas:     r.horasTrabajadas,
+                                operadores:          r.operadores,
+                                peones:              r.peones,
+                                kpi:                 r.kpi,
+                                litrosDiesel:        r.litrosDiesel,
+                                precioDiesel:        r.precioDiesel,
+                                costoDiesel:         r.costoDiesel,
+                                notas:               r.notas,
+                                bordo:               r.bordo,
+                                espaciamiento:       r.espaciamiento,
+                                profundidadPromedio: r.profundidadPromedio,
+                                volumenRoca:         r.volumenRoca,
+                                porcentajePerdida:   r.porcentajePerdida,
+                                porcentajeAvance:    r.porcentajeAvance,
+                                rentaEquipoDiaria:   r.rentaEquipoDiaria,
+                            }}
+                        />
                     </td>
                 </tr>
             )}
@@ -1757,50 +1733,31 @@ function CapturaGrid({
                                                 {isExpanded && !isEditing && (
                                                     <tr className="bg-slate-50/60">
                                                         <td colSpan={9} className="px-4 py-3 space-y-3 border-b border-gray-100">
-                                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
-                                                                    <p className="text-sm font-bold text-gray-700 font-mono">
-                                                                        {r.horometroInicio?.toLocaleString('es-MX')} → {r.horometroFin.toLocaleString('es-MX')}
-                                                                    </p>
-                                                                    <p className="text-xs text-gray-400">{hrsReg} hrs efectivas</p>
-                                                                </div>
-                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</p>
-                                                                    <p className="text-sm font-bold text-gray-700">{r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}</p>
-                                                                </div>
-                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-1">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Gauge size={10}/> KPIs</p>
-                                                                    <div className="grid grid-cols-3 gap-1 text-center">
-                                                                        <div><p className="text-[10px] text-gray-400">Lt/hr</p><p className="text-xs font-bold text-gray-700">{litrosPorHora ?? '—'}</p></div>
-                                                                        <div><p className="text-[10px] text-gray-400">Lt/m</p><p className="text-xs font-bold text-gray-700">{litrosPorMetro ?? '—'}</p></div>
-                                                                        <div><p className="text-[10px] text-gray-400">m/hr</p><p className="text-xs font-bold text-gray-700">{metrosPorHora ?? '—'}</p></div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1"><Droplets size={10}/> Diésel</p>
-                                                                    <p className="text-xs text-gray-600">{r.litrosDiesel} lt × ${r.precioDiesel}/lt</p>
-                                                                    <p className="text-sm font-bold text-gray-700">= ${r.litrosDiesel != null && r.precioDiesel != null ? (r.litrosDiesel * r.precioDiesel).toLocaleString('es-MX', { maximumFractionDigits: 0 }) : '0'}</p>
-                                                                </div>
-                                                            </div>
-                                                            {r.notas && (
-                                                                <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800 flex gap-2 items-start">
-                                                                    <span className="font-semibold flex-shrink-0">📝 Notas:</span>
-                                                                    <span>{r.notas}</span>
-                                                                </div>
-                                                            )}
-                                                            {(r.bordo != null || r.espaciamiento != null || r.profundidadPromedio != null || r.volumenRoca != null || r.rentaEquipoDiaria != null) && (
-                                                                <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
-                                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-1"><Drill size={10}/> Datos de perforación</p>
-                                                                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-3 text-xs">
-                                                                        {r.bordo != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Bordo</p><p className="font-bold text-indigo-700">{r.bordo} m</p></div>}
-                                                                        {r.espaciamiento != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Espa.</p><p className="font-bold text-indigo-700">{r.espaciamiento} m</p></div>}
-                                                                        {r.profundidadPromedio != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Prof.</p><p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p></div>}
-                                                                        {r.volumenRoca != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Vol. roca</p><p className="font-bold text-indigo-700">{Number(r.volumenRoca).toFixed(2)} m³</p></div>}
-                                                                        {r.rentaEquipoDiaria != null && <div className="bg-white/60 rounded p-1.5"><p className="text-indigo-400 mb-0.5">Renta/día</p><p className="font-bold text-indigo-700">${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p></div>}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                            <RegistroDiarioExpandido
+                                                                data={{
+                                                                    horometroInicio:     r.horometroInicio ?? null,
+                                                                    horometroFin:        r.horometroFin,
+                                                                    horasTrabajadas:     hrsReg ?? 0,
+                                                                    operadores:          r.operadores ?? null,
+                                                                    peones:              r.peones ?? null,
+                                                                    kpi: {
+                                                                        litrosPorHora:  litrosPorHora,
+                                                                        litrosPorMetro: litrosPorMetro,
+                                                                        metrosPorHora:  metrosPorHora,
+                                                                    },
+                                                                    litrosDiesel:        r.litrosDiesel ?? 0,
+                                                                    precioDiesel:        r.precioDiesel ?? 0,
+                                                                    costoDiesel:         r.litrosDiesel != null && r.precioDiesel != null ? r.litrosDiesel * r.precioDiesel : 0,
+                                                                    notas:               r.notas ?? null,
+                                                                    bordo:               r.bordo ?? null,
+                                                                    espaciamiento:       r.espaciamiento ?? null,
+                                                                    profundidadPromedio: r.profundidadPromedio ?? null,
+                                                                    volumenRoca:         r.volumenRoca ?? null,
+                                                                    porcentajePerdida:   r.porcentajePerdida ?? null,
+                                                                    porcentajeAvance:    r.porcentajeAvance ?? null,
+                                                                    rentaEquipoDiaria:   r.rentaEquipoDiaria ?? null,
+                                                                }}
+                                                            />
                                                         </td>
                                                     </tr>
                                                 )}

@@ -9,6 +9,7 @@ import {
     AlertTriangle, X, CheckCircle2,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
+import { RegistroDiarioExpandido } from '@/components/registro-diario/RegistroDiarioExpandido';
 import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 
@@ -1104,82 +1105,39 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
                                     </td>
                                 </tr>
                                 {expanded === r.id && (() => {
-                                    const ltHr  = r.horasTrabajadas > 0 ? r.litrosDiesel / r.horasTrabajadas : null;
-                                    const ltMt  = r.metrosLineales  > 0 ? r.litrosDiesel / r.metrosLineales  : null;
-                                    const mtHr  = r.horasTrabajadas > 0 ? r.metrosLineales / r.horasTrabajadas : null;
+                                    const ltHr      = r.horasTrabajadas > 0 ? r.litrosDiesel / r.horasTrabajadas : null;
+                                    const ltMt      = r.metrosLineales  > 0 ? r.litrosDiesel / r.metrosLineales  : null;
+                                    const mtHr      = r.horasTrabajadas > 0 ? r.metrosLineales / r.horasTrabajadas : null;
                                     const costoDiesel = r.litrosDiesel * r.precioDiesel;
+                                    const profProm  = r.barrenos > 0 ? r.metrosLineales / r.barrenos : null;
                                     return (
-                                        <tr key={`${r.id}-exp`} className="bg-blue-50/30">
-                                            <td colSpan={10} className="px-4 py-4">
-                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-                                                    {/* Horómetro */}
-                                                    <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Horómetro</p>
-                                                        <p className="text-sm font-bold text-gray-700">
-                                                            {r.horometroInicio ?? '—'} → {r.horometroFin ?? '—'}
-                                                        </p>
-                                                        <p className="text-xs text-gray-400 mt-0.5">{r.horasTrabajadas} hrs efectivas</p>
-                                                    </div>
-
-                                                    {/* Personal */}
-                                                    <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Personal</p>
-                                                        <p className="text-sm font-bold text-gray-700">
-                                                            {r.operadores ?? 1} op. / {r.peones ?? 0} peón{(r.peones ?? 0) !== 1 ? 'es' : ''}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* KPIs */}
-                                                    <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">KPIs</p>
-                                                        <div className="grid grid-cols-3 gap-2 text-center">
-                                                            <div>
-                                                                <p className="text-xs text-gray-400">Lt/hr</p>
-                                                                <p className="text-sm font-bold text-gray-700">{ltHr ? ltHr.toFixed(2) : '—'}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-xs text-gray-400">Lt/m</p>
-                                                                <p className="text-sm font-bold text-gray-700">{ltMt ? ltMt.toFixed(2) : '—'}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-xs text-gray-400">m/hr</p>
-                                                                <p className="text-sm font-bold text-gray-700">{mtHr ? mtHr.toFixed(2) : '—'}</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Diésel */}
-                                                    <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Diésel</p>
-                                                        <p className="text-sm font-bold text-blue-700">
-                                                            {r.litrosDiesel} lt × ${r.precioDiesel}/lt
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 mt-0.5">
-                                                            = <span className="font-semibold text-gray-700">${fmt(costoDiesel)}</span>
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Datos de perforación */}
-                                                    <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Datos de perforación</p>
-                                                        <div className="flex gap-6">
-                                                            <div>
-                                                                <p className="text-xs text-gray-400">Prof.</p>
-                                                                <p className="text-sm font-bold text-gray-700">{profProm ? `${profProm.toFixed(2)} m` : '—'}</p>
-                                                            </div>
-                                                            {r.rentaEquipoDiaria != null && (
-                                                                <div>
-                                                                    <p className="text-xs text-gray-400">Renta/día</p>
-                                                                    <p className="text-sm font-bold text-emerald-700">
-                                                                        ${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                                    </p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                </div>
+                                        <tr key={`${r.id}-exp`} className="bg-slate-50/60">
+                                            <td colSpan={10} className="px-6 py-4 border-b border-gray-100">
+                                                <RegistroDiarioExpandido
+                                                    data={{
+                                                        horometroInicio:     r.horometroInicio,
+                                                        horometroFin:        r.horometroFin,
+                                                        horasTrabajadas:     r.horasTrabajadas,
+                                                        operadores:          r.operadores,
+                                                        peones:              r.peones,
+                                                        kpi: {
+                                                            litrosPorHora:  ltHr != null ? +ltHr.toFixed(2) : null,
+                                                            litrosPorMetro: ltMt != null ? +ltMt.toFixed(2) : null,
+                                                            metrosPorHora:  mtHr != null ? +mtHr.toFixed(2) : null,
+                                                        },
+                                                        litrosDiesel:        r.litrosDiesel,
+                                                        precioDiesel:        r.precioDiesel,
+                                                        costoDiesel,
+                                                        notas:               null,
+                                                        bordo:               null,
+                                                        espaciamiento:       null,
+                                                        profundidadPromedio: profProm != null ? +profProm.toFixed(2) : null,
+                                                        volumenRoca:         null,
+                                                        porcentajePerdida:   null,
+                                                        porcentajeAvance:    null,
+                                                        rentaEquipoDiaria:   r.rentaEquipoDiaria,
+                                                    }}
+                                                />
                                             </td>
                                         </tr>
                                     );

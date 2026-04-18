@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
+import { RegistroDiarioExpandido } from '@/components/registro-diario/RegistroDiarioExpandido';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -187,13 +188,6 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
     const fechaCorta = fechaObj.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
     const semLabel   = r.semanaNum ? `Sem. ${r.semanaNum}/${r.anoNum}` : '';
 
-    const tienePerforacion = r.bordo != null || r.espaciamiento != null
-        || r.profundidadPromedio != null || r.volumenRoca != null
-        || r.porcentajePerdida != null || r.porcentajeAvance != null
-        || r.rentaEquipoDiaria != null;
-
-    // Calcula volumen en el cliente si el backend devolvió null
-    const volRoca = calcVolumenRoca(r);
 
     return (
         <>
@@ -298,136 +292,31 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
                 </td>
             </tr>
 
-            {/* ── Panel expandido — idéntico a Registro Diario ── */}
+            {/* ── Panel expandido — componente unificado ── */}
             {expanded && (
                 <tr className="bg-slate-50/60">
-                    <td colSpan={12} className="px-6 py-4 space-y-3 border-b border-gray-100">
-                        {/* Tarjetas: Horómetro · Personal · KPIs · Diésel */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                            {/* Horómetro */}
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
-                                <p className="text-sm font-bold text-gray-700 font-mono">
-                                    {r.horometroInicio != null ? r.horometroInicio.toLocaleString('es-MX') : '—'}
-                                    {' → '}
-                                    {r.horometroFin.toLocaleString('es-MX')}
-                                </p>
-                                <p className="text-xs text-gray-400">{r.horasTrabajadas} hrs efectivas</p>
-                            </div>
-
-                            {/* Personal */}
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</p>
-                                <p className="text-sm font-bold text-gray-700">
-                                    {r.operadores} op. / {r.peones} peón{r.peones !== 1 ? 'es' : ''}
-                                </p>
-                            </div>
-
-                            {/* KPIs */}
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-1">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1">
-                                    <Gauge size={10} /> KPIs
-                                </p>
-                                <div className="grid grid-cols-3 gap-1 text-center">
-                                    <div>
-                                        <p className="text-[10px] text-gray-400">Lt/hr</p>
-                                        <p className={`text-xs font-bold ${kpiColor(r.kpi.litrosPorHora, 15, 20)}`}>
-                                            {r.kpi.litrosPorHora ?? '—'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] text-gray-400">Lt/m</p>
-                                        <p className={`text-xs font-bold ${kpiColor(r.kpi.litrosPorMetro, 1.5, 2)}`}>
-                                            {r.kpi.litrosPorMetro ?? '—'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] text-gray-400">m/hr</p>
-                                        <p className="text-xs font-bold text-gray-700">
-                                            {r.kpi.metrosPorHora ?? '—'}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Diésel */}
-                            <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-1">
-                                    <Droplets size={10} /> Diésel
-                                </p>
-                                <p className="text-xs text-gray-600">
-                                    {r.litrosDiesel} lt × ${r.precioDiesel}/lt
-                                </p>
-                                <p className="text-sm font-bold text-gray-700">
-                                    = ${r.costoDiesel.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Notas */}
-                        {r.notas && (
-                            <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-800 flex gap-2 items-start">
-                                <span className="font-semibold flex-shrink-0">📝 Notas:</span>
-                                <span>{r.notas}</span>
-                            </div>
-                        )}
-
-                        {/* Datos de perforación */}
-                        {tienePerforacion && (
-                            <div className="bg-indigo-50/80 border border-indigo-100 rounded-lg px-4 py-3">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400 mb-2 flex items-center gap-1">
-                                    <Drill size={10} /> Datos de perforación
-                                </p>
-                                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3 text-xs">
-                                    {r.bordo != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">Bordo</p>
-                                            <p className="font-bold text-indigo-700">{r.bordo} m</p>
-                                        </div>
-                                    )}
-                                    {r.espaciamiento != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">Espa.</p>
-                                            <p className="font-bold text-indigo-700">{r.espaciamiento} m</p>
-                                        </div>
-                                    )}
-                                    {r.profundidadPromedio != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">Prof.</p>
-                                            <p className="font-bold text-indigo-700">{r.profundidadPromedio} m</p>
-                                        </div>
-                                    )}
-                                    {(r.volumenRoca != null || volRoca.calculado) && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">
-                                                Vol. roca{volRoca.calculado && <span className="ml-1 text-[9px] text-indigo-300">calc.</span>}
-                                            </p>
-                                            <p className="font-bold text-indigo-700">{Number(volRoca.valor).toFixed(2)} m³</p>
-                                        </div>
-                                    )}
-                                    {r.porcentajePerdida != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">% Pérdida</p>
-                                            <p className="font-bold text-indigo-700">{r.porcentajePerdida}%</p>
-                                        </div>
-                                    )}
-                                    {r.porcentajeAvance != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">% Avance</p>
-                                            <p className="font-bold text-indigo-700">{r.porcentajeAvance}%</p>
-                                        </div>
-                                    )}
-                                    {r.rentaEquipoDiaria != null && (
-                                        <div className="bg-white/60 rounded p-1.5">
-                                            <p className="text-indigo-400 mb-0.5">Renta/día</p>
-                                            <p className="font-bold text-indigo-700">
-                                                ${Number(r.rentaEquipoDiaria).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                    <td colSpan={12} className="px-6 py-4 border-b border-gray-100">
+                        <RegistroDiarioExpandido
+                            data={{
+                                horometroInicio:     r.horometroInicio,
+                                horometroFin:        r.horometroFin,
+                                horasTrabajadas:     r.horasTrabajadas,
+                                operadores:          r.operadores,
+                                peones:              r.peones,
+                                kpi:                 r.kpi,
+                                litrosDiesel:        r.litrosDiesel,
+                                precioDiesel:        r.precioDiesel,
+                                costoDiesel:         r.costoDiesel,
+                                notas:               r.notas,
+                                bordo:               r.bordo,
+                                espaciamiento:       r.espaciamiento,
+                                profundidadPromedio: r.profundidadPromedio,
+                                volumenRoca:         r.volumenRoca,
+                                porcentajePerdida:   r.porcentajePerdida,
+                                porcentajeAvance:    r.porcentajeAvance,
+                                rentaEquipoDiaria:   r.rentaEquipoDiaria,
+                            }}
+                        />
                     </td>
                 </tr>
             )}
