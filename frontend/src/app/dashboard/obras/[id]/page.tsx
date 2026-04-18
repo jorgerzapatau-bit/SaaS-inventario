@@ -170,10 +170,19 @@ type PlantillaElegible = {
     notas: string | null;
 };
 
+type RegistroSinPlantilla = {
+    id: string;
+    fecha: string;
+    barrenos: number | null;
+    metrosLineales: number;
+    equipo: { nombre: string; numeroEconomico: string | null } | null;
+};
+
 type RegularizarData = {
     registrosSinPlantilla: number;
     metrosSinPlantilla: number;
     plantillasElegibles: PlantillaElegible[];
+    registros: RegistroSinPlantilla[];
 };
 
 function RegularizarModal({
@@ -187,11 +196,8 @@ function RegularizarModal({
     onClose: () => void;
     onSaved: () => void;
 }) {
-    // Fases: 'seleccion' | 'existente' | 'nueva'
-    const [fase, setFase] = useState<'seleccion' | 'existente' | 'nueva'>('seleccion');
     const [datos, setDatos] = useState<RegularizarData | null>(null);
     const [loadingDatos, setLoadingDatos] = useState(true);
-    const [plantillaSeleccionada, setPlantillaSeleccionada] = useState<string>('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -207,19 +213,18 @@ function RegularizarModal({
         notas: '',
     });
 
+    // Opción avanzada: selección parcial
+    const [seleccionParcialActiva, setSeleccionParcialActiva] = useState(false);
+    const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+
     useEffect(() => {
         fetchApi(`/obras/${obraId}/regularizar`)
-            .then((d: RegularizarData) => {
-                setDatos(d);
-                // Pre-seleccionar la primera elegible si existe
-                const primera = d.plantillasElegibles.find(p => p.elegible);
-                if (primera) setPlantillaSeleccionada(primera.id);
-            })
+            .then((d: RegularizarData) => setDatos(d))
             .catch(() => setError('No se pudieron cargar los datos'))
             .finally(() => setLoadingDatos(false));
     }, [obraId]);
 
-    const hayElegibles = (datos?.plantillasElegibles ?? []).some(p => p.elegible);
+    const registros = datos?.registros ?? [];
 
     const setNueva = (key: keyof typeof formNueva) =>
         (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -238,43 +243,56 @@ function RegularizarModal({
         </div>
     );
 
-    const handleAsignarExistente = async () => {
-        if (!plantillaSeleccionada) { setError('Selecciona una plantilla'); return; }
-        setSaving(true); setError('');
-        try {
-            const res = await fetchApi(`/obras/${obraId}/regularizar`, {
-                method: 'POST',
-                body: JSON.stringify({ plantillaId: plantillaSeleccionada }),
-            });
-            setSuccess(`${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''} correctamente`);
-            setTimeout(() => { onSaved(); }, 1200);
-        } catch (e: any) {
-            setError(e.message || 'Error al asignar');
-        } finally {
-            setSaving(false);
+    const toggleRegistro = (id: string) => {
+        setSeleccionados(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleTodos = () => {
+        if (seleccionados.size === registros.length) {
+            setSeleccionados(new Set());
+        } else {
+            setSeleccionados(new Set(registros.map(r => r.id)));
         }
     };
+
+    const metrosSeleccionados = registros
+        .filter(r => seleccionados.has(r.id))
+        .reduce((s, r) => s + r.metrosLineales, 0);
 
     const handleCrearYAsignar = async () => {
         if (!formNueva.numero || !formNueva.metrosContratados) {
             setError('Número y metros contratados son requeridos');
             return;
         }
+        // Si selección parcial activa pero sin registros seleccionados, avisar
+        if (seleccionParcialActiva && seleccionados.size === 0) {
+            setError('Selecciona al menos un registro o desactiva la selección específica');
+            return;
+        }
         setSaving(true); setError('');
         try {
+            const body: Record<string, unknown> = {
+                crearPlantilla: {
+                    numero:            Number(formNueva.numero),
+                    metrosContratados: Number(formNueva.metrosContratados),
+                    precioUnitario:    formNueva.precioUnitario ? Number(formNueva.precioUnitario) : null,
+                    moneda:            formNueva.moneda,
+                    fechaInicio:       formNueva.fechaInicio || null,
+                    fechaFin:          formNueva.fechaFin    || null,
+                    notas:             formNueva.notas       || null,
+                },
+            };
+            // Solo enviar registroIds si la selección parcial está activa
+            if (seleccionParcialActiva && seleccionados.size > 0) {
+                body.registroIds = Array.from(seleccionados);
+            }
             const res = await fetchApi(`/obras/${obraId}/regularizar`, {
                 method: 'POST',
-                body: JSON.stringify({
-                    crearPlantilla: {
-                        numero:            Number(formNueva.numero),
-                        metrosContratados: Number(formNueva.metrosContratados),
-                        precioUnitario:    formNueva.precioUnitario ? Number(formNueva.precioUnitario) : null,
-                        moneda:            formNueva.moneda,
-                        fechaInicio:       formNueva.fechaInicio || null,
-                        fechaFin:          formNueva.fechaFin    || null,
-                        notas:             formNueva.notas       || null,
-                    },
-                }),
+                body: JSON.stringify(body),
             });
             setSuccess(`Plantilla creada y ${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''}`);
             setTimeout(() => { onSaved(); }, 1200);
@@ -285,194 +303,13 @@ function RegularizarModal({
         }
     };
 
-    // ── FASE: Selección ───────────────────────────────────────────────────────
-    const renderSeleccion = () => (
-        <div className="px-6 py-5 space-y-4">
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
-                <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                <div>
-                    <p className="text-sm font-semibold text-amber-700">
-                        {datos?.registrosSinPlantilla ?? '…'} registro{(datos?.registrosSinPlantilla ?? 0) !== 1 ? 's' : ''} sin plantilla asignada
-                    </p>
-                    <p className="text-xs text-amber-600 mt-0.5">
-                        {metrosSinPlantilla.toFixed(1)} m perforados no están vinculados a ninguna plantilla de contrato.
-                    </p>
-                </div>
-            </div>
-
-            <p className="text-sm text-gray-500">¿Cómo quieres regularizarlos?</p>
-
-            <div className="space-y-3">
-                {/* Opción 1: Asignar a existente */}
-                <button
-                    onClick={() => hayElegibles && setFase('existente')}
-                    disabled={!hayElegibles || loadingDatos}
-                    className={`w-full text-left rounded-xl border-2 p-4 transition-all ${
-                        hayElegibles && !loadingDatos
-                            ? 'border-blue-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
-                            : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
-                    }`}
-                >
-                    <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${hayElegibles && !loadingDatos ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                            <FileText size={16} className={hayElegibles && !loadingDatos ? 'text-blue-600' : 'text-gray-400'} />
-                        </div>
-                        <div>
-                            <p className={`text-sm font-semibold ${hayElegibles && !loadingDatos ? 'text-gray-800' : 'text-gray-400'}`}>
-                                Asignar a plantilla existente
-                            </p>
-                            {loadingDatos ? (
-                                <p className="text-xs text-gray-400 mt-0.5">Cargando plantillas...</p>
-                            ) : !hayElegibles ? (
-                                <p className="text-xs text-amber-500 mt-0.5 font-medium">
-                                    No hay plantillas activas con capacidad disponible
-                                </p>
-                            ) : (
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                    {(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length} plantilla{(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length !== 1 ? 's' : ''} disponible{(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length !== 1 ? 's' : ''}
-                                </p>
-                            )}
-                        </div>
-                        {hayElegibles && !loadingDatos && (
-                            <span className="ml-auto text-blue-400 text-lg">→</span>
-                        )}
-                    </div>
-                </button>
-
-                {/* Opción 2: Crear nueva */}
-                <button
-                    onClick={() => setFase('nueva')}
-                    className="w-full text-left rounded-xl border-2 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 p-4 transition-all cursor-pointer"
-                >
-                    <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                            <Plus size={16} className="text-emerald-600" />
-                        </div>
-                        <div>
-                            <p className="text-sm font-semibold text-gray-800">Crear nueva plantilla</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Define los términos del contrato y asigna los registros</p>
-                        </div>
-                        <span className="ml-auto text-emerald-400 text-lg">→</span>
-                    </div>
-                </button>
-            </div>
-        </div>
-    );
-
-    // ── FASE: Asignar a existente ─────────────────────────────────────────────
-    const renderExistente = () => {
-        const elegibles = (datos?.plantillasElegibles ?? []).filter(p => p.elegible);
-        return (
-            <div className="px-6 py-5 space-y-4">
-                <p className="text-xs text-gray-500">
-                    Solo se muestran plantillas activas o pausadas con capacidad disponible.
-                </p>
-
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {elegibles.map(p => {
-                        const pctUsado = p.metrosContratados > 0
-                            ? Math.round((p.metrosUsados / p.metrosContratados) * 100)
-                            : 0;
-                        const selected = plantillaSeleccionada === p.id;
-                        return (
-                            <label
-                                key={p.id}
-                                className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                                    selected
-                                        ? 'border-blue-400 bg-blue-50'
-                                        : 'border-gray-100 hover:border-blue-200 hover:bg-gray-50'
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="plantilla"
-                                    value={p.id}
-                                    checked={selected}
-                                    onChange={() => setPlantillaSeleccionada(p.id)}
-                                    className="mt-0.5 accent-blue-600 flex-shrink-0"
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-sm font-semibold text-gray-800">
-                                            Plantilla {p.numero}
-                                        </span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                            p.status === 'ACTIVA'
-                                                ? 'bg-green-100 text-green-700'
-                                                : 'bg-yellow-100 text-yellow-700'
-                                        }`}>
-                                            {p.status === 'ACTIVA' ? 'Activa' : 'Pausada'}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                                        <span className="font-medium text-emerald-600">
-                                            {p.capacidadDisponible.toFixed(1)} m disponibles
-                                        </span>
-                                        <span className="text-gray-300">·</span>
-                                        <span>{p.metrosUsados.toFixed(1)} / {p.metrosContratados} m usados</span>
-                                    </div>
-                                    <div className="mt-1.5 w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-blue-400 rounded-full transition-all"
-                                            style={{ width: `${pctUsado}%` }}
-                                        />
-                                    </div>
-                                    {p.fechaInicio && (
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            {fDate(p.fechaInicio)}{p.fechaFin ? ` → ${fDate(p.fechaFin)}` : ''}
-                                        </p>
-                                    )}
-                                </div>
-                            </label>
-                        );
-                    })}
-                </div>
-            </div>
-        );
+    const labelBoton = () => {
+        if (saving) return 'Guardando...';
+        if (seleccionParcialActiva && seleccionados.size > 0) {
+            return `Crear y asignar ${seleccionados.size} registro${seleccionados.size !== 1 ? 's' : ''}`;
+        }
+        return 'Crear y asignar';
     };
-
-    // ── FASE: Crear nueva ─────────────────────────────────────────────────────
-    const renderNueva = () => (
-        <div className="px-6 py-5 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-                {inpNueva('Número de plantilla', 'numero', 'number', 'ej. 3')}
-                {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500')}
-                {inpNueva('Precio unitario (P.U.)', 'precioUnitario', 'number', 'ej. 24.50')}
-                <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
-                    <select
-                        value={formNueva.moneda}
-                        onChange={setNueva('moneda')}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                        <option value="MXN">MXN</option>
-                        <option value="USD">USD</option>
-                    </select>
-                </div>
-                {inpNueva('Fecha inicio', 'fechaInicio', 'date')}
-                {inpNueva('Fecha fin', 'fechaFin', 'date')}
-            </div>
-            <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                <textarea
-                    value={formNueva.notas}
-                    onChange={e => setFormNueva(f => ({ ...f, notas: e.target.value }))}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none"
-                    placeholder="Opcional"
-                />
-            </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-600">
-                Al guardar: se creará esta plantilla y se asignarán todos los registros sin plantilla a ella.
-            </div>
-        </div>
-    );
-
-    const tituloFase = {
-        seleccion: 'Regularizar registros sin plantilla',
-        existente: 'Asignar a plantilla existente',
-        nueva: 'Crear nueva plantilla',
-    }[fase];
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -481,15 +318,13 @@ function RegularizarModal({
                 {/* Header */}
                 <div className="border-b border-gray-100 px-6 pt-6 pb-4 flex-shrink-0 flex items-start justify-between gap-3">
                     <div>
-                        {fase !== 'seleccion' && (
-                            <button
-                                onClick={() => { setFase('seleccion'); setError(''); }}
-                                className="text-xs text-gray-400 hover:text-blue-600 mb-1 flex items-center gap-1 transition-colors"
-                            >
-                                ← Volver
-                            </button>
+                        <h2 className="text-lg font-bold text-gray-800">Crear nueva plantilla</h2>
+                        {!loadingDatos && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                {datos?.registrosSinPlantilla ?? 0} registro{(datos?.registrosSinPlantilla ?? 0) !== 1 ? 's' : ''} sin plantilla
+                                · {metrosSinPlantilla.toFixed(1)} m
+                            </p>
                         )}
-                        <h2 className="text-lg font-bold text-gray-800">{tituloFase}</h2>
                     </div>
                     <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                         <X size={16} />
@@ -506,10 +341,133 @@ function RegularizarModal({
                             <p className="text-base font-semibold text-gray-800 text-center">{success}</p>
                             <p className="text-xs text-gray-400 text-center">Recargando vista...</p>
                         </div>
-                    ) : fase === 'seleccion' ? renderSeleccion()
-                      : fase === 'existente' ? renderExistente()
-                      : renderNueva()
-                    }
+                    ) : (
+                        <div className="px-6 py-5 space-y-4">
+
+                            {/* ── Formulario principal ── */}
+                            <div className="grid grid-cols-2 gap-3">
+                                {inpNueva('Número de plantilla', 'numero', 'number', 'ej. 3')}
+                                {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500')}
+                                {inpNueva('Precio unitario (P.U.)', 'precioUnitario', 'number', 'ej. 24.50')}
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+                                    <select
+                                        value={formNueva.moneda}
+                                        onChange={setNueva('moneda')}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        <option value="MXN">MXN</option>
+                                        <option value="USD">USD</option>
+                                    </select>
+                                </div>
+                                {inpNueva('Fecha inicio', 'fechaInicio', 'date')}
+                                {inpNueva('Fecha fin', 'fechaFin', 'date')}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                                <textarea
+                                    value={formNueva.notas}
+                                    onChange={e => setFormNueva(f => ({ ...f, notas: e.target.value }))}
+                                    rows={2}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none"
+                                    placeholder="Opcional"
+                                />
+                            </div>
+
+                            {/* ── Separador y opción avanzada ── */}
+                            <div className="border-t border-gray-100 pt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSeleccionParcialActiva(v => !v);
+                                        setSeleccionados(new Set());
+                                        setError('');
+                                    }}
+                                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-600 transition-colors select-none"
+                                >
+                                    {/* Toggle visual */}
+                                    <span className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ${seleccionParcialActiva ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                                        <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ${seleccionParcialActiva ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                                    </span>
+                                    <span>Seleccionar registros específicos</span>
+                                </button>
+
+                                {/* ── Lista de registros (solo si activado) ── */}
+                                {seleccionParcialActiva && (
+                                    <div className="mt-3 space-y-2">
+                                        {loadingDatos ? (
+                                            <p className="text-xs text-gray-400 text-center py-4">Cargando registros...</p>
+                                        ) : registros.length === 0 ? (
+                                            <p className="text-xs text-gray-400 text-center py-4">No hay registros sin plantilla</p>
+                                        ) : (
+                                            <>
+                                                {/* Resumen + Seleccionar todos */}
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-xs text-gray-500">
+                                                        {seleccionados.size} de {registros.length} seleccionado{seleccionados.size !== 1 ? 's' : ''}
+                                                        {seleccionados.size > 0 && (
+                                                            <span className="text-blue-600 font-medium"> · {metrosSeleccionados.toFixed(1)} m</span>
+                                                        )}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={toggleTodos}
+                                                        className="text-xs text-blue-600 hover:underline"
+                                                    >
+                                                        {seleccionados.size === registros.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                                    </button>
+                                                </div>
+
+                                                {/* Registros */}
+                                                <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                                                    {registros.map(r => {
+                                                        const checked = seleccionados.has(r.id);
+                                                        return (
+                                                            <label
+                                                                key={r.id}
+                                                                className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                                                                    checked
+                                                                        ? 'border-blue-300 bg-blue-50'
+                                                                        : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
+                                                                }`}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={checked}
+                                                                    onChange={() => toggleRegistro(r.id)}
+                                                                    className="accent-blue-600 flex-shrink-0"
+                                                                />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <span className="text-xs font-medium text-gray-700">
+                                                                        {fDate(r.fecha)}
+                                                                    </span>
+                                                                    {r.equipo && (
+                                                                        <span className="text-xs text-gray-400 ml-2">
+                                                                            {r.equipo.nombre}{r.equipo.numeroEconomico ? ` (${r.equipo.numeroEconomico})` : ''}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-xs font-medium text-emerald-600 flex-shrink-0">
+                                                                    {r.metrosLineales.toFixed(1)} m
+                                                                </span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Info según modo */}
+                                {!seleccionParcialActiva && (
+                                    <p className="text-xs text-gray-400 mt-2">
+                                        Se asignarán <strong>todos</strong> los registros sin plantilla al guardar.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {error && (
@@ -517,25 +475,20 @@ function RegularizarModal({
                 )}
 
                 {/* Footer */}
-                {!success && fase !== 'seleccion' && (
+                {!success && (
                     <div className="border-t border-gray-100 px-6 py-4 flex gap-2 flex-shrink-0">
                         <button
-                            onClick={() => { setFase('seleccion'); setError(''); }}
+                            onClick={onClose}
                             className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
                         >
-                            ← Atrás
+                            Cancelar
                         </button>
                         <button
-                            onClick={fase === 'existente' ? handleAsignarExistente : handleCrearYAsignar}
+                            onClick={handleCrearYAsignar}
                             disabled={saving}
                             className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors"
                         >
-                            {saving
-                                ? 'Guardando...'
-                                : fase === 'existente'
-                                    ? 'Asignar registros'
-                                    : 'Crear y asignar'
-                            }
+                            {labelBoton()}
                         </button>
                     </div>
                 )}
