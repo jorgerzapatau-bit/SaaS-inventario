@@ -1378,6 +1378,238 @@ function TabOperacion({ obraId, obra }: { obraId: string; obra: ObraDetalle }) {
     );
 }
 
+// ─── Modal Editar Plantilla ───────────────────────────────────────────────────
+function EditarPlantillaModal({
+    plantilla,
+    obraId,
+    equiposObra,
+    onClose,
+    onSaved,
+    abrirEnEquipos,
+}: {
+    plantilla: PlantillaObraDetalle;
+    obraId: string;
+    equiposObra: ObraEquipo[];
+    onClose: () => void;
+    onSaved: () => void;
+    abrirEnEquipos?: boolean;
+}) {
+    const [saving, setSaving] = useState(false);
+    const [error, setError]   = useState('');
+    const [success, setSuccess] = useState('');
+
+    // Campos editables
+    const [form, setForm] = useState({
+        metrosContratados: String(plantilla.metrosContratados),
+        precioUnitario:    plantilla.precioUnitario != null ? String(plantilla.precioUnitario) : '',
+        fechaInicio:       plantilla.fechaInicio ? String(plantilla.fechaInicio).slice(0, 10) : '',
+        fechaFin:          plantilla.fechaFin    ? String(plantilla.fechaFin).slice(0, 10)    : '',
+        notas:             plantilla.notas ?? '',
+    });
+
+    // Equipos asignados a esta plantilla
+    const equiposAsignados = new Set((plantilla.plantillaEquipos ?? []).map(pe => pe.equipoId));
+    const [selEquipos, setSelEquipos] = useState<Set<string>>(new Set(equiposAsignados));
+
+    // Equipos activos de la obra disponibles para asignar
+    const equiposDisponibles = equiposObra.filter(oe => !oe.fechaFin);
+
+    const setF = (key: keyof typeof form) =>
+        (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+            setForm(f => ({ ...f, [key]: e.target.value }));
+
+    const toggleEquipo = (equipoId: string) =>
+        setSelEquipos(prev => {
+            const next = new Set(prev);
+            next.has(equipoId) ? next.delete(equipoId) : next.add(equipoId);
+            return next;
+        });
+
+    const handleGuardar = async () => {
+        if (!form.metrosContratados) { setError('Metros contratados es requerido'); return; }
+        setSaving(true); setError('');
+        try {
+            // 1. Actualizar campos escalares de la plantilla via PUT /obras/[id]
+            await fetchApi(`/obras/${obraId}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    plantillas: [{
+                        id:                plantilla.id,
+                        metrosContratados: Number(form.metrosContratados),
+                        barrenos:          plantilla.barrenos ?? 0,
+                        precioUnitario:    form.precioUnitario ? Number(form.precioUnitario) : null,
+                        fechaInicio:       form.fechaInicio || null,
+                        fechaFin:          form.fechaFin    || null,
+                        notas:             form.notas       || null,
+                        status:            plantilla.status,
+                    }],
+                }),
+            });
+
+            // 2. Sincronizar equipos: añadir los nuevos, quitar los removidos
+            const equiposBase = new Set((plantilla.plantillaEquipos ?? []).map(pe => pe.equipoId));
+
+            // Agregar los que no estaban
+            for (const equipoId of selEquipos) {
+                if (!equiposBase.has(equipoId)) {
+                    await fetchApi(`/obras/${obraId}/plantillas/${plantilla.id}/equipos`, {
+                        method: 'POST',
+                        body: JSON.stringify({ equipoId }),
+                    });
+                }
+            }
+            // Quitar los que se deseleccionaron
+            for (const equipoId of equiposBase) {
+                if (!selEquipos.has(equipoId)) {
+                    await fetchApi(`/obras/${obraId}/plantillas/${plantilla.id}/equipos`, {
+                        method: 'DELETE',
+                        body: JSON.stringify({ equipoId }),
+                    });
+                }
+            }
+
+            setSuccess('Plantilla actualizada correctamente');
+            setTimeout(() => { onSaved(); }, 1000);
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="border-b border-gray-100 px-6 pt-6 pb-4 flex-shrink-0 flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800">Editar Plantilla {plantilla.numero}</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">Modifica los datos del contrato y equipos asignados</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="overflow-y-auto flex-1">
+                    {success ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 px-6">
+                            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                                <CheckCircle2 size={28} className="text-green-600" />
+                            </div>
+                            <p className="text-base font-semibold text-gray-800 text-center">{success}</p>
+                            <p className="text-xs text-gray-400 text-center">Recargando...</p>
+                        </div>
+                    ) : (
+                        <div className="px-6 py-5 space-y-5">
+
+                            {/* ── Campos del contrato ── */}
+                            <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Datos del contrato</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Metros contratados *</label>
+                                        <input type="number" value={form.metrosContratados} onChange={setF('metrosContratados')}
+                                            placeholder="ej. 500"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Precio unitario (P.U.)</label>
+                                        <input type="number" value={form.precioUnitario} onChange={setF('precioUnitario')}
+                                            placeholder="ej. 24.50"
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Fecha inicio</label>
+                                        <input type="date" value={form.fechaInicio} onChange={setF('fechaInicio')}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Fecha fin</label>
+                                        <input type="date" value={form.fechaFin} onChange={setF('fechaFin')}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                                    </div>
+                                </div>
+                                <div className="mt-3">
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                                    <textarea value={form.notas} onChange={setF('notas')} rows={2}
+                                        placeholder="Opcional"
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none" />
+                                </div>
+                            </div>
+
+                            {/* ── Equipos asignados ── */}
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                                    <Wrench size={11} /> Equipos asignados
+                                </p>
+                                {equiposDisponibles.length === 0 ? (
+                                    <p className="text-xs text-gray-400 italic">
+                                        No hay equipos activos en esta obra. Asigna equipos a la obra primero.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {equiposDisponibles.map(oe => {
+                                            const checked = selEquipos.has(oe.equipoId);
+                                            return (
+                                                <label
+                                                    key={oe.equipoId}
+                                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                                                        checked
+                                                            ? 'border-blue-300 bg-blue-50'
+                                                            : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => toggleEquipo(oe.equipoId)}
+                                                        className="accent-blue-600 flex-shrink-0"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-sm font-medium text-gray-700">{oe.equipo.nombre}</span>
+                                                        {oe.equipo.numeroEconomico && (
+                                                            <span className="text-xs text-gray-400 ml-2">({oe.equipo.numeroEconomico})</span>
+                                                        )}
+                                                        {oe.equipo.modelo && (
+                                                            <span className="text-xs text-gray-400 ml-1">· {oe.equipo.modelo}</span>
+                                                        )}
+                                                    </div>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                        </div>
+                    )}
+                </div>
+
+                {error && (
+                    <p className="text-xs text-red-500 px-6 pb-2 flex-shrink-0">{error}</p>
+                )}
+
+                {/* Footer */}
+                {!success && (
+                    <div className="border-t border-gray-100 px-6 py-4 flex gap-2 flex-shrink-0">
+                        <button onClick={onClose}
+                            className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+                            Cancelar
+                        </button>
+                        <button onClick={handleGuardar} disabled={saving}
+                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors">
+                            {saving ? 'Guardando...' : 'Guardar cambios'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Tab Plantillas ───────────────────────────────────────────────────────────
 function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => void }) {
     const plantillas = obra.plantillas ?? [];
@@ -1387,6 +1619,12 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
         PAUSADA:   { label: 'Pausada',   style: 'bg-yellow-100 text-yellow-700' },
         TERMINADA: { label: '✓ Terminada', style: 'bg-gray-100 text-gray-500' },
     };
+
+    // Modal de edición
+    const [editModal, setEditModal] = useState<{
+        plantilla: PlantillaObraDetalle;
+        abrirEnEquipos?: boolean;
+    } | null>(null);
 
     const handleStatusChange = async (plantillaId: string, status: string) => {
         try {
@@ -1426,6 +1664,7 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
     }
 
     return (
+        <>
         <div className="space-y-4">
             <p className="text-sm font-semibold text-gray-700">Plantillas del contrato ({plantillas.length})</p>
             <div className="space-y-4">
@@ -1450,16 +1689,25 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                                         </div>
                                     </div>
                                 </div>
-                                {/* Status selector */}
-                                <select
-                                    value={p.status}
-                                    onChange={e => handleStatusChange(p.id, e.target.value)}
-                                    className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none ${st.style}`}
-                                >
-                                    <option value="ACTIVA">Activa</option>
-                                    <option value="PAUSADA">Pausada</option>
-                                    <option value="TERMINADA">✓ Terminada</option>
-                                </select>
+                            {/* Status selector + botón Editar */}
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={p.status}
+                                        onChange={e => handleStatusChange(p.id, e.target.value)}
+                                        className={`text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:outline-none ${st.style}`}
+                                    >
+                                        <option value="ACTIVA">Activa</option>
+                                        <option value="PAUSADA">Pausada</option>
+                                        <option value="TERMINADA">✓ Terminada</option>
+                                    </select>
+                                    <button
+                                        onClick={() => setEditModal({ plantilla: p })}
+                                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 px-2 py-1 rounded-lg transition-colors"
+                                        title="Editar plantilla"
+                                    >
+                                        <Edit size={11} /> Editar
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Métricas */}
@@ -1482,9 +1730,20 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                                     <Wrench size={11} /> Equipos asignados ({equiposAsignados.length})
                                 </p>
                                 {equiposAsignados.length === 0 ? (
-                                    <p className="text-xs text-gray-400 italic">
-                                        Sin equipos asignados a esta plantilla. Los equipos de la obra estarán disponibles al registrar.
-                                    </p>
+                                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                                        <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-amber-700 font-medium">
+                                                Esta plantilla no tiene equipos asignados
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => setEditModal({ plantilla: p, abrirEnEquipos: true })}
+                                            className="text-xs text-amber-700 font-semibold hover:text-blue-600 hover:underline flex-shrink-0 transition-colors"
+                                        >
+                                            Asignar equipo
+                                        </button>
+                                    </div>
                                 ) : (
                                     <div className="flex flex-wrap gap-2">
                                         {equiposAsignados.map(pe => (
@@ -1511,6 +1770,19 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                 })}
             </div>
         </div>
+
+        {/* Modal de edición de plantilla */}
+        {editModal && (
+            <EditarPlantillaModal
+                plantilla={editModal.plantilla}
+                obraId={obra.id}
+                equiposObra={obra.obraEquipos}
+                abrirEnEquipos={editModal.abrirEnEquipos}
+                onClose={() => setEditModal(null)}
+                onSaved={() => { setEditModal(null); onReload(); }}
+            />
+        )}
+        </>
     );
 }
 
