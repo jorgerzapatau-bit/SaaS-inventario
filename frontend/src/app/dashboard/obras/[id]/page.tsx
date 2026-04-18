@@ -85,6 +85,7 @@ type PlantillaObraDetalle = {
     numero: number;
     metrosContratados: number;
     barrenos: number;
+    precioUnitario: number | null;
     fechaInicio: string | null;
     fechaFin: string | null;
     status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
@@ -1361,11 +1362,12 @@ function TabCostos({ obraId }: { obraId: string }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 // ─── Resumen Financiero ───────────────────────────────────────────────────────
-function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes }: {
+function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }: {
     rf: NonNullable<ObraDetalle['resumenFinanciero']>;
     moneda: string;
     metrosPerforados?: number;
     cortes?: Corte[];
+    plantillas?: PlantillaObraDetalle[];
 }) {
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -1420,19 +1422,64 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes }: {
         },
     }[estadoFacturacion];
 
+    // ── Metros y monto pendiente ──────────────────────────────────────────────
+    const metrosPendientes = Math.max(0, produccionTotalMetros - metrosFacturados);
+
+    // Estimación de facturación pendiente desde plantillas (metrosContratados - produccionYaFacturada)
+    // Por cada plantilla: pendiente = max(0, metrosContratados - metrosFacturadosDeEsaPlantilla)
+    // Como los registros de cortes no tienen plantillaId, usamos una distribución proporcional:
+    // peso de cada plantilla = metrosContratados / totalContratado → metros facturados asignados proporcionalmente
+    const totalContratadoPlantillas = (plantillas ?? []).reduce((s, p) => s + p.metrosContratados, 0);
+    let montoPendienteEstimado       = 0;
+    let plantillasSinPrecio          = 0;
+    let hayAlgunPrecio               = false;
+
+    for (const p of (plantillas ?? [])) {
+        const peso = totalContratadoPlantillas > 0
+            ? p.metrosContratados / totalContratadoPlantillas
+            : 0;
+        // Metros ya facturados asignados a esta plantilla (por proporción)
+        const metrosFacturadosPlantilla = peso * metrosFacturados;
+        const metrosPendientesPlantilla = Math.max(0, p.metrosContratados - metrosFacturadosPlantilla);
+        if ((p.precioUnitario ?? 0) > 0) {
+            montoPendienteEstimado += metrosPendientesPlantilla * p.precioUnitario!;
+            hayAlgunPrecio = true;
+        } else if (p.metrosContratados > 0) {
+            plantillasSinPrecio++;
+        }
+    }
+    const calcParcialPorPrecio = plantillasSinPrecio > 0 && hayAlgunPrecio;
+    const sinPreciosEnAbsoluto = !hayAlgunPrecio && (plantillas ?? []).length > 0;
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Resumen Financiero</h2>
 
             {/* Indicador de estado de facturación */}
-            <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 mb-3 ${estadoConfig.bg}`}>
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${estadoConfig.dot}`} />
-                <p className={`text-xs font-medium ${estadoConfig.color}`}>{estadoConfig.label}</p>
-                {estadoFacturacion === 'parcial' && produccionTotalMetros > 0 && (
-                    <p className="text-xs text-blue-400 ml-auto flex-shrink-0">
-                        {metrosFacturados.toFixed(1)} / {produccionTotalMetros.toFixed(1)} m
+            <div className={`rounded-lg border px-3 py-2.5 mb-3 ${estadoConfig.bg}`}>
+                <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${estadoConfig.dot}`} />
+                    <p className={`text-xs font-medium ${estadoConfig.color}`}>{estadoConfig.label}</p>
+                    {estadoFacturacion === 'parcial' && produccionTotalMetros > 0 && (
+                        <p className="text-xs text-blue-400 ml-auto flex-shrink-0">
+                            {metrosFacturados.toFixed(1)} / {produccionTotalMetros.toFixed(1)} m
+                        </p>
+                    )}
+                </div>
+                <div className="mt-1.5 ml-4 space-y-0.5">
+                    <p className={`text-xs ${estadoConfig.color} opacity-80`}>
+                        Pendiente por facturar: <span className="font-semibold">{metrosPendientes.toFixed(1)} m</span>
                     </p>
-                )}
+                    <p className={`text-xs ${estadoConfig.color} opacity-80`}>
+                        Facturación pendiente estimada:{' '}
+                        {sinPreciosEnAbsoluto
+                            ? <span className="font-medium italic">cálculo parcial (faltan precios en plantillas)</span>
+                            : calcParcialPorPrecio
+                                ? <span className="font-semibold">{mxn(montoPendienteEstimado)} <span className="font-normal italic opacity-70">(cálculo parcial — faltan precios en {plantillasSinPrecio} plantilla{plantillasSinPrecio > 1 ? 's' : ''})</span></span>
+                                : <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
+                        }
+                    </p>
+                </div>
             </div>
 
             {/* Fila 1: desglose de costos */}
@@ -1680,7 +1727,7 @@ export default function ObraDetallePage() {
 
             {/* Resumen Financiero */}
             {obra.resumenFinanciero && (
-                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} />
+                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} plantillas={obra.plantillas} />
             )}
 
             {/* Tabs */}
