@@ -114,19 +114,29 @@ export async function GET(req: NextRequest, { params }: Params) {
         });
         const gastosAdicionales = Number(gastosAdicRaw._sum.total ?? 0);
 
-        // ── Costo real de insumos: suma(cantidad * costoUnitario) por fila ────
+        // ── Costo real de insumos ────────────────────────────────────────────────
+        // Usa los mismos filtros que la pestaña "Costos": todos los movimientos
+        // vinculados a la obra sin filtrar por tipo — igual que GET /inventory/movements?obraId=
         const movimientosInsumos = await prisma.movimientoInventario.findMany({
             where: {
-                obraId:         id,
-                empresaId:      user.empresaId,
-                tipoMovimiento: { in: ['SALIDA', 'AJUSTE_NEGATIVO'] },
+                obraId:    id,
+                empresaId: user.empresaId,
+                // Sin filtro de tipoMovimiento: replica exactamente /inventory/movements?obraId
             },
-            select: { cantidad: true, costoUnitario: true },
+            select: { tipoMovimiento: true, cantidad: true, costoUnitario: true },
         });
+
+        // Logs temporales de depuración
+        const tiposEncontrados = [...new Set(movimientosInsumos.map(m => m.tipoMovimiento))];
+        console.log(`[resumenFinanciero] obraId=${id} empresaId=${user.empresaId}`);
+        console.log(`[resumenFinanciero] movimientos encontrados: ${movimientosInsumos.length}`);
+        console.log(`[resumenFinanciero] tipos de movimiento: ${JSON.stringify(tiposEncontrados)}`);
 
         const costoInsumos = movimientosInsumos.reduce((acc, m) => {
             return acc + Number(m.cantidad) * Number(m.costoUnitario);
         }, 0);
+
+        console.log(`[resumenFinanciero] costoInsumos total: ${costoInsumos}`);
 
         // ── Resumen financiero derivado ───────────────────────────────────────
         const facturado   = Number(facturacion._sum.montoFacturado ?? 0);
