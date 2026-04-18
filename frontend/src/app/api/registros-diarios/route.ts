@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
                 // Incluir info del corte para saber si ya está facturado
                 corteRegistro: {
                     include: {
-                        corte: { select: { id: true, numero: true, status: true } },
+                        corte: { select: { id: true, numero: true, status: true, montoFacturado: true, metrosLineales: true } },
                     },
                 },
             },
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
                     cliente:       { select: { nombre: true } },
                     corteRegistro: {
                         include: {
-                            corte: { select: { id: true, numero: true, status: true } },
+                            corte: { select: { id: true, numero: true, status: true, montoFacturado: true, metrosLineales: true } },
                         },
                     },
                 },
@@ -267,7 +267,13 @@ function serializeRegistro(r: any) {
         rentaEquipoDiaria:   r.rentaEquipoDiaria    != null ? Number(r.rentaEquipoDiaria)   : null,
         // Info del corte (null si pendiente)
         corte: r.corteRegistro
-            ? { id: r.corteRegistro.corte.id, numero: r.corteRegistro.corte.numero, status: r.corteRegistro.corte.status }
+            ? {
+                id:             r.corteRegistro.corte.id,
+                numero:         r.corteRegistro.corte.numero,
+                status:         r.corteRegistro.corte.status,
+                montoFacturado: r.corteRegistro.corte.montoFacturado != null ? Number(r.corteRegistro.corte.montoFacturado) : null,
+                metrosLineales: r.corteRegistro.corte.metrosLineales != null ? Number(r.corteRegistro.corte.metrosLineales) : null,
+              }
             : null,
         kpi: {
             litrosPorHora:  horas  > 0 ? +(litros / horas).toFixed(2)  : null,
