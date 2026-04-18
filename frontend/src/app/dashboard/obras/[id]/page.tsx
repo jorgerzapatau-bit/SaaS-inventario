@@ -2209,7 +2209,14 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
 export default function ObraDetallePage() {
     const params = useParams();
     const router = useRouter();
-    const obraId = params.id as string;
+
+    // App Router: params.id puede ser string | string[] | undefined durante hidratación
+    const rawId = params?.id;
+    const obraId: string | undefined =
+        typeof rawId === 'string' && rawId.trim() !== '' ? rawId : undefined;
+
+    console.log('[ObraDetalle] raw params:', params);
+    console.log('[ObraDetalle] obraId:', obraId);
 
     const [obra,    setObra]    = useState<ObraDetalle | null>(null);
     const [loading, setLoading] = useState(true);
@@ -2217,12 +2224,12 @@ export default function ObraDetallePage() {
     const [tab, setTab] = useState<'operacion' | 'plantillas' | 'cortes' | 'costos'>('operacion');
     const [regularizarOpen, setRegularizarOpen] = useState(false);
 
-    const load = async () => {
+    const load = async (id: string) => {
         setLoading(true);
+        setError('');
         try {
-            console.log('[ObraDetalle] obraId:', obraId);
-            console.log('[ObraDetalle] fetchUrl:', `/obras/${obraId}`);
-            const data = await fetchApi(`/obras/${obraId}`);
+            console.log('[ObraDetalle] fetchUrl:', `/obras/${id}`);
+            const data = await fetchApi(`/obras/${id}`);
             console.log('[ObraDetalle] data recibida:', data);
             setObra(data);
         } catch (e: any) {
@@ -2235,10 +2242,18 @@ export default function ObraDetallePage() {
 
     useEffect(() => {
         console.log('[ObraDetalle] useEffect disparado, obraId:', obraId, 'tipo:', typeof obraId);
-        load();
+        // Guard: no hacer fetch si obraId aún no está disponible
+        if (typeof obraId !== 'string' || obraId.trim() === '') {
+            console.log('[ObraDetalle] obraId no válido todavía, abortando fetch');
+            return;
+        }
+        load(obraId);
     }, [obraId]);
 
-    if (loading) return <div className="p-10 text-center text-gray-400 text-sm">Cargando obra...</div>;
+    // Mientras el id de ruta no esté resuelto, mostrar loading (nunca "Obra no encontrada")
+    if (!obraId || loading) {
+        return <div className="p-10 text-center text-gray-400 text-sm">Cargando obra...</div>;
+    }
     if (error || !obra) {
         console.warn('[ObraDetalle] Mostrando error. error:', error, '| obra:', obra);
         return (
@@ -2441,8 +2456,8 @@ export default function ObraDetallePage() {
             <Card>
                 <div className="p-5">
                     {tab === 'operacion'  && <TabOperacion obraId={obraId} obra={obra} />}
-                    {tab === 'plantillas' && <TabPlantillas obra={obra} onReload={load} />}
-                    {tab === 'cortes'     && <TabCortes obraId={obraId} obra={obra} cortes={obra.cortesFacturacion} onReload={load} />}
+                    {tab === 'plantillas' && <TabPlantillas obra={obra} onReload={() => { if (obraId) load(obraId); }} />}
+                    {tab === 'cortes'     && <TabCortes obraId={obraId} obra={obra} cortes={obra.cortesFacturacion} onReload={() => { if (obraId) load(obraId); }} />}
                     {tab === 'costos'     && <TabCostos obraId={obraId} />}
                 </div>
             </Card>
@@ -2457,7 +2472,7 @@ export default function ObraDetallePage() {
                         (obra.plantillas?.reduce((s, p) => s + p.metrosContratados, 0) ?? 0)
                     )}
                     onClose={() => setRegularizarOpen(false)}
-                    onSaved={() => { setRegularizarOpen(false); load(); }}
+                    onSaved={() => { setRegularizarOpen(false); if (obraId) load(obraId); }}
                 />
             )}
         </div>
