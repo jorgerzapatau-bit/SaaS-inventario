@@ -602,29 +602,26 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
         r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
     );
 
-    // ── Utilidad semanal estimada (basada en precioUnitario de cada plantilla) ──
-    const mxn = (n: number) =>
+    // ── Resultado semanal: ingreso calculado por registro desde precioUnitario de plantilla ──
+    const formatearMoneda = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
-    // Por cada registro: ingresoRegistro = metrosLineales × plantilla.precioUnitario
-    // Si el registro no tiene plantilla o la plantilla no tiene precioUnitario → no suma
     let ingresoSemana     = 0;
     let registrosSinPrecio = 0;
     for (const r of semana.registros) {
-        const precio = r.plantilla?.precioUnitario;
-        if (precio != null && precio > 0) {
-            ingresoSemana += r.metrosLineales * precio;
-        } else {
+        const metros = Number(r.metrosLineales ?? 0);
+        const precio = Number(r.plantilla?.precioUnitario ?? 0);
+        if (metros > 0 && precio > 0) {
+            ingresoSemana += metros * precio;
+        } else if (metros > 0) {
             registrosSinPrecio++;
         }
     }
-    // Solo mostrar el bloque si al menos un registro aportó ingreso
-    const tieneIngreso   = ingresoSemana > 0;
-    const utilidadSemana = tieneIngreso ? ingresoSemana - semana.costoTotal : null;
-    const margenSemana   = (utilidadSemana != null && ingresoSemana > 0)
+    const costoSemana    = Number(semana.costoTotal ?? 0);
+    const utilidadSemana = ingresoSemana - costoSemana;
+    const margenSemana   = ingresoSemana > 0
         ? (utilidadSemana / ingresoSemana) * 100
         : null;
-    const utilPos = (utilidadSemana ?? 0) >= 0;
 
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -792,45 +789,43 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                     </div>
 
                     {/* ── Resultado semanal ──────────────────────────────────── */}
-                    {tieneIngreso && utilidadSemana != null && (
-                        <div>
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                                <DollarSign size={12} /> Resultado semanal
+                    {ingresoSemana > 0 && (
+                        <div className="mt-4">
+                            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                                Resultado semanal
+                            </div>
+                            <p className="text-xs text-gray-400 mb-3">
+                                Calculado con precioUnitario de la plantilla asignada a cada registro
                             </p>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1">Ingreso estimado</p>
-                                    <p className="text-base font-bold text-gray-800">{mxn(ingresoSemana)}</p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">
-                                        {semana.metrosLineales.toFixed(1)} m perforados
-                                    </p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                    <div className="text-xs text-gray-500 mb-1">Ingreso</div>
+                                    <div className="text-base font-bold text-gray-800">
+                                        {formatearMoneda(ingresoSemana)}
+                                    </div>
                                 </div>
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 mb-1">Costo total</p>
-                                    <p className="text-base font-bold text-gray-800">{mxn(semana.costoTotal)}</p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Producción + gastos</p>
+                                <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                    <div className="text-xs text-gray-500 mb-1">Costo</div>
+                                    <div className="text-base font-bold text-gray-800">
+                                        {formatearMoneda(costoSemana)}
+                                    </div>
                                 </div>
-                                <div className={`rounded-lg p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <p className="text-xs text-gray-400 mb-1">Utilidad</p>
-                                    <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
-                                        {utilPos ? '+' : ''}{mxn(utilidadSemana!)}
-                                    </p>
-                                    <p className={`text-[10px] mt-0.5 ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
-                                        Ingreso − costo
-                                    </p>
+                                <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                    <div className="text-xs text-gray-500 mb-1">Utilidad</div>
+                                    <div className={`text-base font-bold ${utilidadSemana >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {utilidadSemana >= 0 ? '+' : ''}{formatearMoneda(utilidadSemana)}
+                                    </div>
                                 </div>
-                                <div className={`rounded-lg p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <p className="text-xs text-gray-400 mb-1">Margen</p>
-                                    <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                    <div className="text-xs text-gray-500 mb-1">Margen</div>
+                                    <div className={`text-base font-bold ${(margenSemana ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                         {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                                    </div>
                                 </div>
                             </div>
                             {registrosSinPrecio > 0 && (
-                                <p className="text-[10px] text-amber-500 mt-2 flex items-center gap-1">
-                                    <Info size={9} />
-                                    {registrosSinPrecio} registro{registrosSinPrecio > 1 ? 's' : ''} sin plantilla/precio configurado — no incluido{registrosSinPrecio > 1 ? 's' : ''} en el ingreso estimado
+                                <p className="mt-2 text-xs text-amber-600">
+                                    {registrosSinPrecio} registro(s) sin plantilla/precio configurado — no incluidos en el ingreso estimado.
                                 </p>
                             )}
                         </div>
