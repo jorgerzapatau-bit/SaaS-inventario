@@ -12,6 +12,7 @@ import {
     ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
     AlertTriangle, CheckCircle2, Loader2, Lock,
     Building2, Layers, Wrench, TableProperties, SlidersHorizontal,
+    CheckSquare2, Square, ListChecks,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -364,6 +365,293 @@ function DeleteModal({ registro, onConfirm, onCancel }: {
                         Sí, eliminar
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal de asignación / reasignación de registros a plantilla
+// ─────────────────────────────────────────────────────────────────────────────
+type PlantillaElegible = {
+    id: string; numero: number; status: string;
+    metrosContratados: number; precioUnitario: number | null;
+    moneda: string; metrosUsados: number; capacidadDisponible: number;
+    elegible: boolean; fechaInicio: string | null; fechaFin: string | null;
+    notas: string | null;
+};
+
+function AsignarPlantillaModal({
+    obraId,
+    registroIds,
+    onClose,
+    onSaved,
+}: {
+    obraId: string;
+    registroIds: string[];
+    onClose: () => void;
+    onSaved: () => void;
+}) {
+    const [tab, setTab] = useState<'existente' | 'nueva'>('existente');
+    const [plantillas, setPlantillas] = useState<PlantillaElegible[]>([]);
+    const [loadingPlantillas, setLoadingPlantillas] = useState(true);
+    const [plantillaSeleccionada, setPlantillaSeleccionada] = useState<string>('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    const [formNueva, setFormNueva] = useState({
+        numero: '', metrosContratados: '', precioUnitario: '',
+        moneda: 'MXN', fechaInicio: '', fechaFin: '', notas: '',
+    });
+
+    useEffect(() => {
+        fetchApi(`/obras/${obraId}/regularizar`)
+            .then((d: { plantillasElegibles: PlantillaElegible[] }) => {
+                setPlantillas(d.plantillasElegibles ?? []);
+            })
+            .catch(() => setError('No se pudieron cargar las plantillas'))
+            .finally(() => setLoadingPlantillas(false));
+    }, [obraId]);
+
+    const setNueva = (key: keyof typeof formNueva) =>
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+            setFormNueva(f => ({ ...f, [key]: e.target.value }));
+
+    const handleAsignarExistente = async () => {
+        if (!plantillaSeleccionada) { setError('Selecciona una plantilla'); return; }
+        setSaving(true); setError('');
+        try {
+            const res = await fetchApi(`/obras/${obraId}/regularizar`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    plantillaId: plantillaSeleccionada,
+                    registroIds,
+                    allowReasignacion: true,
+                }),
+            });
+            setSuccess(`${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''} correctamente`);
+            setTimeout(() => onSaved(), 1200);
+        } catch (e: any) {
+            setError(e.message || 'Error al asignar registros');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCrearYAsignar = async () => {
+        if (!formNueva.numero || !formNueva.metrosContratados) {
+            setError('Número y metros contratados son requeridos'); return;
+        }
+        setSaving(true); setError('');
+        try {
+            const res = await fetchApi(`/obras/${obraId}/regularizar`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    crearPlantilla: {
+                        numero:            Number(formNueva.numero),
+                        metrosContratados: Number(formNueva.metrosContratados),
+                        precioUnitario:    formNueva.precioUnitario ? Number(formNueva.precioUnitario) : null,
+                        moneda:            formNueva.moneda,
+                        fechaInicio:       formNueva.fechaInicio || null,
+                        fechaFin:          formNueva.fechaFin    || null,
+                        notas:             formNueva.notas       || null,
+                    },
+                    registroIds,
+                    allowReasignacion: true,
+                }),
+            });
+            setSuccess(`Plantilla creada y ${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''}`);
+            setTimeout(() => onSaved(), 1200);
+        } catch (e: any) {
+            setError(e.message || 'Error al crear plantilla');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const inpNueva = (label: string, key: keyof typeof formNueva, type = 'text', placeholder = '') => (
+        <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+            <input
+                type={type} value={String(formNueva[key])} onChange={setNueva(key)}
+                placeholder={placeholder}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="border-b border-gray-100 px-6 pt-6 pb-4 flex-shrink-0 flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800">Asignar a plantilla</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            {registroIds.length} registro{registroIds.length !== 1 ? 's' : ''} seleccionado{registroIds.length !== 1 ? 's' : ''}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="overflow-y-auto flex-1">
+                    {success ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 px-6">
+                            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                                <CheckCircle2 size={28} className="text-green-600" />
+                            </div>
+                            <p className="text-base font-semibold text-gray-800 text-center">{success}</p>
+                            <p className="text-xs text-gray-400 text-center">Recargando vista...</p>
+                        </div>
+                    ) : (
+                        <div className="px-6 py-5 space-y-5">
+                            {/* Tabs */}
+                            <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+                                <button
+                                    onClick={() => { setTab('existente'); setError(''); }}
+                                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 'existente' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                                >
+                                    Plantilla existente
+                                </button>
+                                <button
+                                    onClick={() => { setTab('nueva'); setError(''); }}
+                                    className={`flex-1 py-2.5 text-sm font-medium transition-colors ${tab === 'nueva' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                                >
+                                    Crear nueva plantilla
+                                </button>
+                            </div>
+
+                            {/* Tab: plantilla existente */}
+                            {tab === 'existente' && (
+                                <div className="space-y-3">
+                                    {loadingPlantillas ? (
+                                        <div className="flex items-center justify-center py-8 gap-2 text-gray-400 text-sm">
+                                            <Loader2 size={16} className="animate-spin"/> Cargando plantillas...
+                                        </div>
+                                    ) : plantillas.length === 0 ? (
+                                        <div className="text-center py-8 text-sm text-gray-400">
+                                            No hay plantillas activas en esta obra.
+                                            <br/>
+                                            <span className="text-xs">Usa la pestaña "Crear nueva plantilla".</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {plantillas.map(p => {
+                                                const seleccionada = plantillaSeleccionada === p.id;
+                                                return (
+                                                    <button
+                                                        key={p.id}
+                                                        onClick={() => { setPlantillaSeleccionada(p.id); setError(''); }}
+                                                        className={`w-full text-left rounded-xl border p-3.5 transition-all ${
+                                                            seleccionada
+                                                                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${seleccionada ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+                                                                    {seleccionada && <div className="w-1.5 h-1.5 rounded-full bg-white"/>}
+                                                                </div>
+                                                                <span className={`text-sm font-bold ${seleccionada ? 'text-blue-800' : 'text-gray-800'}`}>
+                                                                    Plantilla {p.numero}
+                                                                </span>
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${p.status === 'ACTIVA' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                                    {p.status}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <span className={`text-xs font-semibold ${p.elegible ? 'text-green-700' : 'text-orange-600'}`}>
+                                                                    {p.capacidadDisponible.toFixed(1)} m libres
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="mt-1.5 ml-6 flex items-center gap-3 text-xs text-gray-400">
+                                                            <span>{p.metrosUsados.toFixed(1)} / {p.metrosContratados.toFixed(1)} m usados</span>
+                                                            {p.precioUnitario && (
+                                                                <span>· P.U. {p.moneda} {p.precioUnitario.toFixed(2)}</span>
+                                                            )}
+                                                        </div>
+                                                        {!p.elegible && (
+                                                            <p className="mt-1.5 ml-6 text-xs text-orange-500 font-medium">
+                                                                ⚠ Sin capacidad disponible — puedes asignar igualmente si es una corrección
+                                                            </p>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Tab: nueva plantilla */}
+                            {tab === 'nueva' && (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {inpNueva('Número de plantilla', 'numero', 'number', 'ej. 4')}
+                                        {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500')}
+                                        {inpNueva('Precio unitario (P.U.)', 'precioUnitario', 'number', 'ej. 24.50')}
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+                                            <select value={formNueva.moneda} onChange={setNueva('moneda')}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                                <option value="MXN">MXN</option>
+                                                <option value="USD">USD</option>
+                                            </select>
+                                        </div>
+                                        {inpNueva('Fecha inicio', 'fechaInicio', 'date')}
+                                        {inpNueva('Fecha fin', 'fechaFin', 'date')}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                                        <textarea value={formNueva.notas}
+                                            onChange={e => setFormNueva(f => ({ ...f, notas: e.target.value }))}
+                                            rows={2}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none"
+                                            placeholder="Opcional"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                    <AlertTriangle size={14} className="flex-shrink-0"/>
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                {!success && (
+                    <div className="border-t border-gray-100 px-6 py-4 flex-shrink-0 flex gap-3">
+                        <button onClick={onClose}
+                            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={tab === 'existente' ? handleAsignarExistente : handleCrearYAsignar}
+                            disabled={saving || (tab === 'existente' && !plantillaSeleccionada)}
+                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2"
+                        >
+                            {saving && <Loader2 size={14} className="animate-spin"/>}
+                            {saving
+                                ? 'Guardando...'
+                                : tab === 'existente'
+                                    ? `Asignar ${registroIds.length} registro${registroIds.length !== 1 ? 's' : ''}`
+                                    : `Crear y asignar ${registroIds.length} registro${registroIds.length !== 1 ? 's' : ''}`
+                            }
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -743,6 +1031,7 @@ function RegistroRow({
     r, onDelete, onDuplicate, isLastForEquipo,
     editingId, onStartEdit, onCancelEdit, onSaveEdit,
     editingRow, onChangeEdit, savingEdit, editError,
+    seleccionado, onToggleSeleccion,
 }: {
     r: Registro;
     onDelete: (r: Registro) => void;
@@ -756,6 +1045,8 @@ function RegistroRow({
     onChangeEdit: (key: keyof EditingRow, val: string) => void;
     savingEdit: boolean;
     editError: string;
+    seleccionado?: boolean;
+    onToggleSeleccion?: (id: string) => void;
 }) {
     const [expanded, setExpanded] = useState(false);
     const isEditing = editingId === r.id;
@@ -768,9 +1059,18 @@ function RegistroRow({
     return (
         <>
             <tr
-                className={`hover:bg-slate-50/80 transition-colors group cursor-pointer border-b border-gray-100 ${isEditing ? 'bg-amber-50/40' : ''}`}
+                className={`hover:bg-slate-50/80 transition-colors group cursor-pointer border-b border-gray-100 ${isEditing ? 'bg-amber-50/40' : seleccionado ? 'bg-blue-50' : ''}`}
                 onClick={() => !isEditing && setExpanded(v => !v)}
             >
+                <td className="pl-3 pr-1 py-3 w-8" onClick={e => e.stopPropagation()}>
+                    <button
+                        onClick={() => onToggleSeleccion?.(r.id)}
+                        className={`transition-colors ${seleccionado ? 'text-blue-600' : 'text-gray-300 hover:text-blue-400'}`}
+                        title={seleccionado ? 'Deseleccionar' : 'Seleccionar'}
+                    >
+                        {seleccionado ? <CheckSquare2 size={15}/> : <Square size={15}/>}
+                    </button>
+                </td>
                 <td className="pl-4 pr-2 py-3 w-36">
                     <p className="text-sm font-semibold text-gray-800">{fecha.split(', ')[1] ?? fecha}</p>
                     <p className="text-xs text-gray-400 capitalize">{fecha.split(', ')[0]}</p>
@@ -881,7 +1181,7 @@ function RegistroRow({
             {/* Detalle expandido (cuando no está editando) */}
             {expanded && !isEditing && (
                 <tr className="bg-slate-50/60">
-                    <td colSpan={11} className="px-6 py-4 space-y-3 border-b border-gray-100">
+                    <td colSpan={12} className="px-6 py-4 space-y-3 border-b border-gray-100">
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                             <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
                                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Horómetro</p>
@@ -1603,6 +1903,18 @@ function RegistrosDiariosInner() {
     const [page,         setPage]         = useState(1);
     const [registroAEliminar, setRegistroAEliminar] = useState<Registro | null>(null);
 
+    // ── Estado de selección múltiple para asignación a plantilla ────────────
+    const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+    const [asignarModalOpen, setAsignarModalOpen] = useState(false);
+
+    const toggleSeleccion = useCallback((id: string) => {
+        setSeleccionados(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    }, []);
+
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -1890,6 +2202,25 @@ function RegistrosDiariosInner() {
                 <DeleteModal registro={registroAEliminar} onConfirm={handleDeleteConfirm} onCancel={() => setRegistroAEliminar(null)}/>
             )}
 
+            {asignarModalOpen && seleccionados.size > 0 && (() => {
+                // Inferir obraId del primer registro seleccionado
+                const primerReg = registros.find(r => seleccionados.has(r.id));
+                const obraIdModal = primerReg?.obra?.id ?? '';
+                if (!obraIdModal) return null;
+                return (
+                    <AsignarPlantillaModal
+                        obraId={obraIdModal}
+                        registroIds={Array.from(seleccionados)}
+                        onClose={() => setAsignarModalOpen(false)}
+                        onSaved={() => {
+                            setAsignarModalOpen(false);
+                            setSeleccionados(new Set());
+                            load();
+                        }}
+                    />
+                );
+            })()}
+
             <div className="space-y-5 animate-in fade-in duration-500">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2070,6 +2401,54 @@ function RegistrosDiariosInner() {
                 {/* ── HISTORIAL ─────────────────────────────────────────────── */}
                 {vistaHistorial && (
                     <div className="space-y-4">
+
+                        {/* ── Barra de acciones de selección múltiple ── */}
+                        {seleccionados.size > 0 && (() => {
+                            const primerReg = registros.find(r => seleccionados.has(r.id));
+                            const mismaObra = primerReg
+                                ? Array.from(seleccionados).every(id => {
+                                    const reg = registros.find(r => r.id === id);
+                                    return reg?.obra?.id === primerReg.obra?.id;
+                                  })
+                                : false;
+                            return (
+                                <div className="sticky top-2 z-20 bg-blue-600 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg flex-wrap">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <ListChecks size={16} className="flex-shrink-0"/>
+                                        <span className="text-sm font-semibold">
+                                            {seleccionados.size} registro{seleccionados.size !== 1 ? 's' : ''} seleccionado{seleccionados.size !== 1 ? 's' : ''}
+                                        </span>
+                                        {!mismaObra && (
+                                            <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-medium">
+                                                ⚠ Distintas obras
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => {
+                                                if (!mismaObra) return;
+                                                setAsignarModalOpen(true);
+                                            }}
+                                            disabled={!mismaObra}
+                                            title={!mismaObra ? 'Solo puedes asignar registros de la misma obra' : ''}
+                                            className="px-3 py-1.5 bg-white text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                        >
+                                            <Layers size={13}/>
+                                            Asignar a plantilla
+                                        </button>
+                                        <button
+                                            onClick={() => setSeleccionados(new Set())}
+                                            className="px-3 py-1.5 bg-blue-500 hover:bg-blue-400 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5"
+                                        >
+                                            <X size={13}/>
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         {/* Filtros */}
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
                             <div className="flex items-center gap-2">
@@ -2155,6 +2534,33 @@ function RegistrosDiariosInner() {
                                         <table className="w-full border-collapse text-sm" style={{ minWidth: 900 }}>
                                             <thead>
                                                 <tr className="bg-gray-50 border-b-2 border-gray-200">
+                                                    <th className="pl-3 pr-1 py-2.5 w-8">
+                                                        {/* Checkbox "Seleccionar todos" — sobre la página actual */}
+                                                        <button
+                                                            onClick={() => {
+                                                                const pageIds = new Set(paginated.map((r: Registro) => r.id));
+                                                                const todosSeleccionados = paginated.every((r: Registro) => seleccionados.has(r.id));
+                                                                setSeleccionados(prev => {
+                                                                    const next = new Set(prev);
+                                                                    if (todosSeleccionados) {
+                                                                        pageIds.forEach(id => next.delete(id));
+                                                                    } else {
+                                                                        pageIds.forEach(id => next.add(id));
+                                                                    }
+                                                                    return next;
+                                                                });
+                                                            }}
+                                                            className="text-gray-400 hover:text-blue-600 transition-colors"
+                                                            title="Seleccionar/deseleccionar página"
+                                                        >
+                                                            {paginated.length > 0 && paginated.every((r: Registro) => seleccionados.has(r.id))
+                                                                ? <CheckSquare2 size={15} className="text-blue-600"/>
+                                                                : paginated.some((r: Registro) => seleccionados.has(r.id))
+                                                                    ? <CheckSquare2 size={15} className="text-blue-300"/>
+                                                                    : <Square size={15}/>
+                                                            }
+                                                        </button>
+                                                    </th>
                                                     <th className="pl-4 pr-2 py-2.5 text-left cursor-pointer select-none hover:text-gray-700 transition-colors"
                                                         onClick={() => handleSort('fecha')}>
                                                         <span className="flex items-center gap-1 text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -2231,7 +2637,7 @@ function RegistrosDiariosInner() {
                                                             lastPlantillaKey = null;
                                                             rows.push(
                                                                 <tr key={`obra-${oId}-${i}`} className="bg-gray-800">
-                                                                    <td colSpan={11} className="pl-4 pr-3 py-2">
+                                                                    <td colSpan={12} className="pl-4 pr-3 py-2">
                                                                         <div className="flex items-center gap-2">
                                                                             <Building2 size={13} className="text-gray-300 flex-shrink-0"/>
                                                                             <span className="text-xs font-bold text-white tracking-wide uppercase">{obraLabel}</span>
@@ -2250,7 +2656,7 @@ function RegistrosDiariosInner() {
                                                             const tots = totalsPorPlantilla.get(plantillaKey) ?? { dias: 0, metros: 0, barrenos: 0, horas: 0 };
                                                             rows.push(
                                                                 <tr key={`plant-${plantillaKey}-${i}`} className="bg-indigo-50 border-t border-indigo-100">
-                                                                    <td colSpan={11} className="pl-6 pr-3 py-1.5">
+                                                                    <td colSpan={12} className="pl-6 pr-3 py-1.5">
                                                                         <div className="flex items-center gap-3 flex-wrap">
                                                                             <div className="flex items-center gap-1.5">
                                                                                 <Layers size={11} className="text-indigo-500"/>
@@ -2283,6 +2689,8 @@ function RegistrosDiariosInner() {
                                                                 onChangeEdit={(key, val) => setHistEditingRow(prev => prev ? { ...prev, [key]: val } : prev)}
                                                                 savingEdit={histSaving}
                                                                 editError={histEditError}
+                                                                seleccionado={seleccionados.has(r.id)}
+                                                                onToggleSeleccion={toggleSeleccion}
                                                             />
                                                         );
                                                     });

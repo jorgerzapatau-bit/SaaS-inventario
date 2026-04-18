@@ -7,13 +7,14 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * POST /api/obras/[id]/regularizar
  *
- * Asigna registros diarios sin plantilla a una plantilla existente o recién creada.
+ * Asigna o reasigna registros diarios a una plantilla existente o recién creada.
  *
  * Body:
  *   {
  *     plantillaId?: string          → asignar a plantilla existente
  *     crearPlantilla?: { ... }      → crear plantilla nueva y asignar a ella
  *     registroIds?: string[]        → opcional: solo esos registros (si omite → todos sin plantilla)
+ *     allowReasignacion?: boolean   → si true, permite mover registros que ya tienen plantilla
  *   }
  */
 export async function POST(req: NextRequest, { params }: Params) {
@@ -24,25 +25,29 @@ export async function POST(req: NextRequest, { params }: Params) {
         const { id: obraId } = await params;
         const body = await req.json();
 
-        // registroIds opcional — si viene, validar que pertenezcan a la obra y tengan plantillaId null
+        const allowReasignacion: boolean = body.allowReasignacion === true;
+
+        // registroIds opcional — si viene, validar que pertenezcan a la obra
         const registroIds: string[] | undefined =
             Array.isArray(body.registroIds) && body.registroIds.length > 0
                 ? body.registroIds
                 : undefined;
 
         if (registroIds) {
-            // Verificar que todos los IDs son registros válidos de esta obra sin plantilla
-            const count = await prisma.registroDiario.count({
-                where: {
-                    id:          { in: registroIds },
-                    obraId,
-                    empresaId:   user.empresaId,
-                    plantillaId: null,
-                },
-            });
+            // Verificar que todos los IDs son registros válidos de esta obra
+            // Si allowReasignacion=false (comportamiento original), también exige plantillaId null
+            const whereValidacion = allowReasignacion
+                ? { id: { in: registroIds }, obraId, empresaId: user.empresaId }
+                : { id: { in: registroIds }, obraId, empresaId: user.empresaId, plantillaId: null };
+
+            const count = await prisma.registroDiario.count({ where: whereValidacion });
             if (count !== registroIds.length)
                 return Response.json(
-                    { error: 'Algunos registroIds no son válidos, no pertenecen a esta obra o ya tienen plantilla asignada' },
+                    {
+                        error: allowReasignacion
+                            ? 'Algunos registroIds no son válidos o no pertenecen a esta obra'
+                            : 'Algunos registroIds no son válidos, no pertenecen a esta obra o ya tienen plantilla asignada',
+                    },
                     { status: 400 }
                 );
         }
@@ -79,17 +84,20 @@ export async function POST(req: NextRequest, { params }: Params) {
             if (plantilla.status === 'TERMINADA')
                 return Response.json({ error: 'No se puede asignar a una plantilla TERMINADA' }, { status: 400 });
 
-            const metrosAgg = await prisma.registroDiario.aggregate({
-                where: { obraId, plantillaId: plantilla.id, empresaId: user.empresaId },
-                _sum: { metrosLineales: true },
-            });
-            const metrosUsados = Number(metrosAgg._sum.metrosLineales ?? 0);
-            const metrosContratados = Number(plantilla.metrosContratados);
-            if (metrosContratados > 0 && metrosUsados >= metrosContratados)
-                return Response.json(
-                    { error: 'La plantilla ya alcanzó sus metros contratados' },
-                    { status: 400 }
-                );
+            // Solo validar capacidad si NO es reasignación correctiva
+            if (!allowReasignacion) {
+                const metrosAgg = await prisma.registroDiario.aggregate({
+                    where: { obraId, plantillaId: plantilla.id, empresaId: user.empresaId },
+                    _sum: { metrosLineales: true },
+                });
+                const metrosUsados = Number(metrosAgg._sum.metrosLineales ?? 0);
+                const metrosContratados = Number(plantilla.metrosContratados);
+                if (metrosContratados > 0 && metrosUsados >= metrosContratados)
+                    return Response.json(
+                        { error: 'La plantilla ya alcanzó sus metros contratados' },
+                        { status: 400 }
+                    );
+            }
 
             plantillaId = plantilla.id;
         }
@@ -124,10 +132,15 @@ export async function POST(req: NextRequest, { params }: Params) {
             );
         }
 
-        // ── Actualizar registros: selectivos o todos sin plantilla ────────────
-        const whereClause = registroIds
-            ? { id: { in: registroIds }, obraId, empresaId: user.empresaId, plantillaId: null }
-            : { obraId, empresaId: user.empresaId, plantillaId: null };
+        // ── Actualizar registros ──────────────────────────────────────────────
+        let whereClause: object;
+        if (registroIds) {
+            // Actualizar solo los IDs seleccionados (con o sin plantilla actual)
+            whereClause = { id: { in: registroIds }, obraId, empresaId: user.empresaId };
+        } else {
+            // Sin registroIds: solo actualizar los que no tienen plantilla (comportamiento original)
+            whereClause = { obraId, empresaId: user.empresaId, plantillaId: null };
+        }
 
         const resultado = await prisma.registroDiario.updateMany({
             where: whereClause,
