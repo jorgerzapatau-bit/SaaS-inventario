@@ -1361,10 +1361,11 @@ function TabCostos({ obraId }: { obraId: string }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 // ─── Resumen Financiero ───────────────────────────────────────────────────────
-function ResumenFinanciero({ rf, moneda, metrosPerforados }: {
+function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes }: {
     rf: NonNullable<ObraDetalle['resumenFinanciero']>;
     moneda: string;
     metrosPerforados?: number;
+    cortes?: Corte[];
 }) {
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -1380,9 +1381,59 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados }: {
         ? rf.utilidad / metrosPerforados
         : null;
 
+    // ── Estado de facturación ─────────────────────────────────────────────────
+    const produccionTotalMetros = metrosPerforados ?? 0;
+    const metrosFacturados      = (cortes ?? [])
+        .filter(c => (c.montoFacturado ?? 0) > 0)
+        .reduce((s, c) => s + (c.metrosLineales ?? 0), 0);
+    const hayCortes = (cortes ?? []).length > 0;
+    const hayMontoFacturado = (cortes ?? []).some(c => (c.montoFacturado ?? 0) > 0);
+
+    type EstadoFacturacion = 'sin_facturar' | 'parcial' | 'completa';
+    let estadoFacturacion: EstadoFacturacion;
+    if (!hayMontoFacturado) {
+        estadoFacturacion = 'sin_facturar';
+    } else if (produccionTotalMetros > 0 && metrosFacturados < produccionTotalMetros - 0.01) {
+        estadoFacturacion = 'parcial';
+    } else {
+        estadoFacturacion = 'completa';
+    }
+
+    const estadoConfig = {
+        sin_facturar: {
+            label: 'Producción en proceso — pendiente de facturación',
+            color: 'text-amber-600',
+            bg:    'bg-amber-50 border-amber-100',
+            dot:   'bg-amber-400',
+        },
+        parcial: {
+            label: 'Facturación parcial — faltan cortes por registrar',
+            color: 'text-blue-600',
+            bg:    'bg-blue-50 border-blue-100',
+            dot:   'bg-blue-400',
+        },
+        completa: {
+            label: 'Obra completamente facturada',
+            color: 'text-green-600',
+            bg:    'bg-green-50 border-green-100',
+            dot:   'bg-green-500',
+        },
+    }[estadoFacturacion];
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Resumen Financiero</h2>
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Resumen Financiero</h2>
+
+            {/* Indicador de estado de facturación */}
+            <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 mb-3 ${estadoConfig.bg}`}>
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${estadoConfig.dot}`} />
+                <p className={`text-xs font-medium ${estadoConfig.color}`}>{estadoConfig.label}</p>
+                {estadoFacturacion === 'parcial' && produccionTotalMetros > 0 && (
+                    <p className="text-xs text-blue-400 ml-auto flex-shrink-0">
+                        {metrosFacturados.toFixed(1)} / {produccionTotalMetros.toFixed(1)} m
+                    </p>
+                )}
+            </div>
 
             {/* Fila 1: desglose de costos */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
@@ -1629,7 +1680,7 @@ export default function ObraDetallePage() {
 
             {/* Resumen Financiero */}
             {obra.resumenFinanciero && (
-                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} />
+                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} />
             )}
 
             {/* Tabs */}
