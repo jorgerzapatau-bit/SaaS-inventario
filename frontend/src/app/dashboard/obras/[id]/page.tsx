@@ -1361,73 +1361,99 @@ function TabCostos({ obraId }: { obraId: string }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 // ─── Resumen Financiero ───────────────────────────────────────────────────────
-function ResumenFinanciero({ rf, moneda }: {
+function ResumenFinanciero({ rf, moneda, metrosPerforados }: {
     rf: NonNullable<ObraDetalle['resumenFinanciero']>;
     moneda: string;
+    metrosPerforados?: number;
 }) {
     const mxn = (n: number) =>
-        n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
     const pct = (n: number | null) => n != null ? `${n.toFixed(1)}%` : '—';
     const metro = (n: number | null) => n != null ? `${mxn(n)}/m` : '—';
 
-    const utilPos = rf.utilidad >= 0;
+    const utilPos     = (rf.utilidad ?? 0) >= 0;
+    const costoTotal  = (rf.costoProduccion ?? 0) + (rf.gastosAdicionales ?? 0) + (rf.costoInsumos ?? 0);
+    const utilPrefix  = utilPos ? '+' : '';
+
+    // Insight: utilidad por metro perforado
+    const utilPorMetro = (metrosPerforados && metrosPerforados > 0 && rf.utilidad != null)
+        ? rf.utilidad / metrosPerforados
+        : null;
 
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Resumen Financiero</h2>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            {/* Fila 1: desglose de costos */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                 {/* Facturado */}
                 <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">Facturado</p>
-                    <p className="text-base font-bold text-gray-800">{mxn(rf.facturado)}</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.facturado ?? 0)}</p>
                     <p className="text-xs text-gray-400">{moneda}</p>
                 </div>
                 {/* Costo Producción */}
                 <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">Costo Producción</p>
-                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoProduccion)}</p>
-                    <p className="text-xs text-gray-400">Diesel · Op · Peones · Renta</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoProduccion ?? 0)}</p>
+                    <p className="text-xs text-gray-400">(Registro diario)</p>
                 </div>
                 {/* Gastos Adicionales */}
                 <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">Gastos Adicionales</p>
-                    <p className="text-base font-bold text-gray-800">{mxn(rf.gastosAdicionales)}</p>
-                    <p className="text-xs text-gray-400">Gastos manuales</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.gastosAdicionales ?? 0)}</p>
+                    <p className="text-xs text-gray-400">(No incluidos en operación)</p>
                 </div>
                 {/* Insumos */}
                 <div className="bg-gray-50 rounded-xl p-3">
                     <p className="text-xs text-gray-400 mb-1">Insumos</p>
-                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoInsumos)}</p>
-                    <p className="text-xs text-gray-400">Salidas de almacén</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoInsumos ?? 0)}</p>
+                    <p className="text-xs text-gray-400">Movimientos de almacén</p>
                 </div>
             </div>
 
+            {/* Fila 2: costo total */}
+            <div className="mb-4">
+                <div className="bg-gray-100 rounded-xl p-3 flex items-center justify-between">
+                    <div>
+                        <p className="text-xs text-gray-500 font-medium">Costo total</p>
+                        <p className="text-xs text-gray-400">Producción + gastos + insumos</p>
+                    </div>
+                    <p className="text-lg font-extrabold text-gray-800">{mxn(costoTotal)}</p>
+                </div>
+            </div>
+
+            {/* Fila 3: utilidad + margen + costo/m */}
             <div className="border-t border-gray-100 pt-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* Utilidad — destacada */}
-                    <div className={`rounded-xl p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
-                        <p className="text-xs text-gray-400 mb-1">Utilidad</p>
-                        <p className={`text-xl font-extrabold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
-                            {mxn(rf.utilidad)}
+                    {/* Utilidad — protagonista */}
+                    <div className={`rounded-xl p-4 ${utilPos ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'}`}>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Utilidad</p>
+                        <p className={`text-2xl font-extrabold tracking-tight ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                            {utilPrefix}{mxn(rf.utilidad ?? 0)}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                            Costo total: {mxn(rf.costoTotal)}
-                        </p>
-                    </div>
-                    {/* Margen % */}
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">Margen %</p>
-                        <p className={`text-xl font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                        <p className={`text-base font-bold mt-1 ${utilPos ? 'text-green-500' : 'text-red-500'}`}>
                             {pct(rf.margenPct)}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">Sobre lo facturado</p>
+                        {utilPorMetro != null && (
+                            <p className="text-xs text-gray-400 mt-2">
+                                {utilPos ? 'Ganando' : 'Perdiendo'} {mxn(Math.abs(utilPorMetro))} por metro
+                            </p>
+                        )}
                     </div>
-                    {/* $/metro */}
-                    <div className="bg-gray-50 rounded-xl p-3">
-                        <p className="text-xs text-gray-400 mb-1">Costo por metro</p>
-                        <p className="text-xl font-bold text-gray-800">{metro(rf.costoPorMetro)}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Costo total / metros perf.</p>
+                    {/* Margen % */}
+                    <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-xs text-gray-400 mb-1">Margen</p>
+                        <p className={`text-2xl font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                            {pct(rf.margenPct)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">Sobre lo facturado</p>
+                    </div>
+                    {/* Costo real por metro */}
+                    <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-xs text-gray-400 mb-1">Costo real por metro</p>
+                        <p className="text-2xl font-bold text-gray-800">{metro(rf.costoPorMetro ?? null)}</p>
+                        <p className="text-xs text-gray-400 mt-1">Costo total / metros perf.</p>
                     </div>
                 </div>
             </div>
@@ -1617,7 +1643,7 @@ export default function ObraDetallePage() {
 
             {/* Resumen Financiero */}
             {obra.resumenFinanciero && (
-                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} />
+                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} />
             )}
 
             {/* Tabs */}
