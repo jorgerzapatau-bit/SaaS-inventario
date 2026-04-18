@@ -618,11 +618,15 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
             registrosSinCorte++;
         }
     }
-    const costoSemana    = Number(semana.costoTotal ?? 0);
+    const costoSemana          = Number(semana.costoTotal ?? 0);
+    const sinCortesFacturados  = ingresoSemana === 0;
+    // Si no hay ingresos reales: utilidad = costo negativo. Si hay: ingreso - costo.
     const utilidadSemana = ingresoSemana - costoSemana;
     const margenSemana   = ingresoSemana > 0
         ? (utilidadSemana / ingresoSemana) * 100
         : null;
+    // Mostrar bloque si hay costos o registros (independientemente de si hay cortes)
+    const mostrarResultado = costoSemana > 0 || semana.registros.length > 0;
 
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -790,16 +794,25 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                     </div>
 
                     {/* ── Resultado semanal ──────────────────────────────────── */}
-                    {ingresoSemana > 0 && (
+                    {mostrarResultado && (
                         <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                                 <DollarSign size={12} /> Resultado semanal
                             </p>
+                            {sinCortesFacturados && (
+                                <p className="text-xs text-amber-600 mb-3 flex items-center gap-1.5">
+                                    <Info size={10} className="flex-shrink-0" />
+                                    Producción en proceso — pendiente de facturación
+                                </p>
+                            )}
+                            {!sinCortesFacturados && <p className="mb-3" />}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                                     <p className="text-xs text-gray-400 mb-1">Ingreso real</p>
                                     <p className="text-base font-bold text-gray-800">{fmtMXN(ingresoSemana)}</p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Prorateado por metros en corte</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                        {sinCortesFacturados ? 'Sin cortes facturados' : 'Prorateado por metros en corte'}
+                                    </p>
                                 </div>
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                                     <p className="text-xs text-gray-400 mb-1">Costo</p>
@@ -815,12 +828,14 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                                         Ingreso − costo
                                     </p>
                                 </div>
-                                <div className={`rounded-xl border p-3 ${(margenSemana ?? 0) >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                                     <p className="text-xs text-gray-400 mb-1">Margen</p>
-                                    <p className={`text-base font-bold ${(margenSemana ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    <p className={`text-base font-bold ${margenSemana != null && margenSemana >= 0 ? 'text-green-600' : margenSemana != null ? 'text-red-600' : 'text-gray-400'}`}>
                                         {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
                                     </p>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">
+                                        {sinCortesFacturados ? 'Sin ingreso registrado' : 'Utilidad / ingreso'}
+                                    </p>
                                 </div>
                             </div>
                             {registrosSinCorte > 0 && (
