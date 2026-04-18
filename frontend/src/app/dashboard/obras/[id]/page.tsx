@@ -124,6 +124,16 @@ type ObraDetalle = {
         montoFacturado: number;
         costoInsumos: number;
     };
+    resumenFinanciero?: {
+        facturado: number;
+        costoProduccion: number;
+        gastosAdicionales: number;
+        costoInsumos: number;
+        costoTotal: number;
+        utilidad: number;
+        margenPct: number | null;
+        costoPorMetro: number | null;
+    };
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1350,6 +1360,81 @@ function TabCostos({ obraId }: { obraId: string }) {
 }
 
 // ─── Página principal ─────────────────────────────────────────────────────────
+// ─── Resumen Financiero ───────────────────────────────────────────────────────
+function ResumenFinanciero({ rf, moneda }: {
+    rf: NonNullable<ObraDetalle['resumenFinanciero']>;
+    moneda: string;
+}) {
+    const mxn = (n: number) =>
+        n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const pct = (n: number | null) => n != null ? `${n.toFixed(1)}%` : '—';
+    const metro = (n: number | null) => n != null ? `${mxn(n)}/m` : '—';
+
+    const utilPos = rf.utilidad >= 0;
+
+    return (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Resumen Financiero</h2>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {/* Facturado */}
+                <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">Facturado</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.facturado)}</p>
+                    <p className="text-xs text-gray-400">{moneda}</p>
+                </div>
+                {/* Costo Producción */}
+                <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">Costo Producción</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoProduccion)}</p>
+                    <p className="text-xs text-gray-400">Diesel · Op · Peones · Renta</p>
+                </div>
+                {/* Gastos Adicionales */}
+                <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">Gastos Adicionales</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.gastosAdicionales)}</p>
+                    <p className="text-xs text-gray-400">Gastos manuales</p>
+                </div>
+                {/* Insumos */}
+                <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-400 mb-1">Insumos</p>
+                    <p className="text-base font-bold text-gray-800">{mxn(rf.costoInsumos)}</p>
+                    <p className="text-xs text-gray-400">Salidas de almacén</p>
+                </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Utilidad — destacada */}
+                    <div className={`rounded-xl p-3 ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
+                        <p className="text-xs text-gray-400 mb-1">Utilidad</p>
+                        <p className={`text-xl font-extrabold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                            {mxn(rf.utilidad)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            Costo total: {mxn(rf.costoTotal)}
+                        </p>
+                    </div>
+                    {/* Margen % */}
+                    <div className="bg-gray-50 rounded-xl p-3">
+                        <p className="text-xs text-gray-400 mb-1">Margen %</p>
+                        <p className={`text-xl font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                            {pct(rf.margenPct)}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">Sobre lo facturado</p>
+                    </div>
+                    {/* $/metro */}
+                    <div className="bg-gray-50 rounded-xl p-3">
+                        <p className="text-xs text-gray-400 mb-1">Costo por metro</p>
+                        <p className="text-xl font-bold text-gray-800">{metro(rf.costoPorMetro)}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Costo total / metros perf.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function ObraDetallePage() {
     const params = useParams();
     const router = useRouter();
@@ -1529,6 +1614,11 @@ export default function ObraDetallePage() {
                     );
                 })()}
             </div>
+
+            {/* Resumen Financiero */}
+            {obra.resumenFinanciero && (
+                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} />
+            )}
 
             {/* Tabs */}
             <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit flex-wrap">
