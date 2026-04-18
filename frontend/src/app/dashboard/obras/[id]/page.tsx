@@ -1461,7 +1461,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }:
         if (!calcParcialPorPrecio && !sinPreciosEnAbsoluto && !hayMetrosSinPlantilla) return null;
         const causas: string[] = [];
         if (plantillasSinPrecio > 0) causas.push('faltan precios en algunas plantillas');
-        if (hayMetrosSinPlantilla)   causas.push('existen registros sin plantilla asignada');
+        if (hayMetrosSinPlantilla)   causas.push('hay metros producidos no cubiertos por las plantillas configuradas');
         return `estimación parcial — ${causas.join(' y ')}`;
     })();
 
