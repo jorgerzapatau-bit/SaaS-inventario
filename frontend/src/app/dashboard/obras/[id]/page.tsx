@@ -6,6 +6,7 @@ import {
     HardHat, ArrowLeft, Plus, Edit, Trash2,
     CheckCircle, PauseCircle, Clock, Wrench,
     FileText, Package, ChevronDown, ChevronUp,
+    AlertTriangle, X, CheckCircle2,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -152,6 +153,396 @@ const CORTE_STATUS_STYLE: Record<string, string> = {
 const fmt   = (n: number) => n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
 const fmt2  = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fDate = (s: string) => new Date(s).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// ─── Modal Regularizar registros sin plantilla ────────────────────────────────
+type PlantillaElegible = {
+    id: string;
+    numero: number;
+    status: 'ACTIVA' | 'PAUSADA';
+    metrosContratados: number;
+    metrosUsados: number;
+    capacidadDisponible: number;
+    elegible: boolean;
+    precioUnitario: number | null;
+    moneda: string;
+    fechaInicio: string | null;
+    fechaFin: string | null;
+    notas: string | null;
+};
+
+type RegularizarData = {
+    registrosSinPlantilla: number;
+    metrosSinPlantilla: number;
+    plantillasElegibles: PlantillaElegible[];
+};
+
+function RegularizarModal({
+    obraId,
+    metrosSinPlantilla,
+    onClose,
+    onSaved,
+}: {
+    obraId: string;
+    metrosSinPlantilla: number;
+    onClose: () => void;
+    onSaved: () => void;
+}) {
+    // Fases: 'seleccion' | 'existente' | 'nueva'
+    const [fase, setFase] = useState<'seleccion' | 'existente' | 'nueva'>('seleccion');
+    const [datos, setDatos] = useState<RegularizarData | null>(null);
+    const [loadingDatos, setLoadingDatos] = useState(true);
+    const [plantillaSeleccionada, setPlantillaSeleccionada] = useState<string>('');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    // Form nueva plantilla
+    const [formNueva, setFormNueva] = useState({
+        numero: '',
+        metrosContratados: '',
+        precioUnitario: '',
+        moneda: 'MXN',
+        fechaInicio: '',
+        fechaFin: '',
+        notas: '',
+    });
+
+    useEffect(() => {
+        fetchApi(`/obras/${obraId}/regularizar`)
+            .then((d: RegularizarData) => {
+                setDatos(d);
+                // Pre-seleccionar la primera elegible si existe
+                const primera = d.plantillasElegibles.find(p => p.elegible);
+                if (primera) setPlantillaSeleccionada(primera.id);
+            })
+            .catch(() => setError('No se pudieron cargar los datos'))
+            .finally(() => setLoadingDatos(false));
+    }, [obraId]);
+
+    const hayElegibles = (datos?.plantillasElegibles ?? []).some(p => p.elegible);
+
+    const setNueva = (key: keyof typeof formNueva) =>
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+            setFormNueva(f => ({ ...f, [key]: e.target.value }));
+
+    const inpNueva = (label: string, key: keyof typeof formNueva, type = 'text', placeholder = '') => (
+        <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+            <input
+                type={type}
+                value={String(formNueva[key])}
+                onChange={setNueva(key)}
+                placeholder={placeholder}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+        </div>
+    );
+
+    const handleAsignarExistente = async () => {
+        if (!plantillaSeleccionada) { setError('Selecciona una plantilla'); return; }
+        setSaving(true); setError('');
+        try {
+            const res = await fetchApi(`/obras/${obraId}/regularizar`, {
+                method: 'POST',
+                body: JSON.stringify({ plantillaId: plantillaSeleccionada }),
+            });
+            setSuccess(`${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''} correctamente`);
+            setTimeout(() => { onSaved(); }, 1200);
+        } catch (e: any) {
+            setError(e.message || 'Error al asignar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCrearYAsignar = async () => {
+        if (!formNueva.numero || !formNueva.metrosContratados) {
+            setError('Número y metros contratados son requeridos');
+            return;
+        }
+        setSaving(true); setError('');
+        try {
+            const res = await fetchApi(`/obras/${obraId}/regularizar`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    crearPlantilla: {
+                        numero:            Number(formNueva.numero),
+                        metrosContratados: Number(formNueva.metrosContratados),
+                        precioUnitario:    formNueva.precioUnitario ? Number(formNueva.precioUnitario) : null,
+                        moneda:            formNueva.moneda,
+                        fechaInicio:       formNueva.fechaInicio || null,
+                        fechaFin:          formNueva.fechaFin    || null,
+                        notas:             formNueva.notas       || null,
+                    },
+                }),
+            });
+            setSuccess(`Plantilla creada y ${res.registrosActualizados} registro${res.registrosActualizados !== 1 ? 's' : ''} asignado${res.registrosActualizados !== 1 ? 's' : ''}`);
+            setTimeout(() => { onSaved(); }, 1200);
+        } catch (e: any) {
+            setError(e.message || 'Error al crear plantilla');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── FASE: Selección ───────────────────────────────────────────────────────
+    const renderSeleccion = () => (
+        <div className="px-6 py-5 space-y-4">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                    <p className="text-sm font-semibold text-amber-700">
+                        {datos?.registrosSinPlantilla ?? '…'} registro{(datos?.registrosSinPlantilla ?? 0) !== 1 ? 's' : ''} sin plantilla asignada
+                    </p>
+                    <p className="text-xs text-amber-600 mt-0.5">
+                        {metrosSinPlantilla.toFixed(1)} m perforados no están vinculados a ninguna plantilla de contrato.
+                    </p>
+                </div>
+            </div>
+
+            <p className="text-sm text-gray-500">¿Cómo quieres regularizarlos?</p>
+
+            <div className="space-y-3">
+                {/* Opción 1: Asignar a existente */}
+                <button
+                    onClick={() => hayElegibles && setFase('existente')}
+                    disabled={!hayElegibles || loadingDatos}
+                    className={`w-full text-left rounded-xl border-2 p-4 transition-all ${
+                        hayElegibles && !loadingDatos
+                            ? 'border-blue-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer'
+                            : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-60'
+                    }`}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${hayElegibles && !loadingDatos ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                            <FileText size={16} className={hayElegibles && !loadingDatos ? 'text-blue-600' : 'text-gray-400'} />
+                        </div>
+                        <div>
+                            <p className={`text-sm font-semibold ${hayElegibles && !loadingDatos ? 'text-gray-800' : 'text-gray-400'}`}>
+                                Asignar a plantilla existente
+                            </p>
+                            {loadingDatos ? (
+                                <p className="text-xs text-gray-400 mt-0.5">Cargando plantillas...</p>
+                            ) : !hayElegibles ? (
+                                <p className="text-xs text-amber-500 mt-0.5 font-medium">
+                                    No hay plantillas activas con capacidad disponible
+                                </p>
+                            ) : (
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    {(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length} plantilla{(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length !== 1 ? 's' : ''} disponible{(datos?.plantillasElegibles ?? []).filter(p => p.elegible).length !== 1 ? 's' : ''}
+                                </p>
+                            )}
+                        </div>
+                        {hayElegibles && !loadingDatos && (
+                            <span className="ml-auto text-blue-400 text-lg">→</span>
+                        )}
+                    </div>
+                </button>
+
+                {/* Opción 2: Crear nueva */}
+                <button
+                    onClick={() => setFase('nueva')}
+                    className="w-full text-left rounded-xl border-2 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 p-4 transition-all cursor-pointer"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                            <Plus size={16} className="text-emerald-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-gray-800">Crear nueva plantilla</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Define los términos del contrato y asigna los registros</p>
+                        </div>
+                        <span className="ml-auto text-emerald-400 text-lg">→</span>
+                    </div>
+                </button>
+            </div>
+        </div>
+    );
+
+    // ── FASE: Asignar a existente ─────────────────────────────────────────────
+    const renderExistente = () => {
+        const elegibles = (datos?.plantillasElegibles ?? []).filter(p => p.elegible);
+        return (
+            <div className="px-6 py-5 space-y-4">
+                <p className="text-xs text-gray-500">
+                    Solo se muestran plantillas activas o pausadas con capacidad disponible.
+                </p>
+
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {elegibles.map(p => {
+                        const pctUsado = p.metrosContratados > 0
+                            ? Math.round((p.metrosUsados / p.metrosContratados) * 100)
+                            : 0;
+                        const selected = plantillaSeleccionada === p.id;
+                        return (
+                            <label
+                                key={p.id}
+                                className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                                    selected
+                                        ? 'border-blue-400 bg-blue-50'
+                                        : 'border-gray-100 hover:border-blue-200 hover:bg-gray-50'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="plantilla"
+                                    value={p.id}
+                                    checked={selected}
+                                    onChange={() => setPlantillaSeleccionada(p.id)}
+                                    className="mt-0.5 accent-blue-600 flex-shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-sm font-semibold text-gray-800">
+                                            Plantilla {p.numero}
+                                        </span>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                            p.status === 'ACTIVA'
+                                                ? 'bg-green-100 text-green-700'
+                                                : 'bg-yellow-100 text-yellow-700'
+                                        }`}>
+                                            {p.status === 'ACTIVA' ? 'Activa' : 'Pausada'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                                        <span className="font-medium text-emerald-600">
+                                            {p.capacidadDisponible.toFixed(1)} m disponibles
+                                        </span>
+                                        <span className="text-gray-300">·</span>
+                                        <span>{p.metrosUsados.toFixed(1)} / {p.metrosContratados} m usados</span>
+                                    </div>
+                                    <div className="mt-1.5 w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-blue-400 rounded-full transition-all"
+                                            style={{ width: `${pctUsado}%` }}
+                                        />
+                                    </div>
+                                    {p.fechaInicio && (
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            {fDate(p.fechaInicio)}{p.fechaFin ? ` → ${fDate(p.fechaFin)}` : ''}
+                                        </p>
+                                    )}
+                                </div>
+                            </label>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
+
+    // ── FASE: Crear nueva ─────────────────────────────────────────────────────
+    const renderNueva = () => (
+        <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+                {inpNueva('Número de plantilla', 'numero', 'number', 'ej. 3')}
+                {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500')}
+                {inpNueva('Precio unitario (P.U.)', 'precioUnitario', 'number', 'ej. 24.50')}
+                <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
+                    <select
+                        value={formNueva.moneda}
+                        onChange={setNueva('moneda')}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                        <option value="MXN">MXN</option>
+                        <option value="USD">USD</option>
+                    </select>
+                </div>
+                {inpNueva('Fecha inicio', 'fechaInicio', 'date')}
+                {inpNueva('Fecha fin', 'fechaFin', 'date')}
+            </div>
+            <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+                <textarea
+                    value={formNueva.notas}
+                    onChange={e => setFormNueva(f => ({ ...f, notas: e.target.value }))}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none resize-none"
+                    placeholder="Opcional"
+                />
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-600">
+                Al guardar: se creará esta plantilla y se asignarán todos los registros sin plantilla a ella.
+            </div>
+        </div>
+    );
+
+    const tituloFase = {
+        seleccion: 'Regularizar registros sin plantilla',
+        existente: 'Asignar a plantilla existente',
+        nueva: 'Crear nueva plantilla',
+    }[fase];
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="border-b border-gray-100 px-6 pt-6 pb-4 flex-shrink-0 flex items-start justify-between gap-3">
+                    <div>
+                        {fase !== 'seleccion' && (
+                            <button
+                                onClick={() => { setFase('seleccion'); setError(''); }}
+                                className="text-xs text-gray-400 hover:text-blue-600 mb-1 flex items-center gap-1 transition-colors"
+                            >
+                                ← Volver
+                            </button>
+                        )}
+                        <h2 className="text-lg font-bold text-gray-800">{tituloFase}</h2>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={16} />
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="overflow-y-auto flex-1">
+                    {success ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 px-6">
+                            <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                                <CheckCircle2 size={28} className="text-green-600" />
+                            </div>
+                            <p className="text-base font-semibold text-gray-800 text-center">{success}</p>
+                            <p className="text-xs text-gray-400 text-center">Recargando vista...</p>
+                        </div>
+                    ) : fase === 'seleccion' ? renderSeleccion()
+                      : fase === 'existente' ? renderExistente()
+                      : renderNueva()
+                    }
+                </div>
+
+                {error && (
+                    <p className="text-xs text-red-500 px-6 pb-2 flex-shrink-0">{error}</p>
+                )}
+
+                {/* Footer */}
+                {!success && fase !== 'seleccion' && (
+                    <div className="border-t border-gray-100 px-6 py-4 flex gap-2 flex-shrink-0">
+                        <button
+                            onClick={() => { setFase('seleccion'); setError(''); }}
+                            className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+                        >
+                            ← Atrás
+                        </button>
+                        <button
+                            onClick={fase === 'existente' ? handleAsignarExistente : handleCrearYAsignar}
+                            disabled={saving}
+                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors"
+                        >
+                            {saving
+                                ? 'Guardando...'
+                                : fase === 'existente'
+                                    ? 'Asignar registros'
+                                    : 'Crear y asignar'
+                            }
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
 // ─── Modal Corte de Facturación (replica hoja Plantilla) ──────────────────────
 function CorteModal({
@@ -1362,13 +1753,14 @@ function TabCostos({ obraId }: { obraId: string }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 // ─── Resumen Financiero ───────────────────────────────────────────────────────
-function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, onGoToPlantillas }: {
+function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, onGoToPlantillas, onRegularizar }: {
     rf: NonNullable<ObraDetalle['resumenFinanciero']>;
     moneda: string;
     metrosPerforados?: number;
     cortes?: Corte[];
     plantillas?: PlantillaObraDetalle[];
     onGoToPlantillas?: () => void;
+    onRegularizar?: () => void;
 }) {
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -1486,11 +1878,19 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                         Pendiente por facturar: <span className="font-semibold">{metrosPendientes.toFixed(1)} m</span>
                     </p>
                     {hayMetrosSinPlantilla && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
                             <p className="text-xs text-amber-500 font-medium">
                                 ⚠️ {metrosSinPlantilla.toFixed(1)} m sin plantilla asignada
                             </p>
-                            {onGoToPlantillas && (
+                            {onRegularizar ? (
+                                <button
+                                    onClick={onRegularizar}
+                                    className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 font-semibold px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    <AlertTriangle size={10} />
+                                    Asignar a plantilla
+                                </button>
+                            ) : onGoToPlantillas && (
                                 <button
                                     onClick={onGoToPlantillas}
                                     className="text-xs text-blue-500 underline hover:text-blue-700 transition-colors"
@@ -1585,6 +1985,7 @@ export default function ObraDetallePage() {
     const [loading, setLoading] = useState(true);
     const [error,   setError]   = useState('');
     const [tab, setTab] = useState<'operacion' | 'plantillas' | 'cortes' | 'costos'>('operacion');
+    const [regularizarOpen, setRegularizarOpen] = useState(false);
 
     const load = async () => {
         setLoading(true);
@@ -1758,7 +2159,15 @@ export default function ObraDetallePage() {
 
             {/* Resumen Financiero */}
             {obra.resumenFinanciero && (
-                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} plantillas={obra.plantillas} onGoToPlantillas={() => setTab('plantillas')} />
+                <ResumenFinanciero
+                    rf={obra.resumenFinanciero}
+                    moneda={obra.moneda}
+                    metrosPerforados={obra.metricas?.metrosPerforados}
+                    cortes={obra.cortesFacturacion}
+                    plantillas={obra.plantillas}
+                    onGoToPlantillas={() => setTab('plantillas')}
+                    onRegularizar={() => setRegularizarOpen(true)}
+                />
             )}
 
             {/* Tabs */}
@@ -1797,6 +2206,20 @@ export default function ObraDetallePage() {
                     {tab === 'costos'     && <TabCostos obraId={obraId} />}
                 </div>
             </Card>
+
+            {/* Modal de regularización */}
+            {regularizarOpen && (
+                <RegularizarModal
+                    obraId={obraId}
+                    metrosSinPlantilla={Math.max(
+                        0,
+                        (obra.metricas?.metrosPerforados ?? 0) -
+                        (obra.plantillas?.reduce((s, p) => s + p.metrosContratados, 0) ?? 0)
+                    )}
+                    onClose={() => setRegularizarOpen(false)}
+                    onSaved={() => { setRegularizarOpen(false); load(); }}
+                />
+            )}
         </div>
     );
 }
