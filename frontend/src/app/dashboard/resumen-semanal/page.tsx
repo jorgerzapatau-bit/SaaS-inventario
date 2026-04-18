@@ -36,7 +36,7 @@ type Registro = {
     porcentajePerdida: number | null;
     porcentajeAvance: number | null;
     rentaEquipoDiaria: number | null;
-    plantilla: { id: string; numero: number } | null;
+    plantilla: { id: string; numero: number; precioUnitario: number | null; moneda: string | null } | null;
     corte: { id: string; numero: number; status: string } | null;
     notas: string | null;
     kpi: {
@@ -594,7 +594,7 @@ function TablaGastosOp({ semana }: { semana: ResumenSemana }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SemanaCard — tarjeta expandible por semana
 // ─────────────────────────────────────────────────────────────────────────────
-function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingresoPorMetro: number | null }) {
+function SemanaCard({ semana }: { semana: ResumenSemana }) {
     const [expanded,      setExpanded]      = useState(false);
     const [seccionActiva, setSeccionActiva] = useState<'registros' | 'gastos'>('registros');
 
@@ -602,21 +602,26 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
         r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
     );
 
-    // ── Utilidad semanal estimada ─────────────────────────────────────────────
+    // ── Utilidad semanal estimada (basada en precioUnitario de cada plantilla) ──
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
-    // Validación explícita: el prop debe ser número > 0 y no NaN
-    const precioValido = typeof ingresoPorMetro === 'number' && !isNaN(ingresoPorMetro) && ingresoPorMetro > 0;
-    console.log('[SemanaCard] ingresoPorMetro:', ingresoPorMetro, '| precioValido:', precioValido, '| metros:', semana.metrosLineales);
-
-    const ingresoSemana  = (precioValido && semana.metrosLineales > 0)
-        ? ingresoPorMetro! * semana.metrosLineales
-        : null;
-    const utilidadSemana = ingresoSemana != null
-        ? ingresoSemana - semana.costoTotal
-        : null;
-    const margenSemana   = (utilidadSemana != null && ingresoSemana != null && ingresoSemana > 0)
+    // Por cada registro: ingresoRegistro = metrosLineales × plantilla.precioUnitario
+    // Si el registro no tiene plantilla o la plantilla no tiene precioUnitario → no suma
+    let ingresoSemana     = 0;
+    let registrosSinPrecio = 0;
+    for (const r of semana.registros) {
+        const precio = r.plantilla?.precioUnitario;
+        if (precio != null && precio > 0) {
+            ingresoSemana += r.metrosLineales * precio;
+        } else {
+            registrosSinPrecio++;
+        }
+    }
+    // Solo mostrar el bloque si al menos un registro aportó ingreso
+    const tieneIngreso   = ingresoSemana > 0;
+    const utilidadSemana = tieneIngreso ? ingresoSemana - semana.costoTotal : null;
+    const margenSemana   = (utilidadSemana != null && ingresoSemana > 0)
         ? (utilidadSemana / ingresoSemana) * 100
         : null;
     const utilPos = (utilidadSemana ?? 0) >= 0;
@@ -787,7 +792,7 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                     </div>
 
                     {/* ── Resultado semanal ──────────────────────────────────── */}
-                    {precioValido && ingresoSemana != null && (
+                    {tieneIngreso && utilidadSemana != null && (
                         <div>
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                                 <DollarSign size={12} /> Resultado semanal
@@ -797,7 +802,7 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                                     <p className="text-xs text-gray-400 mb-1">Ingreso estimado</p>
                                     <p className="text-base font-bold text-gray-800">{mxn(ingresoSemana)}</p>
                                     <p className="text-[10px] text-gray-400 mt-0.5">
-                                        {semana.metrosLineales.toFixed(1)} m × {mxn(ingresoPorMetro!)}/m
+                                        {semana.metrosLineales.toFixed(1)} m perforados
                                     </p>
                                 </div>
                                 <div className="bg-gray-50 rounded-lg p-3">
@@ -822,6 +827,12 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                                     <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
                                 </div>
                             </div>
+                            {registrosSinPrecio > 0 && (
+                                <p className="text-[10px] text-amber-500 mt-2 flex items-center gap-1">
+                                    <Info size={9} />
+                                    {registrosSinPrecio} registro{registrosSinPrecio > 1 ? 's' : ''} sin plantilla/precio configurado — no incluido{registrosSinPrecio > 1 ? 's' : ''} en el ingreso estimado
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -1016,16 +1027,7 @@ function ResumenSemanalInner() {
         };
     }, [semanas]);
 
-    // ── Ingreso por metro estimado ────────────────────────────────────────────
-    // El usuario ingresa el precio de venta por metro directamente en la UI.
-    // No requiere fetch adicional. Se muestra solo si hay datos válidos.
-    const [precioVentaMetro, setPrecioVentaMetro] = useState<string>('');
-    const ingresoPorMetro = useMemo<number | null>(() => {
-        const val = parseFloat(precioVentaMetro);
-        const result = (!isNaN(val) && val > 0) ? val : null;
-        console.log('[ResumenSemanal] precioVentaMetro:', JSON.stringify(precioVentaMetro), '| parsed:', val, '| ingresoPorMetro:', result);
-        return result;
-    }, [precioVentaMetro]);
+
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
@@ -1052,19 +1054,6 @@ function ResumenSemanalInner() {
                         <option value="todos">Todos los equipos</option>
                         {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
                     </select>
-                    <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="10"
-                            placeholder="Precio/metro"
-                            value={precioVentaMetro}
-                            onChange={e => setPrecioVentaMetro(e.target.value)}
-                            className="pl-6 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/20 w-36"
-                            title="Precio de venta por metro (para calcular utilidad estimada)"
-                        />
-                    </div>
                 </div>
             </div>
 
@@ -1111,7 +1100,7 @@ function ResumenSemanalInner() {
             ) : (
                 <div className="space-y-3">
                     {semanas.map(s => (
-                        <SemanaCard key={`${s.anoNum}-${s.semanaNum}-${s.equipoNombre}`} semana={s} ingresoPorMetro={ingresoPorMetro} />
+                        <SemanaCard key={`${s.anoNum}-${s.semanaNum}-${s.equipoNombre}`} semana={s} />
                     ))}
                 </div>
             )}

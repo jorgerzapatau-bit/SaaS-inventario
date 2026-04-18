@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
                 usuario:       { select: { nombre: true } },
                 cliente:       { select: { nombre: true } },
                 obra:          { select: { id: true, nombre: true } },
-                plantilla:     { select: { id: true, numero: true } },
+                plantilla:     { select: { id: true, numero: true, precioUnitario: true, moneda: true } },
                 // Incluir info del corte para saber si ya está facturado
                 corteRegistro: {
                     include: {
