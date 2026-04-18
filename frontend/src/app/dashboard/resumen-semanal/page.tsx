@@ -594,13 +594,27 @@ function TablaGastosOp({ semana }: { semana: ResumenSemana }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SemanaCard — tarjeta expandible por semana
 // ─────────────────────────────────────────────────────────────────────────────
-function SemanaCard({ semana }: { semana: ResumenSemana }) {
+function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingresoPorMetro: number | null }) {
     const [expanded,      setExpanded]      = useState(false);
     const [seccionActiva, setSeccionActiva] = useState<'registros' | 'gastos'>('registros');
 
     const tienePerforacion = semana.registros.some(r =>
         r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
     );
+
+    // ── Utilidad semanal estimada ─────────────────────────────────────────────
+    const mxn = (n: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+    const ingresoSemana  = (ingresoPorMetro != null && semana.metrosLineales > 0)
+        ? ingresoPorMetro * semana.metrosLineales
+        : null;
+    const utilidadSemana = ingresoSemana != null
+        ? ingresoSemana - semana.costoTotal
+        : null;
+    const margenSemana   = (utilidadSemana != null && ingresoSemana != null && ingresoSemana > 0)
+        ? (utilidadSemana / ingresoSemana) * 100
+        : null;
+    const utilPos = (utilidadSemana ?? 0) >= 0;
 
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -654,6 +668,19 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                             ${semana.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                         </p>
                     </div>
+                    {utilidadSemana != null && (
+                        <div className="hidden sm:block border-l border-gray-100 pl-4">
+                            <p className="text-xs text-gray-400">Utilidad est.</p>
+                            <p className={`text-sm font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                {utilPos ? '+' : ''}{mxn(utilidadSemana)}
+                            </p>
+                            {margenSemana != null && (
+                                <p className={`text-[10px] ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
+                                    {margenSemana.toFixed(1)}% margen
+                                </p>
+                            )}
+                        </div>
+                    )}
                     {expanded
                         ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" />
                         : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />}
@@ -766,6 +793,35 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                             </div>
                         </div>
                     </div>
+
+                    {/* ── Utilidad estimada ──────────────────────────────────── */}
+                    {ingresoSemana != null && (
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-gray-50 rounded-lg p-3 text-center">
+                                <p className="text-xs text-gray-400 mb-1">Ingreso estimado</p>
+                                <p className="text-base font-bold text-gray-700">{mxn(ingresoSemana)}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">
+                                    {semana.metrosLineales.toFixed(1)} m × {mxn(ingresoPorMetro!)}/m
+                                </p>
+                            </div>
+                            <div className={`rounded-lg p-3 text-center ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
+                                <p className="text-xs text-gray-400 mb-1">Utilidad</p>
+                                <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                    {utilPos ? '+' : ''}{mxn(utilidadSemana!)}
+                                </p>
+                                <p className={`text-[10px] mt-0.5 ${utilPos ? 'text-green-400' : 'text-red-400'}`}>
+                                    Ingreso − costo producción
+                                </p>
+                            </div>
+                            <div className={`rounded-lg p-3 text-center ${utilPos ? 'bg-green-50' : 'bg-red-50'}`}>
+                                <p className="text-xs text-gray-400 mb-1">Margen semanal</p>
+                                <p className={`text-base font-bold ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                                    {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
+                                </p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ── Pestañas: Registros / Gastos ─────────────────────── */}
                     <div>
@@ -958,6 +1014,15 @@ function ResumenSemanalInner() {
         };
     }, [semanas]);
 
+    // ── Ingreso por metro estimado ────────────────────────────────────────────
+    // El usuario ingresa el precio de venta por metro directamente en la UI.
+    // No requiere fetch adicional. Se muestra solo si hay datos válidos.
+    const [precioVentaMetro, setPrecioVentaMetro] = useState<string>('');
+    const ingresoPorMetro = useMemo<number | null>(() => {
+        const val = parseFloat(precioVentaMetro);
+        return (!isNaN(val) && val > 0) ? val : null;
+    }, [precioVentaMetro]);
+
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
             {/* Header */}
@@ -983,6 +1048,19 @@ function ResumenSemanalInner() {
                         <option value="todos">Todos los equipos</option>
                         {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
                     </select>
+                    <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                        <input
+                            type="number"
+                            min="0"
+                            step="10"
+                            placeholder="Precio/metro"
+                            value={precioVentaMetro}
+                            onChange={e => setPrecioVentaMetro(e.target.value)}
+                            className="pl-6 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/20 w-36"
+                            title="Precio de venta por metro (para calcular utilidad estimada)"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -1029,7 +1107,7 @@ function ResumenSemanalInner() {
             ) : (
                 <div className="space-y-3">
                     {semanas.map(s => (
-                        <SemanaCard key={`${s.anoNum}-${s.semanaNum}-${s.equipoNombre}`} semana={s} />
+                        <SemanaCard key={`${s.anoNum}-${s.semanaNum}-${s.equipoNombre}`} semana={s} ingresoPorMetro={ingresoPorMetro} />
                     ))}
                 </div>
             )}
