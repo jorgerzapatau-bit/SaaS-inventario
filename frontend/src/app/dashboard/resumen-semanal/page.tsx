@@ -188,6 +188,8 @@ function RegistroDiarioRow({ r, index }: { r: Registro; index: number }) {
     const fechaCorta = fechaObj.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
     const semLabel   = r.semanaNum ? `Sem. ${r.semanaNum}/${r.anoNum}` : '';
 
+    // Calcula volumen en el cliente si el backend devolvió null (usado en la columna de la fila compacta)
+    const volRoca = calcVolumenRoca(r);
 
     return (
         <>
