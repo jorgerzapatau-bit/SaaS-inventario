@@ -1362,12 +1362,13 @@ function TabCostos({ obraId }: { obraId: string }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 // ─── Resumen Financiero ───────────────────────────────────────────────────────
-function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }: {
+function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, onGoToPlantillas }: {
     rf: NonNullable<ObraDetalle['resumenFinanciero']>;
     moneda: string;
     metrosPerforados?: number;
     cortes?: Corte[];
     plantillas?: PlantillaObraDetalle[];
+    onGoToPlantillas?: () => void;
 }) {
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -1485,9 +1486,19 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }:
                         Pendiente por facturar: <span className="font-semibold">{metrosPendientes.toFixed(1)} m</span>
                     </p>
                     {hayMetrosSinPlantilla && (
-                        <p className="text-xs text-amber-500 font-medium">
-                            ⚠️ {metrosSinPlantilla.toFixed(1)} m fuera de plantilla
-                        </p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-xs text-amber-500 font-medium">
+                                ⚠️ {metrosSinPlantilla.toFixed(1)} m sin plantilla asignada
+                            </p>
+                            {onGoToPlantillas && (
+                                <button
+                                    onClick={onGoToPlantillas}
+                                    className="text-xs text-blue-500 underline hover:text-blue-700 transition-colors"
+                                >
+                                    Asignar a plantilla
+                                </button>
+                            )}
+                        </div>
                     )}
                     <p className={`text-xs ${estadoConfig.color} opacity-80`}>
                         Facturación pendiente estimada:{' '}
@@ -1747,7 +1758,7 @@ export default function ObraDetallePage() {
 
             {/* Resumen Financiero */}
             {obra.resumenFinanciero && (
-                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} plantillas={obra.plantillas} />
+                <ResumenFinanciero rf={obra.resumenFinanciero} moneda={obra.moneda} metrosPerforados={obra.metricas?.metrosPerforados} cortes={obra.cortesFacturacion} plantillas={obra.plantillas} onGoToPlantillas={() => setTab('plantillas')} />
             )}
 
             {/* Tabs */}
