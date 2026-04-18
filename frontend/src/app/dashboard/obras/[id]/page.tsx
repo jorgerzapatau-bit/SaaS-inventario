@@ -1484,16 +1484,19 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }:
                     <p className={`text-xs ${estadoConfig.color} opacity-80`}>
                         Pendiente por facturar: <span className="font-semibold">{metrosPendientes.toFixed(1)} m</span>
                     </p>
+                    {hayMetrosSinPlantilla && (
+                        <p className="text-xs text-amber-500 font-medium">
+                            ⚠️ {metrosSinPlantilla.toFixed(1)} m fuera de plantilla
+                        </p>
+                    )}
                     <p className={`text-xs ${estadoConfig.color} opacity-80`}>
                         Facturación pendiente estimada:{' '}
-                        {sinPreciosEnAbsoluto && !hayMetrosSinPlantilla
-                            ? <span className="font-medium italic">(estimación parcial — faltan precios en plantillas)</span>
-                            : <>
-                                <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
-                                {mensajeEstimacionParcial && (
-                                    <span className="font-normal italic opacity-70"> ({mensajeEstimacionParcial})</span>
-                                )}
+                        {mensajeEstimacionParcial
+                            ? <>
+                                <span className="font-medium">No disponible</span>
+                                <span className="font-normal italic opacity-70"> ({mensajeEstimacionParcial})</span>
                               </>
+                            : <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
                         }
                     </p>
                 </div>
