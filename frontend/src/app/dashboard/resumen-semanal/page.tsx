@@ -37,7 +37,7 @@ type Registro = {
     porcentajeAvance: number | null;
     rentaEquipoDiaria: number | null;
     plantilla: { id: string; numero: number; precioUnitario: number | null; moneda: string | null } | null;
-    corte: { id: string; numero: number; status: string } | null;
+    corte: { id: string; numero: number; status: string; montoFacturado: number | null; metrosLineales: number | null } | null;
     notas: string | null;
     kpi: {
         litrosPorHora: number | null;
@@ -602,7 +602,27 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
         r.bordo || r.espaciamiento || r.profundidadPromedio || r.volumenRoca
     );
 
+    // ── Resultado semanal: ingreso real prorateado desde cortes de facturación ──
+    const fmtMXN = (n: number) =>
+        new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
+    let ingresoSemana      = 0;
+    let registrosSinCorte  = 0;
+    for (const r of semana.registros) {
+        const metrosReg   = Number(r.metrosLineales ?? 0);
+        const montoCorte  = Number(r.corte?.montoFacturado ?? 0);
+        const metrosCorte = Number(r.corte?.metrosLineales ?? 0);
+        if (metrosReg > 0 && montoCorte > 0 && metrosCorte > 0) {
+            ingresoSemana += (metrosReg / metrosCorte) * montoCorte;
+        } else if (metrosReg > 0) {
+            registrosSinCorte++;
+        }
+    }
+    const costoSemana    = Number(semana.costoTotal ?? 0);
+    const utilidadSemana = ingresoSemana - costoSemana;
+    const margenSemana   = ingresoSemana > 0
+        ? (utilidadSemana / ingresoSemana) * 100
+        : null;
 
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -770,10 +790,47 @@ function SemanaCard({ semana }: { semana: ResumenSemana }) {
                     </div>
 
                     {/* ── Resultado semanal ──────────────────────────────────── */}
-                    <p className="text-xs text-gray-400 italic flex items-center gap-1.5">
-                        <Info size={10} className="flex-shrink-0 text-gray-300" />
-                        Resultado financiero semanal pendiente de definir con fórmula de facturación real.
-                    </p>
+                    {ingresoSemana > 0 && (
+                        <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                <DollarSign size={12} /> Resultado semanal
+                            </p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Ingreso real</p>
+                                    <p className="text-base font-bold text-gray-800">{fmtMXN(ingresoSemana)}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Prorateado por metros en corte</p>
+                                </div>
+                                <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                                    <p className="text-xs text-gray-400 mb-1">Costo</p>
+                                    <p className="text-base font-bold text-gray-800">{fmtMXN(costoSemana)}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Producción + gastos</p>
+                                </div>
+                                <div className={`rounded-xl border p-3 ${utilidadSemana >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                                    <p className="text-xs text-gray-400 mb-1">Utilidad</p>
+                                    <p className={`text-base font-bold ${utilidadSemana >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {utilidadSemana >= 0 ? '+' : ''}{fmtMXN(utilidadSemana)}
+                                    </p>
+                                    <p className={`text-[10px] mt-0.5 ${utilidadSemana >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        Ingreso − costo
+                                    </p>
+                                </div>
+                                <div className={`rounded-xl border p-3 ${(margenSemana ?? 0) >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                                    <p className="text-xs text-gray-400 mb-1">Margen</p>
+                                    <p className={`text-base font-bold ${(margenSemana ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {margenSemana != null ? `${margenSemana.toFixed(1)}%` : '—'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Utilidad / ingreso</p>
+                                </div>
+                            </div>
+                            {registrosSinCorte > 0 && (
+                                <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                                    <Info size={9} />
+                                    {registrosSinCorte} registro(s) sin corte/monto configurado — no incluidos en el ingreso real.
+                                </p>
+                            )}
+                        </div>
+                    )}
 
                     {/* ── Pestañas: Registros / Gastos ─────────────────────── */}
                     <div>
