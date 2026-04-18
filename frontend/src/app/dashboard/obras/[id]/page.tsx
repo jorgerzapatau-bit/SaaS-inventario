@@ -1432,15 +1432,15 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados }: {
                     <p className={`text-sm font-semibold mt-1 ${utilPos ? 'text-green-500' : 'text-red-500'}`}>
                         {pct(rf.margenPct)} <span className="font-normal text-gray-400">de margen</span>
                     </p>
-                    <p className={`text-xs mt-1.5 ${utilPorMetro != null ? (utilPos ? 'text-green-500' : 'text-red-500') : 'text-gray-400'}`}>
-                        Utilidad por metro: {utilPorMetro != null ? `${utilPos ? '' : '-'}${mxn(Math.abs(utilPorMetro))}/m` : '—'}
-                    </p>
                 </div>
                 {/* Costo real por metro — tarjeta secundaria */}
                 <div className="bg-gray-50 rounded-xl px-4 py-3">
                     <p className="text-xs text-gray-400 mb-0.5">Costo real por metro</p>
                     <p className="text-2xl font-bold text-gray-800">{metro(rf.costoPorMetro ?? null)}</p>
                     <p className="text-xs text-gray-400 mt-1">Costo total / metros perf.</p>
+                    <p className={`text-xs mt-1.5 font-medium ${utilPorMetro != null ? (utilPos ? 'text-green-500' : 'text-red-500') : 'text-gray-400'}`}>
+                        Ganancia por metro: {utilPorMetro != null ? `${utilPos ? '' : '-'}${mxn(Math.abs(utilPorMetro))}/m` : '—'}
+                    </p>
                 </div>
             </div>
         </div>
