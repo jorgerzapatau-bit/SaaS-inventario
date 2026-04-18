@@ -7,12 +7,14 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * POST /api/obras/[id]/regularizar
  *
- * Asigna en masa todos los registros diarios sin plantilla (plantillaId === null)
- * de una obra a una plantilla existente o recién creada.
+ * Asigna registros diarios sin plantilla a una plantilla existente o recién creada.
  *
  * Body:
- *   { plantillaId: string }                → asignar a plantilla existente
- *   { crearPlantilla: { ... campos } }     → crear plantilla y asignar a ella
+ *   {
+ *     plantillaId?: string          → asignar a plantilla existente
+ *     crearPlantilla?: { ... }      → crear plantilla nueva y asignar a ella
+ *     registroIds?: string[]        → opcional: solo esos registros (si omite → todos sin plantilla)
+ *   }
  */
 export async function POST(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
@@ -22,7 +24,30 @@ export async function POST(req: NextRequest, { params }: Params) {
         const { id: obraId } = await params;
         const body = await req.json();
 
-        // ── Verificar que la obra existe y pertenece a la empresa ────────────
+        // registroIds opcional — si viene, validar que pertenezcan a la obra y tengan plantillaId null
+        const registroIds: string[] | undefined =
+            Array.isArray(body.registroIds) && body.registroIds.length > 0
+                ? body.registroIds
+                : undefined;
+
+        if (registroIds) {
+            // Verificar que todos los IDs son registros válidos de esta obra sin plantilla
+            const count = await prisma.registroDiario.count({
+                where: {
+                    id:          { in: registroIds },
+                    obraId,
+                    empresaId:   user.empresaId,
+                    plantillaId: null,
+                },
+            });
+            if (count !== registroIds.length)
+                return Response.json(
+                    { error: 'Algunos registroIds no son válidos, no pertenecen a esta obra o ya tienen plantilla asignada' },
+                    { status: 400 }
+                );
+        }
+
+        // ── Verificar que la obra existe ──────────────────────────────────────
         const obra = await prisma.obra.findFirst({
             where: { id: obraId },
             include: {
@@ -51,11 +76,9 @@ export async function POST(req: NextRequest, { params }: Params) {
             if (!plantilla)
                 return Response.json({ error: 'Plantilla no encontrada en esta obra' }, { status: 404 });
 
-            // Validar eligibilidad
             if (plantilla.status === 'TERMINADA')
                 return Response.json({ error: 'No se puede asignar a una plantilla TERMINADA' }, { status: 400 });
 
-            // Calcular metros ya perforados de esa plantilla
             const metrosAgg = await prisma.registroDiario.aggregate({
                 where: { obraId, plantillaId: plantilla.id, empresaId: user.empresaId },
                 _sum: { metrosLineales: true },
@@ -101,14 +124,14 @@ export async function POST(req: NextRequest, { params }: Params) {
             );
         }
 
-        // ── Actualizar en masa todos los registros sin plantilla ──────────────
+        // ── Actualizar registros: selectivos o todos sin plantilla ────────────
+        const whereClause = registroIds
+            ? { id: { in: registroIds }, obraId, empresaId: user.empresaId, plantillaId: null }
+            : { obraId, empresaId: user.empresaId, plantillaId: null };
+
         const resultado = await prisma.registroDiario.updateMany({
-            where: {
-                obraId,
-                empresaId: user.empresaId,
-                plantillaId: null,
-            },
-            data: { plantillaId },
+            where: whereClause,
+            data:  { plantillaId },
         });
 
         return Response.json({
@@ -124,8 +147,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 /**
  * GET /api/obras/[id]/regularizar
  *
- * Devuelve las plantillas elegibles para asignación (no TERMINADAS y con capacidad disponible)
- * y el conteo de registros sin plantilla.
+ * Devuelve:
+ *  - plantillasElegibles: plantillas no TERMINADAS con capacidad disponible
+ *  - registrosSinPlantilla: conteo total
+ *  - metrosSinPlantilla: suma de metros
+ *  - registros: lista detallada de cada registro sin plantilla (para selección granular)
  */
 export async function GET(req: NextRequest, { params }: Params) {
     const user = getAuthUser(req);
@@ -156,39 +182,56 @@ export async function GET(req: NextRequest, { params }: Params) {
         });
         if (!obra) return Response.json({ error: 'Obra no encontrada' }, { status: 404 });
 
-        // Registros sin plantilla
-        const sinPlantillaAgg = await prisma.registroDiario.aggregate({
+        // ── Lista detallada de registros sin plantilla ────────────────────────
+        const registrosSinPlantilla = await prisma.registroDiario.findMany({
             where: { obraId, empresaId: user.empresaId, plantillaId: null },
-            _count: true,
-            _sum: { metrosLineales: true },
+            orderBy: { fecha: 'asc' },
+            select: {
+                id:             true,
+                fecha:          true,
+                barrenos:       true,
+                metrosLineales: true,
+                equipo: {
+                    select: { nombre: true, numeroEconomico: true },
+                },
+            },
         });
 
-        // Para cada plantilla, calcular metros ya usados
+        const totalMetros = registrosSinPlantilla.reduce(
+            (s, r) => s + Number(r.metrosLineales), 0
+        );
+
+        // ── Plantillas elegibles con capacidad ────────────────────────────────
         const plantillasConCapacidad = await Promise.all(
             obra.plantillas.map(async (p) => {
                 const agg = await prisma.registroDiario.aggregate({
                     where: { obraId, plantillaId: p.id, empresaId: user.empresaId },
                     _sum: { metrosLineales: true },
                 });
-                const metrosUsados = Number(agg._sum.metrosLineales ?? 0);
+                const metrosUsados      = Number(agg._sum.metrosLineales ?? 0);
                 const metrosContratados = Number(p.metrosContratados);
                 const capacidadDisponible = Math.max(0, metrosContratados - metrosUsados);
-                const elegible = capacidadDisponible > 0;
-
                 return {
                     ...p,
                     metrosContratados,
-                    precioUnitario: p.precioUnitario ? Number(p.precioUnitario) : null,
+                    precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
                     metrosUsados,
                     capacidadDisponible,
-                    elegible,
+                    elegible: capacidadDisponible > 0,
                 };
             })
         );
 
         return Response.json({
-            registrosSinPlantilla: sinPlantillaAgg._count,
-            metrosSinPlantilla: Number(sinPlantillaAgg._sum.metrosLineales ?? 0),
+            registrosSinPlantilla: registrosSinPlantilla.length,
+            metrosSinPlantilla:    totalMetros,
+            registros:             registrosSinPlantilla.map(r => ({
+                id:             r.id,
+                fecha:          r.fecha,
+                barrenos:       r.barrenos,
+                metrosLineales: Number(r.metrosLineales),
+                equipo:         r.equipo,
+            })),
             plantillasElegibles: plantillasConCapacidad,
         });
     } catch (error) {
