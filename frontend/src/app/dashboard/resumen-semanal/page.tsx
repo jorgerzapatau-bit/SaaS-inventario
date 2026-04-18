@@ -605,8 +605,13 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
     // ── Utilidad semanal estimada ─────────────────────────────────────────────
     const mxn = (n: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-    const ingresoSemana  = (ingresoPorMetro != null && semana.metrosLineales > 0)
-        ? ingresoPorMetro * semana.metrosLineales
+
+    // Validación explícita: el prop debe ser número > 0 y no NaN
+    const precioValido = typeof ingresoPorMetro === 'number' && !isNaN(ingresoPorMetro) && ingresoPorMetro > 0;
+    console.log('[SemanaCard] ingresoPorMetro:', ingresoPorMetro, '| precioValido:', precioValido, '| metros:', semana.metrosLineales);
+
+    const ingresoSemana  = (precioValido && semana.metrosLineales > 0)
+        ? ingresoPorMetro! * semana.metrosLineales
         : null;
     const utilidadSemana = ingresoSemana != null
         ? ingresoSemana - semana.costoTotal
@@ -782,7 +787,7 @@ function SemanaCard({ semana, ingresoPorMetro }: { semana: ResumenSemana; ingres
                     </div>
 
                     {/* ── Resultado semanal ──────────────────────────────────── */}
-                    {ingresoSemana != null && (
+                    {precioValido && ingresoSemana != null && (
                         <div>
                             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                                 <DollarSign size={12} /> Resultado semanal
@@ -1017,7 +1022,9 @@ function ResumenSemanalInner() {
     const [precioVentaMetro, setPrecioVentaMetro] = useState<string>('');
     const ingresoPorMetro = useMemo<number | null>(() => {
         const val = parseFloat(precioVentaMetro);
-        return (!isNaN(val) && val > 0) ? val : null;
+        const result = (!isNaN(val) && val > 0) ? val : null;
+        console.log('[ResumenSemanal] precioVentaMetro:', JSON.stringify(precioVentaMetro), '| parsed:', val, '| ingresoPorMetro:', result);
+        return result;
     }, [precioVentaMetro]);
 
     return (
