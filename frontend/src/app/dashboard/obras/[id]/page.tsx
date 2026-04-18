@@ -2220,24 +2220,34 @@ export default function ObraDetallePage() {
     const load = async () => {
         setLoading(true);
         try {
+            console.log('[ObraDetalle] obraId:', obraId);
+            console.log('[ObraDetalle] fetchUrl:', `/obras/${obraId}`);
             const data = await fetchApi(`/obras/${obraId}`);
+            console.log('[ObraDetalle] data recibida:', data);
             setObra(data);
         } catch (e: any) {
+            console.error('[ObraDetalle] error en fetch:', e);
             setError(e.message || 'Error al cargar la obra');
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { load(); }, [obraId]);
+    useEffect(() => {
+        console.log('[ObraDetalle] useEffect disparado, obraId:', obraId, 'tipo:', typeof obraId);
+        load();
+    }, [obraId]);
 
     if (loading) return <div className="p-10 text-center text-gray-400 text-sm">Cargando obra...</div>;
-    if (error || !obra) return (
-        <div className="p-10 text-center">
-            <p className="text-red-500 text-sm mb-3">{error || 'Obra no encontrada'}</p>
-            <button onClick={() => router.back()} className="text-blue-600 text-sm hover:underline">← Volver</button>
-        </div>
-    );
+    if (error || !obra) {
+        console.warn('[ObraDetalle] Mostrando error. error:', error, '| obra:', obra);
+        return (
+            <div className="p-10 text-center">
+                <p className="text-red-500 text-sm mb-3">{error || 'Obra no encontrada'}</p>
+                <button onClick={() => router.back()} className="text-blue-600 text-sm hover:underline">← Volver</button>
+            </div>
+        );
+    }
 
     const fmt2Local = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
