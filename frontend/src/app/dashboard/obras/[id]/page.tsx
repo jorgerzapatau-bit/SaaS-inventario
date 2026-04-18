@@ -268,11 +268,7 @@ function RegularizarModal({
             setError('Número y metros contratados son requeridos');
             return;
         }
-        // Si selección parcial activa pero sin registros seleccionados, avisar
-        if (seleccionParcialActiva && seleccionados.size === 0) {
-            setError('Selecciona al menos un registro o desactiva la selección específica');
-            return;
-        }
+        // Si selección parcial activa pero sin registros seleccionados, el botón ya está deshabilitado
         setSaving(true); setError('');
         try {
             const body: Record<string, unknown> = {
@@ -302,6 +298,8 @@ function RegularizarModal({
             setSaving(false);
         }
     };
+
+    const botonDeshabilitado = saving || (seleccionParcialActiva && seleccionados.size === 0);
 
     const labelBoton = () => {
         if (saving) return 'Guardando...';
@@ -474,6 +472,13 @@ function RegularizarModal({
                     <p className="text-xs text-red-500 px-6 pb-2 flex-shrink-0">{error}</p>
                 )}
 
+                {/* Mensaje de validación de selección parcial */}
+                {seleccionParcialActiva && seleccionados.size === 0 && !success && (
+                    <p className="text-xs text-amber-500 px-6 pb-2 flex-shrink-0">
+                        Selecciona al menos un registro
+                    </p>
+                )}
+
                 {/* Footer */}
                 {!success && (
                     <div className="border-t border-gray-100 px-6 py-4 flex gap-2 flex-shrink-0">
@@ -485,8 +490,8 @@ function RegularizarModal({
                         </button>
                         <button
                             onClick={handleCrearYAsignar}
-                            disabled={saving}
-                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors"
+                            disabled={botonDeshabilitado}
+                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             {labelBoton()}
                         </button>
