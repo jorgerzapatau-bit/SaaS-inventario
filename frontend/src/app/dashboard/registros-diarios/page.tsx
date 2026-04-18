@@ -409,11 +409,14 @@ function AsignarPlantillaModal({
     });
 
     // Rastrear si el usuario editó manualmente cada campo sugerido
+    // Usamos useRef para evitar closures stale en los useEffects
     const [editadoManualmente, setEditadoManualmente] = useState({
         metrosContratados: false,
         fechaInicio: false,
         fechaFin: false,
     });
+    const editadoManualmenteRef = React.useRef(editadoManualmente);
+    useEffect(() => { editadoManualmenteRef.current = editadoManualmente; }, [editadoManualmente]);
 
     // Calcular sugerencias a partir de los registros seleccionados
     const selectedRegistros = registrosData.filter(r => registroIds.includes(r.id));
@@ -428,41 +431,51 @@ function AsignarPlantillaModal({
     console.log('[AsignarPlantillaModal] fechaInicioSugerida:', fechaInicioSugerida);
     console.log('[AsignarPlantillaModal] fechaFinSugerida:', fechaFinSugerida);
 
-    // Aplicar autofill cuando el usuario cambia a la pestaña "nueva"
-    useEffect(() => {
-        if (tab !== 'nueva') return;
+    // Refs para las sugerencias calculadas (siempre frescas, sin causar re-renders extra)
+    const metrosSugeridosRef = React.useRef(metrosSugeridos);
+    const fechaInicioSugeridaRef = React.useRef(fechaInicioSugerida);
+    const fechaFinSugeridaRef = React.useRef(fechaFinSugerida);
+    metrosSugeridosRef.current = metrosSugeridos;
+    fechaInicioSugeridaRef.current = fechaInicioSugerida;
+    fechaFinSugeridaRef.current = fechaFinSugerida;
+
+    // Función utilitaria para aplicar autofill usando siempre los refs más frescos
+    const aplicarSugerenciasActuales = useCallback(() => {
+        const em = editadoManualmenteRef.current;
+        const metros = metrosSugeridosRef.current;
+        const fi = fechaInicioSugeridaRef.current;
+        const ff = fechaFinSugeridaRef.current;
+        console.log('[AsignarPlantillaModal] Aplicando sugerencias:', { em, metros, fi, ff });
         setFormNueva(f => ({
             ...f,
-            metrosContratados: (!editadoManualmente.metrosContratados && f.metrosContratados === '' && metrosSugeridos > 0)
-                ? metrosSugeridos.toFixed(1)
+            metrosContratados: !em.metrosContratados && metros > 0
+                ? metros.toFixed(1)
                 : f.metrosContratados,
-            fechaInicio: (!editadoManualmente.fechaInicio && f.fechaInicio === '' && fechaInicioSugerida)
-                ? fechaInicioSugerida
+            fechaInicio: !em.fechaInicio && fi
+                ? fi
                 : f.fechaInicio,
-            fechaFin: (!editadoManualmente.fechaFin && f.fechaFin === '' && fechaFinSugerida)
-                ? fechaFinSugerida
+            fechaFin: !em.fechaFin && ff
+                ? ff
                 : f.fechaFin,
         }));
+    }, []);
+
+    // Aplicar autofill al montar y cuando el usuario cambia a la pestaña "nueva"
+    useEffect(() => {
+        if (tab !== 'nueva') return;
+        console.log('[AsignarPlantillaModal] Tab cambió a "nueva", aplicando autofill');
+        aplicarSugerenciasActuales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tab]);
 
-    // Re-aplicar si cambia la selección y el usuario no editó manualmente
+    // Re-aplicar si cambia la selección de registros (solo campos no editados manualmente)
     useEffect(() => {
         if (tab !== 'nueva') return;
-        setFormNueva(f => ({
-            ...f,
-            metrosContratados: !editadoManualmente.metrosContratados && metrosSugeridos > 0
-                ? metrosSugeridos.toFixed(1)
-                : f.metrosContratados,
-            fechaInicio: !editadoManualmente.fechaInicio && fechaInicioSugerida
-                ? fechaInicioSugerida
-                : f.fechaInicio,
-            fechaFin: !editadoManualmente.fechaFin && fechaFinSugerida
-                ? fechaFinSugerida
-                : f.fechaFin,
-        }));
+        console.log('[AsignarPlantillaModal] Selección cambió, re-aplicando sugerencias');
+        aplicarSugerenciasActuales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [registroIds.join(',')]);
+    }, [registroIds.join(','), metrosSugeridos, fechaInicioSugerida, fechaFinSugerida]);
+
 
     useEffect(() => {
         fetchApi(`/obras/${obraId}/regularizar`)
