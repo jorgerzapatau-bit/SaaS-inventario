@@ -1451,6 +1451,20 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }:
     const calcParcialPorPrecio = plantillasSinPrecio > 0 && hayAlgunPrecio;
     const sinPreciosEnAbsoluto = !hayAlgunPrecio && (plantillas ?? []).length > 0;
 
+    // Detectar si hay metros producidos fuera de cualquier plantilla
+    // (producción en "Sin plantilla asignada" → no incluida en la estimación)
+    const metrosSinPlantilla = Math.max(0, produccionTotalMetros - totalContratadoPlantillas);
+    const hayMetrosSinPlantilla = metrosSinPlantilla > 0.01;
+
+    // Construir mensaje explicativo según causa real de la estimación parcial
+    const mensajeEstimacionParcial: string | null = (() => {
+        if (!calcParcialPorPrecio && !sinPreciosEnAbsoluto && !hayMetrosSinPlantilla) return null;
+        const causas: string[] = [];
+        if (plantillasSinPrecio > 0) causas.push('faltan precios en algunas plantillas');
+        if (hayMetrosSinPlantilla)   causas.push('existen registros sin plantilla asignada');
+        return `estimación parcial — ${causas.join(' y ')}`;
+    })();
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Resumen Financiero</h2>
@@ -1472,11 +1486,14 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas }:
                     </p>
                     <p className={`text-xs ${estadoConfig.color} opacity-80`}>
                         Facturación pendiente estimada:{' '}
-                        {sinPreciosEnAbsoluto
-                            ? <span className="font-medium italic">cálculo parcial (faltan precios en plantillas)</span>
-                            : calcParcialPorPrecio
-                                ? <span className="font-semibold">{mxn(montoPendienteEstimado)} <span className="font-normal italic opacity-70">(cálculo parcial — faltan precios en {plantillasSinPrecio} plantilla{plantillasSinPrecio > 1 ? 's' : ''})</span></span>
-                                : <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
+                        {sinPreciosEnAbsoluto && !hayMetrosSinPlantilla
+                            ? <span className="font-medium italic">(estimación parcial — faltan precios en plantillas)</span>
+                            : <>
+                                <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
+                                {mensajeEstimacionParcial && (
+                                    <span className="font-normal italic opacity-70"> ({mensajeEstimacionParcial})</span>
+                                )}
+                              </>
                         }
                     </p>
                 </div>
