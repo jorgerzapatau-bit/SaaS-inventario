@@ -385,11 +385,13 @@ type PlantillaElegible = {
 function AsignarPlantillaModal({
     obraId,
     registroIds,
+    registrosData,
     onClose,
     onSaved,
 }: {
     obraId: string;
     registroIds: string[];
+    registrosData: { id: string; fecha: string; metrosLineales: number }[];
     onClose: () => void;
     onSaved: () => void;
 }) {
@@ -406,6 +408,62 @@ function AsignarPlantillaModal({
         moneda: 'MXN', fechaInicio: '', fechaFin: '', notas: '',
     });
 
+    // Rastrear si el usuario editó manualmente cada campo sugerido
+    const [editadoManualmente, setEditadoManualmente] = useState({
+        metrosContratados: false,
+        fechaInicio: false,
+        fechaFin: false,
+    });
+
+    // Calcular sugerencias a partir de los registros seleccionados
+    const selectedRegistros = registrosData.filter(r => registroIds.includes(r.id));
+    const metrosSugeridos = selectedRegistros.reduce((sum, r) => sum + r.metrosLineales, 0);
+    const fechasSorted = selectedRegistros.map(r => r.fecha.slice(0, 10)).sort();
+    const fechaInicioSugerida = fechasSorted[0] ?? '';
+    const fechaFinSugerida   = fechasSorted[fechasSorted.length - 1] ?? '';
+
+    // Debug temporal
+    console.log('[AsignarPlantillaModal] selectedRegistros:', selectedRegistros);
+    console.log('[AsignarPlantillaModal] metrosSugeridos:', metrosSugeridos);
+    console.log('[AsignarPlantillaModal] fechaInicioSugerida:', fechaInicioSugerida);
+    console.log('[AsignarPlantillaModal] fechaFinSugerida:', fechaFinSugerida);
+
+    // Aplicar autofill cuando el usuario cambia a la pestaña "nueva"
+    useEffect(() => {
+        if (tab !== 'nueva') return;
+        setFormNueva(f => ({
+            ...f,
+            metrosContratados: (!editadoManualmente.metrosContratados && f.metrosContratados === '' && metrosSugeridos > 0)
+                ? metrosSugeridos.toFixed(1)
+                : f.metrosContratados,
+            fechaInicio: (!editadoManualmente.fechaInicio && f.fechaInicio === '' && fechaInicioSugerida)
+                ? fechaInicioSugerida
+                : f.fechaInicio,
+            fechaFin: (!editadoManualmente.fechaFin && f.fechaFin === '' && fechaFinSugerida)
+                ? fechaFinSugerida
+                : f.fechaFin,
+        }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab]);
+
+    // Re-aplicar si cambia la selección y el usuario no editó manualmente
+    useEffect(() => {
+        if (tab !== 'nueva') return;
+        setFormNueva(f => ({
+            ...f,
+            metrosContratados: !editadoManualmente.metrosContratados && metrosSugeridos > 0
+                ? metrosSugeridos.toFixed(1)
+                : f.metrosContratados,
+            fechaInicio: !editadoManualmente.fechaInicio && fechaInicioSugerida
+                ? fechaInicioSugerida
+                : f.fechaInicio,
+            fechaFin: !editadoManualmente.fechaFin && fechaFinSugerida
+                ? fechaFinSugerida
+                : f.fechaFin,
+        }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [registroIds.join(',')]);
+
     useEffect(() => {
         fetchApi(`/obras/${obraId}/regularizar`)
             .then((d: { plantillasElegibles: PlantillaElegible[] }) => {
@@ -416,8 +474,13 @@ function AsignarPlantillaModal({
     }, [obraId]);
 
     const setNueva = (key: keyof typeof formNueva) =>
-        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+        (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+            // Marcar como editado manualmente si es un campo sugerido
+            if (key === 'metrosContratados' || key === 'fechaInicio' || key === 'fechaFin') {
+                setEditadoManualmente(prev => ({ ...prev, [key]: true }));
+            }
             setFormNueva(f => ({ ...f, [key]: e.target.value }));
+        };
 
     const handleAsignarExistente = async () => {
         if (!plantillaSeleccionada) { setError('Selecciona una plantilla'); return; }
@@ -471,14 +534,20 @@ function AsignarPlantillaModal({
         }
     };
 
-    const inpNueva = (label: string, key: keyof typeof formNueva, type = 'text', placeholder = '') => (
+    const inpNueva = (label: string, key: keyof typeof formNueva, type = 'text', placeholder = '', sugerido = false) => (
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
             <input
                 type={type} value={String(formNueva[key])} onChange={setNueva(key)}
                 placeholder={placeholder}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${sugerido && !editadoManualmente[key as keyof typeof editadoManualmente] && formNueva[key] !== '' ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'}`}
             />
+            {sugerido && !editadoManualmente[key as keyof typeof editadoManualmente] && formNueva[key] !== '' && (
+                <p className="text-[10px] text-blue-500 mt-0.5 flex items-center gap-0.5">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                    Sugerido según los registros seleccionados
+                </p>
+            )}
         </div>
     );
 
@@ -596,7 +665,7 @@ function AsignarPlantillaModal({
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-2 gap-3">
                                         {inpNueva('Número de plantilla', 'numero', 'number', 'ej. 4')}
-                                        {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500')}
+                                        {inpNueva('Metros contratados', 'metrosContratados', 'number', 'ej. 500', true)}
                                         {inpNueva('Precio unitario (P.U.)', 'precioUnitario', 'number', 'ej. 24.50')}
                                         <div>
                                             <label className="block text-xs font-medium text-gray-600 mb-1">Moneda</label>
@@ -606,8 +675,8 @@ function AsignarPlantillaModal({
                                                 <option value="USD">USD</option>
                                             </select>
                                         </div>
-                                        {inpNueva('Fecha inicio', 'fechaInicio', 'date')}
-                                        {inpNueva('Fecha fin', 'fechaFin', 'date')}
+                                        {inpNueva('Fecha inicio', 'fechaInicio', 'date', '', true)}
+                                        {inpNueva('Fecha fin', 'fechaFin', 'date', '', true)}
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
@@ -2168,6 +2237,9 @@ function RegistrosDiariosInner() {
                     <AsignarPlantillaModal
                         obraId={obraIdModal}
                         registroIds={Array.from(seleccionados)}
+                        registrosData={registros
+                            .filter(r => seleccionados.has(r.id))
+                            .map(r => ({ id: r.id, fecha: r.fecha, metrosLineales: r.metrosLineales }))}
                         onClose={() => setAsignarModalOpen(false)}
                         onSaved={() => {
                             setAsignarModalOpen(false);
