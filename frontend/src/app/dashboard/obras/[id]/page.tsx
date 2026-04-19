@@ -2063,10 +2063,13 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
         return 'bg-blue-400';
     })();
 
-    const facturacionPendienteLabel = mensajeEstimacionParcial
-        ? 'No disponible'
-        : mxn(montoPendienteEstimado);
-    const facturacionPendienteEsEstimado = !mensajeEstimacionParcial && montoPendienteEstimado > 0;
+    // facturacionPendiente: mismos 3 casos que gananciaProyectada
+    //   Completo  → sin inconsistencias
+    //   Parcial   → hay inconsistencias pero sí hay algo estimable
+    //   No disp.  → nada calculable
+    const facturacionPendienteCompleta = !mensajeEstimacionParcial;
+    const facturacionPendienteParcial  = mensajeEstimacionParcial !== null && hayAlgunPrecio && montoPendienteEstimado > 0;
+    const facturacionPendienteDisp     = facturacionPendienteCompleta || facturacionPendienteParcial;
 
     // ── Ganancia proyectada ────────────────────────────────────────────────────
     // Caso A: sin inconsistencias → monto completo y confiable
@@ -2099,21 +2102,35 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                         </p>
                     </div>
 
-                    {/* B) Facturación pendiente */}
+                    {/* B) Facturación pendiente — Caso A: completo | Caso B: parcial | Caso C: no disponible */}
                     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col gap-0.5">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Facturación pendiente</p>
-                        {mensajeEstimacionParcial ? (
-                            <p className="text-base font-bold text-gray-400 italic mt-0.5">No disponible</p>
-                        ) : (
+                        {facturacionPendienteDisp ? (
                             <p className="text-2xl font-extrabold tracking-tight leading-none text-gray-800">
-                                {facturacionPendienteLabel}
+                                {mxn(montoPendienteEstimado)}
                             </p>
+                        ) : (
+                            <p className="text-base font-bold text-gray-400 italic mt-0.5">No disponible</p>
                         )}
-                        {facturacionPendienteEsEstimado && (
+                        {facturacionPendienteCompleta && montoPendienteEstimado > 0 && (
                             <p className="text-xs text-gray-400 mt-0.5">Estimado según plantillas</p>
                         )}
-                        {!facturacionPendienteEsEstimado && !mensajeEstimacionParcial && (
+                        {facturacionPendienteCompleta && montoPendienteEstimado === 0 && (
                             <p className="text-xs text-green-500 mt-0.5 font-medium">Sin pendientes</p>
+                        )}
+                        {facturacionPendienteParcial && (
+                            <>
+                                <p className="text-xs font-medium mt-0.5 text-amber-600">
+                                    Basado en registros con precio definido
+                                </p>
+                                <p className="text-[10px] text-amber-500 flex items-center gap-0.5 mt-0.5">
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    Estimación parcial — hay inconsistencias
+                                </p>
+                            </>
+                        )}
+                        {!facturacionPendienteDisp && (
+                            <p className="text-xs text-gray-400 mt-0.5">Requiere completar plantillas o precios</p>
                         )}
                     </div>
 
