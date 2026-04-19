@@ -2046,9 +2046,101 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
         return `estimación parcial — ${causas.join(' y ')}`;
     })();
 
+    // ── Resumen ejecutivo — datos derivados ──────────────────────────────────────
+    const estadoObraLabel: string = (() => {
+        if (hayMetrosSinPlantilla || plantillasSinPrecio > 0) return 'Con inconsistencias';
+        if (estadoFacturacion === 'completa') return 'Completamente facturada';
+        return 'Facturación parcial';
+    })();
+    const estadoObraColor: string = (() => {
+        if (hayMetrosSinPlantilla || plantillasSinPrecio > 0) return 'text-red-600 bg-red-50 border-red-200';
+        if (estadoFacturacion === 'completa') return 'text-green-700 bg-green-50 border-green-200';
+        return 'text-blue-700 bg-blue-50 border-blue-200';
+    })();
+    const estadoObraDot: string = (() => {
+        if (hayMetrosSinPlantilla || plantillasSinPrecio > 0) return 'bg-red-400';
+        if (estadoFacturacion === 'completa') return 'bg-green-500';
+        return 'bg-blue-400';
+    })();
+
+    const facturacionPendienteLabel = mensajeEstimacionParcial
+        ? 'No disponible'
+        : mxn(montoPendienteEstimado);
+    const facturacionPendienteEsEstimado = !mensajeEstimacionParcial && montoPendienteEstimado > 0;
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Resumen Financiero</h2>
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Resumen Financiero</h2>
+
+            {/* ── Resumen ejecutivo ─────────────────────────────────────────────── */}
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-4 space-y-3">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Resumen ejecutivo</p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* A) Ganancia real al día */}
+                    <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${utilPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia real al día</p>
+                        <p className={`text-2xl font-extrabold tracking-tight leading-none ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
+                            {utilPrefix}{mxn(rf.utilidad ?? 0)}
+                        </p>
+                        <p className={`text-xs font-medium mt-0.5 ${utilPos ? 'text-green-500' : 'text-red-500'}`}>
+                            {pct(rf.margenPct)} de margen
+                        </p>
+                    </div>
+
+                    {/* B) Facturación pendiente */}
+                    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col gap-0.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Facturación pendiente</p>
+                        {mensajeEstimacionParcial ? (
+                            <p className="text-base font-bold text-gray-400 italic mt-0.5">No disponible</p>
+                        ) : (
+                            <p className="text-2xl font-extrabold tracking-tight leading-none text-gray-800">
+                                {facturacionPendienteLabel}
+                            </p>
+                        )}
+                        {facturacionPendienteEsEstimado && (
+                            <p className="text-xs text-gray-400 mt-0.5">Estimado según plantillas</p>
+                        )}
+                        {!facturacionPendienteEsEstimado && !mensajeEstimacionParcial && (
+                            <p className="text-xs text-green-500 mt-0.5 font-medium">Sin pendientes</p>
+                        )}
+                    </div>
+
+                    {/* C) Estado de la obra */}
+                    <div className={`rounded-xl border px-4 py-3 flex flex-col gap-1 ${estadoObraColor}`}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Estado de la obra</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${estadoObraDot}`} />
+                            <p className="text-sm font-bold leading-snug">{estadoObraLabel}</p>
+                        </div>
+                        {hayMetrosSinPlantilla && (
+                            <div className="mt-1 flex items-center gap-2 flex-wrap">
+                                <p className="text-xs font-medium text-red-600">
+                                    ⚠️ {metrosSinPlantilla.toFixed(1)} m sin plantilla asignada
+                                </p>
+                                {onRegularizar && (
+                                    <button
+                                        onClick={onRegularizar}
+                                        className="text-[10px] bg-white/70 hover:bg-white border border-red-200 text-red-700 font-semibold px-2 py-0.5 rounded-lg transition-colors"
+                                    >
+                                        Asignar a plantilla
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Nota de estimación parcial */}
+                {mensajeEstimacionParcial && (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 mt-1">
+                        <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-px" />
+                        <p className="text-xs text-amber-700">
+                            <span className="font-semibold">Estimación parcial</span> — {mensajeEstimacionParcial.replace('estimación parcial — ', '')}
+                        </p>
+                    </div>
+                )}
+            </div>
 
             {/* Indicador de estado de facturación */}
             <div className={`rounded-lg border px-3 py-2.5 mb-3 ${estadoConfig.bg}`}>
