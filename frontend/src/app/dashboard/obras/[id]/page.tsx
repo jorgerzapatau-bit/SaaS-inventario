@@ -2239,16 +2239,19 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                             )}
                         </div>
                     )}
-                    <p className={`text-xs ${estadoConfig.color} opacity-80`}>
-                        Facturación pendiente estimada:{' '}
-                        {mensajeEstimacionParcial
-                            ? <>
-                                <span className="font-medium">No disponible</span>
-                                <span className="font-normal italic opacity-70"> ({mensajeEstimacionParcial})</span>
-                              </>
-                            : <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
-                        }
-                    </p>
+                    {facturacionPendienteDisp ? (
+                        <p className={`text-xs ${estadoConfig.color} opacity-80`}>
+                            Facturación pendiente estimada:{' '}
+                            <span className="font-semibold">{mxn(montoPendienteEstimado)}</span>
+                            {facturacionPendienteParcial && (
+                                <span className="font-normal italic opacity-70"> (estimación parcial)</span>
+                            )}
+                        </p>
+                    ) : (
+                        <p className={`text-xs ${estadoConfig.color} opacity-60 italic`}>
+                            Facturación pendiente: sin datos suficientes para estimar
+                        </p>
+                    )}
                 </div>
             </div>
 
