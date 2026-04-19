@@ -2069,8 +2069,12 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
     const facturacionPendienteEsEstimado = !mensajeEstimacionParcial && montoPendienteEstimado > 0;
 
     // ── Ganancia proyectada ────────────────────────────────────────────────────
-    const puedoProyectar = !mensajeEstimacionParcial;
-    const gananciaProyectada = puedoProyectar
+    // Caso A: sin inconsistencias → monto completo y confiable
+    // Caso B: hay inconsistencias pero hay ALGO calculable (hayAlgunPrecio) → estimación parcial
+    // Caso C: sinPreciosEnAbsoluto y sin nada calculable → null (no disponible)
+    const proyeccionEsCompleta  = !mensajeEstimacionParcial;
+    const proyeccionEsParcial   = mensajeEstimacionParcial !== null && hayAlgunPrecio && montoPendienteEstimado > 0;
+    const gananciaProyectada    = (proyeccionEsCompleta || proyeccionEsParcial)
         ? (rf.utilidad ?? 0) + montoPendienteEstimado
         : null;
     const proyPos = gananciaProyectada !== null && gananciaProyectada >= 0;
@@ -2137,16 +2141,28 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                         )}
                     </div>
 
-                    {/* D) Ganancia proyectada */}
+                    {/* D) Ganancia proyectada — Caso A: completo | Caso B: parcial | Caso C: no disponible */}
                     {gananciaProyectada !== null ? (
                         <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${proyPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                             <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada</p>
                             <p className={`text-2xl font-extrabold tracking-tight leading-none ${proyPos ? 'text-green-600' : 'text-red-600'}`}>
                                 {(gananciaProyectada >= 0 ? '+' : '')}{mxn(gananciaProyectada)}
                             </p>
-                            <p className={`text-xs font-medium mt-0.5 ${proyPos ? 'text-green-500' : 'text-red-500'}`}>
-                                Considerando facturación pendiente
-                            </p>
+                            {proyeccionEsCompleta ? (
+                                <p className={`text-xs font-medium mt-0.5 ${proyPos ? 'text-green-500' : 'text-red-500'}`}>
+                                    Considerando facturación pendiente
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="text-xs font-medium mt-0.5 text-amber-600">
+                                        Basado en registros con precio definido
+                                    </p>
+                                    <p className="text-[10px] text-amber-500 flex items-center gap-0.5 mt-0.5">
+                                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        Estimación parcial — hay inconsistencias
+                                    </p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-0.5">
@@ -2388,7 +2404,7 @@ export default function ObraDetallePage() {
                     const metrosTotales = obra.plantillas?.reduce((s, p) => s + p.metrosContratados, 0) ?? obra.metrosContratados ?? 0;
                     const barrenosPerf = obra.metricas?.barrenos ?? 0;
                     const barrTotales = obra.plantillas?.reduce((s, p) => s + p.barrenos, 0) ?? 0;
-                    const pctMetros = metrosTotales > 0 ? Math.min(100, (metrosPerf / metrosTotales) * 100) : null;
+                    const pctMetros = metrosTotales > 0 ? (metrosPerf / metrosTotales) * 100 : null;
                     const pctBarr = barrTotales > 0 ? Math.min(100, (barrenosPerf / barrTotales) * 100) : null;
                     const equiposActivos = obra.obraEquipos.filter(e => !e.fechaFin).length;
                     const diasTranscurridos = obra.fechaInicio
@@ -2429,7 +2445,7 @@ export default function ObraDetallePage() {
                                             <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
                                                 <div
                                                     className={`h-full rounded-full transition-all ${pctMetros! >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                                                    style={{ width: `${pctMetros}%` }}
+                                                    style={{ width: `${Math.min(pctMetros!, 100)}%` }}
                                                 />
                                             </div>
                                             <p className="text-xs text-gray-400 mt-1">{fmt(metrosPerf)} / {fmt(metrosTotales)} m</p>
@@ -2442,7 +2458,7 @@ export default function ObraDetallePage() {
                                     <p className="text-xs text-gray-400 mb-1">% Avance</p>
                                     {pctMetros !== null ? (
                                         <>
-                                            <p className={`text-lg font-bold ${pctMetros >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                            <p className={`text-lg font-bold ${pctMetros > 100 ? 'text-orange-600' : pctMetros >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
                                                 {pctMetros.toFixed(1)}%
                                             </p>
                                             <div className="w-full h-1.5 bg-gray-200 rounded-full mt-2 overflow-hidden">
@@ -2454,7 +2470,8 @@ export default function ObraDetallePage() {
                                             {pctMetros < 100 && metrosTotales > 0 && (
                                                 <p className="text-xs text-orange-500 mt-1">Faltan {fmt(metrosTotales - metrosPerf)} m</p>
                                             )}
-                                            {pctMetros >= 100 && <p className="text-xs text-green-600 mt-1">✓ Completado</p>}
+                                            {pctMetros >= 100 && pctMetros <= 100 && <p className="text-xs text-green-600 mt-1">✓ Completado</p>}
+                                            {pctMetros > 100 && <p className="text-xs text-orange-500 mt-1">⚠ {(pctMetros - 100).toFixed(1)}% sobre lo contratado</p>}
                                         </>
                                     ) : <p className="text-lg font-bold text-gray-400">—</p>}
                                 </div>

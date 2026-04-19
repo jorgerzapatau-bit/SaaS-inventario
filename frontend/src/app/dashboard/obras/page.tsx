@@ -1142,7 +1142,13 @@ export default function ObrasPage() {
 
     // ─── Tarjeta de obra ────────────────────────────────────────────────────
     const ObraCard = ({ obra }: { obra: Obra }) => {
-        const pct = obra.metricas?.pctAvance ?? 0;
+        // Recalcular avance desde plantillas para ser consistente con el detalle de obra
+        // SIN limitar a 100% — si se perforó más de lo contratado, se muestra tal cual
+        const metrosContratadosTotales = (obra.plantillas ?? []).reduce((s, p) => s + p.metrosContratados, 0);
+        const metrosPerforados = obra.metricas?.metrosPerforados ?? 0;
+        const pct = metrosContratadosTotales > 0
+            ? (metrosPerforados / metrosContratadosTotales) * 100
+            : (obra.metricas?.pctAvance ?? 0);
         const statusStyle = STATUS_STYLE[obra.status];
         const statusIcon  = STATUS_ICON[obra.status];
 
@@ -1308,7 +1314,12 @@ export default function ObrasPage() {
 
     // ─── Fila expandible (vista lista) ──────────────────────────────────────
     const ObraRow = ({ obra }: { obra: Obra }) => {
-        const pct = obra.metricas?.pctAvance ?? 0;
+        // Recalcular avance desde plantillas para ser consistente con el detalle de obra
+        const metrosContratadosTotales = (obra.plantillas ?? []).reduce((s, p) => s + p.metrosContratados, 0);
+        const metrosPerforados = obra.metricas?.metrosPerforados ?? 0;
+        const pct = metrosContratadosTotales > 0
+            ? (metrosPerforados / metrosContratadosTotales) * 100
+            : (obra.metricas?.pctAvance ?? 0);
         const isExpanded = expandedRows.has(obra.id);
 
         return (
