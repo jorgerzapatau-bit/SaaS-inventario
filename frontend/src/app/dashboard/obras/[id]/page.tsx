@@ -2068,6 +2068,13 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
         : mxn(montoPendienteEstimado);
     const facturacionPendienteEsEstimado = !mensajeEstimacionParcial && montoPendienteEstimado > 0;
 
+    // ── Ganancia proyectada ────────────────────────────────────────────────────
+    const puedoProyectar = !mensajeEstimacionParcial;
+    const gananciaProyectada = puedoProyectar
+        ? (rf.utilidad ?? 0) + montoPendienteEstimado
+        : null;
+    const proyPos = gananciaProyectada !== null && gananciaProyectada >= 0;
+
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Resumen Financiero</h2>
@@ -2076,7 +2083,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
             <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-4 space-y-3">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Resumen ejecutivo</p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* A) Ganancia real al día */}
                     <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${utilPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia real al día</p>
@@ -2129,6 +2136,25 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                             </div>
                         )}
                     </div>
+
+                    {/* D) Ganancia proyectada */}
+                    {gananciaProyectada !== null ? (
+                        <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${proyPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada</p>
+                            <p className={`text-2xl font-extrabold tracking-tight leading-none ${proyPos ? 'text-green-600' : 'text-red-600'}`}>
+                                {(gananciaProyectada >= 0 ? '+' : '')}{mxn(gananciaProyectada)}
+                            </p>
+                            <p className={`text-xs font-medium mt-0.5 ${proyPos ? 'text-green-500' : 'text-red-500'}`}>
+                                Considerando facturación pendiente
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-0.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada</p>
+                            <p className="text-base font-bold text-gray-400 italic mt-0.5">No disponible</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Requiere completar plantillas o precios</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Nota de estimación parcial */}
