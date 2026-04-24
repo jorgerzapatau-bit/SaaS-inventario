@@ -19,7 +19,6 @@ model Empresa {
   direccion              String?
   rfc                    String?
   config                 Json?
-  moneda                 String                  @default("MXN")
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   razonSocial            String?
@@ -27,14 +26,18 @@ model Empresa {
   regimenFiscal          String?
   usoCFDI                String?
   loginBg                String?
+  moneda                 String                  @default("MXN")
   almacenes              Almacen[]
   categorias             Categoria[]
   clientes               Cliente[]
+  componentes            Componente[]
   compras                Compra[]
   equipos                Equipo[]
   gastosOperativos       GastoOperativo[]
+  InventarioEquipo       InventarioEquipo[]
   movimientosInventario  MovimientoInventario[]
   obras                  Obra[]
+  PendienteEquipo        PendienteEquipo[]
   productos              Producto[]
   proveedores            Proveedor[]
   registrosDiarios       RegistroDiario[]
@@ -42,8 +45,6 @@ model Empresa {
   resumenesSemana        ResumenSemana[]
   salidas                Salida[]
   usuarios               Usuario[]
-  // --- NUEVO ---
-  componentes            Componente[]
 }
 
 model Usuario {
@@ -125,34 +126,34 @@ model Almacen {
 }
 
 model Producto {
-  id              String                 @id @default(uuid())
-  empresaId       String
-  nombre          String
-  sku             String
-  categoriaId     String
-  unidad          String                 @default("pza")
-  stockMinimo     Int                    @default(0)
-  activo          Boolean                @default(true)
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
-  imagen          String?
-  moneda          Moneda                 @default(MXN)
-  precioCompra    Decimal                @default(0)
-  stockActual     Decimal                @default(0)
-  partNumber      String?
-  leadTimeDias    Int?
-  nivelReorden    Decimal?               @default(0) @db.Decimal
-  cantidadReorden Decimal?               @default(0) @db.Decimal
-  suspendido      Boolean?               @default(false)
-  notas           String?
-  equipoId        String?
-  detallesCompra  DetalleCompra[]
-  detallesSalida  DetalleSalida[]
-  movimientos     MovimientoInventario[]
-  gastosOperativos GastoOperativo[]      @relation("GastosProducto")
-  categoria       Categoria              @relation(fields: [categoriaId], references: [id])
-  empresa         Empresa                @relation(fields: [empresaId], references: [id])
-  equipo          Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
+  id               String                 @id @default(uuid())
+  empresaId        String
+  nombre           String
+  sku              String
+  categoriaId      String
+  unidad           String                 @default("pza")
+  stockMinimo      Int                    @default(0)
+  activo           Boolean                @default(true)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  imagen           String?
+  moneda           Moneda                 @default(MXN)
+  precioCompra     Decimal                @default(0)
+  stockActual      Decimal                @default(0)
+  partNumber       String?
+  leadTimeDias     Int?
+  nivelReorden     Decimal?               @default(0) @db.Decimal
+  cantidadReorden  Decimal?               @default(0) @db.Decimal
+  suspendido       Boolean?               @default(false)
+  equipoId         String?
+  notas            String?
+  detallesCompra   DetalleCompra[]
+  detallesSalida   DetalleSalida[]
+  gastosOperativos GastoOperativo[]       @relation("GastosProducto")
+  movimientos      MovimientoInventario[]
+  categoria        Categoria              @relation(fields: [categoriaId], references: [id])
+  empresa          Empresa                @relation(fields: [empresaId], references: [id])
+  equipo           Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
 
   @@unique([empresaId, sku])
   @@index([equipoId])
@@ -279,35 +280,31 @@ model Equipo {
   anoFabricacion         Int?
   fechaCompra            DateTime?               @db.Date
   facturaCompra          String?
-
-  // --- CAMPOS TÉCNICOS ---
+  statusEquipo           StatusEquipo?           @default(ACTIVO)
   apodo                  String?
   acopladoCon            String?
   proveedorOrigen        String?
   seriePistolaActual     String?
-  // -----------------------
-
-  statusEquipo           StatusEquipo?           @default(ACTIVO)
+  engineNumero           String?
+  engineModelo           String?
+  cpl                    String?
+  family                 String?
+  customerSpec           String?
+  capacidadTanqueLts     Decimal?                @db.Decimal
+  componentesInstalados  Componente[]            @relation("ComponenteEnEquipo")
   empresa                Empresa                 @relation(fields: [empresaId], references: [id])
-
-  // RELACIONES
-  gastosOperativos         GastoOperativo[]  
-  obraEquipos              ObraEquipo[]
-  productos                Producto[]              @relation("ProductosEquipo")
-  registrosDiarios         RegistroDiario[]
-  registrosMantenimiento   RegistroMantenimiento[]
-  resumenesSemana          ResumenSemana[]
-  salidas                  Salida[]
-  // --- Trazabilidad de componentes ---
-  componentesInstalados    Componente[]            @relation("ComponenteEnEquipo")
-  movimientosComponente    MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
-  // --- Equipos asignados a plantillas ---
-  plantillaEquipos         PlantillaEquipo[]
+  gastosOperativos       GastoOperativo[]
+  InventarioEquipo       InventarioEquipo[]
+  movimientosComponente  MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
+  obraEquipos            ObraEquipo[]
+  PendienteEquipo        PendienteEquipo[]
+  plantillaEquipos       PlantillaEquipo[]
+  productos              Producto[]              @relation("ProductosEquipo")
+  registrosDiarios       RegistroDiario[]
+  registrosMantenimiento RegistroMantenimiento[]
+  resumenesSemana        ResumenSemana[]
+  salidas                Salida[]
 }
-
-// =============================================================================
-// C1-A + C1-B: Obra con espaciamiento y PlantillaObra
-// =============================================================================
 
 model Obra {
   id                     String                  @id @default(uuid())
@@ -318,7 +315,6 @@ model Obra {
   ubicacion              String?
   bordo                  Decimal?
   espesor                Decimal?
-  espaciamiento          Decimal?                // Spacing de la malla (C1-A)
   metrosContratados      Decimal?
   precioUnitario         Decimal?
   moneda                 Moneda                  @default(MXN)
@@ -330,6 +326,7 @@ model Obra {
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   profundidadCollar      Decimal?                @db.Decimal
+  espaciamiento          Decimal?
   compras                Compra[]
   cortesFacturacion      CorteFacturacion[]
   gastosOperativos       GastoOperativo[]
@@ -337,7 +334,7 @@ model Obra {
   cliente                Cliente?                @relation(fields: [clienteId], references: [id])
   empresa                Empresa                 @relation(fields: [empresaId], references: [id])
   obraEquipos            ObraEquipo[]
-  plantillas             PlantillaObra[]         // (C1-B)
+  plantillas             PlantillaObra[]
   registrosDiarios       RegistroDiario[]
   registrosMantenimiento RegistroMantenimiento[]
   salidas                Salida[]
@@ -346,63 +343,61 @@ model Obra {
   @@index([status])
 }
 
-// C1-B: Plantillas por obra (Plt1, Plt2, ...)
 model PlantillaObra {
-  id                String              @id @default(uuid())
+  id                String                       @id @default(uuid())
   obraId            String
-  numero            Int                 // 1, 2, 3...
+  numero            Int
   metrosContratados Decimal
-  barrenos          Int                 @default(0)
+  barrenos          Int                          @default(0)
   bordo             Decimal?
   espaciamiento     Decimal?
   precioUnitario    Decimal?
-  moneda            Moneda              @default(MXN)
-  fechaInicio       DateTime?           @db.Date
-  fechaFin          DateTime?           @db.Date
-  status            StatusPlantilla     @default(ACTIVA)
+  moneda            Moneda                       @default(MXN)
+  fechaInicio       DateTime?                    @db.Date
+  fechaFin          DateTime?                    @db.Date
   notas             String?
-  createdAt         DateTime            @default(now())
-  obra              Obra                @relation(fields: [obraId], references: [id])
-
-  registrosDiarios  RegistroDiario[]
-  plantillaEquipos  PlantillaEquipo[]
+  createdAt         DateTime                     @default(now())
+  status            StatusPlantilla              @default(ACTIVA)
   gastosOperativos  GastoOperativo[]
   distribuciones    GastoOperativoDistribucion[]
+  plantillaEquipos  PlantillaEquipo[]
+  obra              Obra                         @relation(fields: [obraId], references: [id])
+  registrosDiarios  RegistroDiario[]
 
   @@unique([obraId, numero])
   @@index([obraId])
 }
 
-// Equipos asignados a una plantilla específica
 model PlantillaEquipo {
-  id           String        @id @default(uuid())
-  plantillaId  String
-  equipoId     String
-  fechaInicio  DateTime      @db.Date
-  fechaFin     DateTime?     @db.Date
-  notas        String?
-  createdAt    DateTime      @default(now())
-  plantilla    PlantillaObra @relation(fields: [plantillaId], references: [id])
-  equipo       Equipo        @relation(fields: [equipoId], references: [id])
+  id          String        @id @default(uuid())
+  plantillaId String
+  equipoId    String
+  fechaInicio DateTime      @db.Date
+  fechaFin    DateTime?     @db.Date
+  notas       String?
+  createdAt   DateTime      @default(now())
+  equipo      Equipo        @relation(fields: [equipoId], references: [id])
+  plantilla   PlantillaObra @relation(fields: [plantillaId], references: [id])
 
   @@unique([plantillaId, equipoId])
   @@index([plantillaId])
   @@index([equipoId])
 }
 
-// C3-A: ObraEquipo con horómetros por obra
 model ObraEquipo {
-  id                String    @id @default(uuid())
-  obraId            String
-  equipoId          String
-  fechaInicio       DateTime  @db.Date
-  fechaFin          DateTime? @db.Date
-  horometroInicial  Decimal?  // horómetro al inicio de esta obra (C3-A)
-  horometroFinal    Decimal?  // horómetro al cierre (C3-A)
-  notas             String?
-  createdAt         DateTime  @default(now())
-  equipo            Equipo    @relation(fields: [equipoId], references: [id])
-  obra              Obra      @relation(fields: [obraId], references: [id])
+  id               String    @id @default(uuid())
+  obraId           String
+  equipoId         String
+  fechaInicio      DateTime  @db.Date
+  fechaFin         DateTime? @db.Date
+  notas            String?
+  createdAt        DateTime  @default(now())
+  horometroFinal   Decimal?
+  horometroInicial Decimal?
+  fechaEntrada     DateTime? @db.Date
+  fechaSalida      DateTime? @db.Date
+  equipo           Equipo    @relation(fields: [equipoId], references: [id])
+  obra             Obra      @relation(fields: [obraId], references: [id])
 
   @@index([obraId])
   @@index([equipoId])
@@ -461,14 +456,6 @@ model RegistroDiario {
   horasTrabajadas       Decimal
   barrenos              Int                    @default(0)
   metrosLineales        Decimal                @default(0)
-
-  // --- CAMPOS DE PERFORACIÓN ---
-  bordo                 Decimal?               @db.Decimal
-  espaciamiento         Decimal?               @db.Decimal
-  volumenRoca           Decimal?               @db.Decimal
-  porcentajePerdida     Decimal?               @db.Decimal
-  // -----------------------------
-
   litrosDiesel          Decimal                @default(0)
   precioDiesel          Decimal                @default(0)
   tanqueInicio          Decimal?
@@ -490,9 +477,11 @@ model RegistroDiario {
   profundidadPromedio   Decimal?               @db.Decimal
   porcentajeAvance      Decimal?               @db.Decimal
   rentaEquipoDiaria     Decimal?               @db.Decimal
-
+  bordo                 Decimal?               @db.Decimal
+  espaciamiento         Decimal?               @db.Decimal
+  volumenRoca           Decimal?               @db.Decimal
+  porcentajePerdida     Decimal?               @db.Decimal
   plantillaId           String?
-
   corteRegistro         CorteRegistro?
   movimientosInventario MovimientoInventario[]
   cliente               Cliente?               @relation(fields: [clienteId], references: [id])
@@ -561,6 +550,8 @@ model RegistroMantenimiento {
   obraId        String?
   createdAt     DateTime           @default(now()) @db.Timestamp(6)
   updatedAt     DateTime           @default(now()) @updatedAt @db.Timestamp(6)
+  hrsUso        Decimal?           @db.Decimal
+  numeroParte   String?
   empresa       Empresa            @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   equipo        Equipo             @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   obra          Obra?              @relation(fields: [obraId], references: [id], onUpdate: NoAction)
@@ -572,41 +563,36 @@ model RegistroMantenimiento {
 }
 
 model GastoOperativo {
-  id             String           @id @default(dbgenerated("(gen_random_uuid())::text"))
+  id             String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
   empresaId      String
-  // ── Contexto de tiempo ─────────────────────────────────────────────────────
+  equipoId       String?
   semanaNum      Int
   anoNum         Int
-  fechaInicio    DateTime?        @db.Date
-  fechaFin       DateTime?        @db.Date   // soporte para rango semanal
-  // ── Nivel del gasto (nuevo campo clave) ────────────────────────────────────
-  nivelGasto     NivelGasto       @default(GENERAL)
-  origen         OrigenGasto      @default(GENERAL_MANUAL)
-  distribuible   Boolean          @default(false)
-  // ── Tipo y categoría ───────────────────────────────────────────────────────
-  tipoGasto      TipoGasto        @default(EXTERNO)
-  categoria      CategoriaGasto?  @default(OTRO)
-  producto       String           // concepto / nombre libre
-  productoId     String?          // FK catálogo (solo INSUMO)
-  unidad         String           @default("pza")
-  cantidad       Decimal          @default(0) @db.Decimal
-  precioUnitario Decimal          @default(0) @db.Decimal
-  total          Decimal?         @default(dbgenerated("(cantidad * \"precioUnitario\")")) @db.Decimal
-  moneda         Moneda?          @default(MXN)
-  tipoCambio     Decimal?         @db.Decimal
-  // ── Relaciones de contexto ─────────────────────────────────────────────────
-  obraId         String           // OBLIGATORIO en la nueva lógica
-  equipoId       String?          // nullable: algunos gastos no son de equipo específico
-  plantillaId    String?          // nullable: solo cuando nivelGasto = POR_PLANTILLA
+  fechaInicio    DateTime?                    @db.Date
+  categoria      CategoriaGasto?              @default(OTRO)
+  producto       String
+  unidad         String                       @default("pza")
+  cantidad       Decimal                      @default(0) @db.Decimal
+  precioUnitario Decimal                      @default(0) @db.Decimal
+  total          Decimal?                     @default(dbgenerated("(cantidad * \"precioUnitario\")")) @db.Decimal
+  moneda         Moneda?                      @default(MXN)
+  tipoCambio     Decimal?                     @db.Decimal
+  obraId         String?
   notas          String?
-  createdAt      DateTime         @default(now()) @db.Timestamp(6)
-  updatedAt      DateTime         @default(now()) @updatedAt @db.Timestamp(6)
-
-  empresa        Empresa          @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  obra           Obra             @relation(fields: [obraId], references: [id], onUpdate: NoAction)
-  equipo         Equipo?          @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  productoRef    Producto?        @relation("GastosProducto", fields: [productoId], references: [id], onUpdate: NoAction)
-  plantilla      PlantillaObra?   @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
+  createdAt      DateTime                     @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime                     @default(now()) @updatedAt @db.Timestamp(6)
+  tipoGasto      TipoGasto                    @default(EXTERNO)
+  productoId     String?
+  plantillaId    String?
+  nivelGasto     NivelGasto                   @default(GENERAL)
+  origen         OrigenGasto                  @default(GENERAL_MANUAL)
+  distribuible   Boolean                      @default(false)
+  fechaFin       DateTime?                    @db.Date
+  empresa        Empresa                      @relation(fields: [empresaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  equipo         Equipo?                      @relation(fields: [equipoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  obra           Obra?                        @relation(fields: [obraId], references: [id], onUpdate: NoAction)
+  plantilla      PlantillaObra?               @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
+  productoRef    Producto?                    @relation("GastosProducto", fields: [productoId], references: [id], onUpdate: NoAction)
   distribuciones GastoOperativoDistribucion[]
 
   @@index([empresaId])
@@ -616,29 +602,24 @@ model GastoOperativo {
   @@index([plantillaId])
   @@index([nivelGasto])
   @@index([distribuible])
+  @@index([equipoId])
 }
 
-// Tabla de distribución: un gasto general repartido entre múltiples plantillas
 model GastoOperativoDistribucion {
-  id               String           @id @default(uuid())
+  id               String           @id @default(dbgenerated("(gen_random_uuid())::text"))
   gastoOperativoId String
   plantillaId      String
-  porcentaje       Decimal          @db.Decimal   // 0-100
+  porcentaje       Decimal          @db.Decimal
   montoAsignado    Decimal          @db.Decimal
   metodoAsignacion MetodoAsignacion @default(MANUAL)
   notas            String?
-  createdAt        DateTime         @default(now())
-
-  gastoOperativo   GastoOperativo   @relation(fields: [gastoOperativoId], references: [id], onDelete: Cascade)
-  plantilla        PlantillaObra    @relation(fields: [plantillaId], references: [id], onUpdate: NoAction)
+  createdAt        DateTime         @default(now()) @db.Timestamp(6)
+  gastoOperativo   GastoOperativo   @relation(fields: [gastoOperativoId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  plantilla        PlantillaObra    @relation(fields: [plantillaId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([gastoOperativoId])
   @@index([plantillaId])
 }
-
-// =============================================================================
-// Trazabilidad de componentes móviles (Pistola VL140, etc.)
-// =============================================================================
 
 model Componente {
   id             String                 @id @default(uuid())
@@ -650,8 +631,8 @@ model Componente {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   equipoActualId String?
-  equipoActual   Equipo?                @relation("ComponenteEnEquipo", fields: [equipoActualId], references: [id])
   empresa        Empresa                @relation(fields: [empresaId], references: [id])
+  equipoActual   Equipo?                @relation("ComponenteEnEquipo", fields: [equipoActualId], references: [id])
   historial      MovimientoComponente[]
 
   @@index([empresaId])
@@ -674,9 +655,40 @@ model MovimientoComponente {
   @@index([fecha])
 }
 
-// =============================================================================
-// ENUMS
-// =============================================================================
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InventarioEquipo {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId   String
+  equipoId    String
+  descripcion String
+  cantidad    Decimal  @default(1) @db.Decimal
+  observacion String?
+  fecha       DateTime @db.Date
+  createdAt   DateTime @default(now())
+  Empresa     Empresa  @relation(fields: [empresaId], references: [id])
+  Equipo      Equipo   @relation(fields: [equipoId], references: [id])
+
+  @@index([equipoId])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PendienteEquipo {
+  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId     String
+  equipoId      String
+  descripcion   String
+  observacion   String?
+  horometro     Decimal?  @db.Decimal
+  fecha         DateTime  @db.Date
+  resuelto      Boolean   @default(false)
+  fechaResuelto DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+  Empresa       Empresa   @relation(fields: [empresaId], references: [id])
+  Equipo        Equipo    @relation(fields: [equipoId], references: [id])
+
+  @@index([empresaId])
+  @@index([equipoId])
+}
 
 enum Role {
   ADMIN
@@ -755,25 +767,25 @@ enum CategoriaGasto {
 }
 
 enum TipoGasto {
-  INSUMO    // Consumo de producto del almacén → descuenta stock
-  EXTERNO   // Gasto externo, servicio o compra sin pasar por inventario
+  INSUMO
+  EXTERNO
 }
 
 enum NivelGasto {
-  GENERAL        // Gasto general de obra, sin equipo/plantilla específica
-  POR_EQUIPO     // Asignado a un equipo dentro de la obra
-  POR_PLANTILLA  // Asignado directamente a una plantilla
-  DISTRIBUIBLE   // Se distribuye entre múltiples plantillas
+  GENERAL
+  POR_EQUIPO
+  POR_PLANTILLA
+  DISTRIBUIBLE
 }
 
 enum OrigenGasto {
-  DIRECTO_REGISTRO  // Costo que viene del registro diario (diesel, operador, etc.) — no duplicar
-  GENERAL_MANUAL    // Gasto capturado manualmente en este módulo
-  DISTRIBUIDO       // Gasto redistribuido entre plantillas
+  DIRECTO_REGISTRO
+  GENERAL_MANUAL
+  DISTRIBUIDO
 }
 
 enum MetodoAsignacion {
-  MANUAL      // El usuario define el porcentaje manualmente
-  POR_DIAS    // Proporcional a días trabajados (Fase 3)
-  POR_HORAS   // Proporcional a horas trabajadas (Fase 3)
+  MANUAL
+  POR_DIAS
+  POR_HORAS
 }
