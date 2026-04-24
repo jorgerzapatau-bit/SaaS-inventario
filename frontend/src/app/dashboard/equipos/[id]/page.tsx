@@ -7,7 +7,9 @@ import {
     CheckCircle, XCircle, Gauge, Droplets,
     ChevronDown, ChevronUp, Calendar,
     Package, History, X, AlertCircle,
-    ArrowRightLeft, MapPin,
+    ArrowRightLeft, MapPin, ClipboardList,
+    AlertTriangle, BoxesIcon, DollarSign,
+    CheckCheck, Clock, Settings2,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -67,19 +69,62 @@ type Componente = {
     historial: MovimientoComponente[];
 };
 
+type RegistroMant = {
+    id: string;
+    fecha: string;
+    tipo: string | null;
+    descripcion: string;
+    observaciones: string | null;
+    horometro: number | null;
+    hrsUso: number | null;
+    costo: number | null;
+    moneda: string | null;
+    numeroParte: string | null;
+    proveedorId: string | null;
+};
+
+type Pendiente = {
+    id: string;
+    descripcion: string;
+    observacion: string | null;
+    horometro: number | null;
+    fecha: string;
+    resuelto: boolean;
+    fechaResuelto: string | null;
+};
+
+type InventarioItem = {
+    id: string;
+    descripcion: string;
+    cantidad: number;
+    observacion: string | null;
+    fecha: string;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TIPO_MOV: Record<string, { label: string; pill: string }> = {
-    INSTALACION:         { label: 'Instalación',        pill: 'bg-green-100 text-green-700' },
-    RETIRO:              { label: 'Retiro',              pill: 'bg-amber-100 text-amber-700' },
-    ENVIO_REPARACION:    { label: 'Envío a reparación',  pill: 'bg-red-100 text-red-700'    },
-    RETORNO_REPARACION:  { label: 'Retorno reparación',  pill: 'bg-blue-100 text-blue-700'  },
+    INSTALACION:        { label: 'Instalación',       pill: 'bg-green-100 text-green-700' },
+    RETIRO:             { label: 'Retiro',             pill: 'bg-amber-100 text-amber-700' },
+    ENVIO_REPARACION:   { label: 'Envío a reparación', pill: 'bg-red-100 text-red-700'    },
+    RETORNO_REPARACION: { label: 'Retorno reparación', pill: 'bg-blue-100 text-blue-700'  },
+};
+
+const TIPO_MANT: Record<string, { label: string; pill: string }> = {
+    PREVENTIVO:  { label: 'Preventivo',  pill: 'bg-blue-100 text-blue-700'   },
+    CORRECTIVO:  { label: 'Correctivo',  pill: 'bg-red-100 text-red-700'     },
+    PREDICTIVO:  { label: 'Predictivo',  pill: 'bg-purple-100 text-purple-700'},
+    INSPECCION:  { label: 'Inspección',  pill: 'bg-gray-100 text-gray-600'   },
 };
 
 function fmtFecha(iso: string) {
     return new Date(iso + (iso.includes('T') ? '' : 'T12:00:00'))
         .toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+// ─── Tab types ────────────────────────────────────────────────────────────────
+
+type Tab = 'registros' | 'mantenimiento' | 'pendientes' | 'inventario' | 'componentes';
 
 // ─── Modal: Registrar movimiento de componente ────────────────────────────────
 
@@ -135,7 +180,6 @@ function MovimientoModal({ componente, equipoActualId, onClose, onSuccess }: Mov
                 </div>
 
                 <div className="px-6 py-5 space-y-4">
-                    {/* Tipo */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-2">Tipo de movimiento</label>
                         <div className="grid grid-cols-2 gap-2">
@@ -155,7 +199,6 @@ function MovimientoModal({ componente, equipoActualId, onClose, onSuccess }: Mov
                         </div>
                     </div>
 
-                    {/* Fecha */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha</label>
                         <input
@@ -166,20 +209,19 @@ function MovimientoModal({ componente, equipoActualId, onClose, onSuccess }: Mov
                         />
                     </div>
 
-                    {/* Notas */}
                     <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                            Notas <span className="text-gray-400 font-normal">(obligatorio — describe qué pasó)</span>
+                            Notas <span className="text-gray-400 font-normal">(obligatorio)</span>
                         </label>
                         <textarea
                             value={notas}
                             onChange={e => setNotas(e.target.value)}
                             rows={3}
                             placeholder={
-                                tipo === 'INSTALACION'       ? 'Ej: Se instaló en Track-02 para reemplazar pistola dañada' :
-                                tipo === 'RETIRO'            ? 'Ej: Se retiró por desgaste en empaque, va a taller' :
-                                tipo === 'ENVIO_REPARACION'  ? 'Ej: Enviada a taller Suárez para reparación de empaque' :
-                                                               'Ej: Retornó de reparación en buen estado, lista para instalar'
+                                tipo === 'INSTALACION'      ? 'Ej: Se instaló en Track-02 para reemplazar pistola dañada' :
+                                tipo === 'RETIRO'           ? 'Ej: Se retiró por desgaste en empaque, va a taller' :
+                                tipo === 'ENVIO_REPARACION' ? 'Ej: Enviada a taller Suárez para reparación de empaque' :
+                                                              'Ej: Retornó de reparación en buen estado, lista para instalar'
                             }
                             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
                         />
@@ -246,9 +288,9 @@ function NuevoComponenteModal({ equipoId, onClose, onSuccess }: NuevoCompModalPr
                 method: 'POST',
                 body: JSON.stringify({
                     nombre:          nombre.trim(),
-                    serie:           serie.trim()    || null,
-                    tipo:            tipo.trim()     || null,
-                    notas:           notas.trim()    || null,
+                    serie:           serie.trim()  || null,
+                    tipo:            tipo.trim()   || null,
+                    notas:           notas.trim()  || null,
                     equipoActualId:  instalar ? equipoId : null,
                     fechaMovimiento: instalar ? fecha : undefined,
                     notasMovimiento: instalar ? notasMov.trim() : undefined,
@@ -315,7 +357,6 @@ function NuevoComponenteModal({ equipoId, onClose, onSuccess }: NuevoCompModalPr
 
                     <hr className="border-gray-100" />
 
-                    {/* Toggle instalar */}
                     <label className="flex items-center gap-3 cursor-pointer select-none">
                         <div
                             onClick={() => setInstalar(v => !v)}
@@ -372,23 +413,338 @@ function NuevoComponenteModal({ equipoId, onClose, onSuccess }: NuevoCompModalPr
     );
 }
 
-// ─── Tarjeta de componente ────────────────────────────────────────────────────
+// ─── Modal: Nuevo registro de mantenimiento ───────────────────────────────────
 
-function ComponenteCard({
-    comp,
-    equipoId,
-    onMovimiento,
-}: {
-    comp: Componente;
-    equipoId: string;
-    onMovimiento: (c: Componente) => void;
-}) {
+function NuevoMantModal({ equipoId, onClose, onSuccess }: { equipoId: string; onClose: () => void; onSuccess: () => void }) {
+    const [fecha,        setFecha]        = useState(new Date().toISOString().slice(0, 10));
+    const [tipo,         setTipo]         = useState('CORRECTIVO');
+    const [descripcion,  setDescripcion]  = useState('');
+    const [observaciones,setObservaciones]= useState('');
+    const [horometro,    setHorometro]    = useState('');
+    const [hrsUso,       setHrsUso]       = useState('');
+    const [costo,        setCosto]        = useState('');
+    const [moneda,       setMoneda]       = useState('MXN');
+    const [numeroParte,  setNumeroParte]  = useState('');
+    const [saving,       setSaving]       = useState(false);
+    const [error,        setError]        = useState('');
+
+    const handleGuardar = async () => {
+        if (!descripcion.trim()) { setError('La descripción es requerida.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/mantenimiento`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    fecha,
+                    tipo,
+                    descripcion: descripcion.trim(),
+                    observaciones: observaciones.trim() || null,
+                    horometro:   horometro   ? Number(horometro)   : null,
+                    hrsUso:      hrsUso      ? Number(hrsUso)      : null,
+                    costo:       costo       ? Number(costo)       : null,
+                    moneda,
+                    numeroParte: numeroParte.trim() || null,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h2 className="text-base font-bold text-gray-900">Nuevo registro de mantenimiento</h2>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                    {/* Tipo */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-2">Tipo</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(TIPO_MANT).map(([key, { label }]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setTipo(key)}
+                                    className={`py-2 px-3 rounded-lg text-xs font-semibold border transition-all text-left ${
+                                        tipo === key
+                                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha *</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Horómetro (hrs)</label>
+                            <input type="number" value={horometro} onChange={e => setHorometro(e.target.value)}
+                                placeholder="Ej: 1450"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <textarea
+                            value={descripcion}
+                            onChange={e => setDescripcion(e.target.value)}
+                            rows={2}
+                            placeholder="Ej: Cambio de aceite de motor y filtros"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <textarea
+                            value={observaciones}
+                            onChange={e => setObservaciones(e.target.value)}
+                            rows={2}
+                            placeholder="Notas adicionales..."
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Hrs de uso</label>
+                            <input type="number" value={hrsUso} onChange={e => setHrsUso(e.target.value)}
+                                placeholder="Ej: 250"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Costo</label>
+                            <input type="number" value={costo} onChange={e => setCosto(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Moneda</label>
+                            <select value={moneda} onChange={e => setMoneda(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                <option value="MXN">MXN</option>
+                                <option value="USD">USD</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Número de parte</label>
+                        <input type="text" value={numeroParte} onChange={e => setNumeroParte(e.target.value)}
+                            placeholder="Ej: 15400-RTA-003"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleGuardar}
+                        disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                    >
+                        {saving ? 'Guardando...' : 'Guardar registro'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal: Nuevo pendiente/falla ─────────────────────────────────────────────
+
+function NuevoPendienteModal({ equipoId, onClose, onSuccess }: { equipoId: string; onClose: () => void; onSuccess: () => void }) {
+    const [descripcion,  setDescripcion]  = useState('');
+    const [observacion,  setObservacion]  = useState('');
+    const [horometro,    setHorometro]    = useState('');
+    const [fecha,        setFecha]        = useState(new Date().toISOString().slice(0, 10));
+    const [saving,       setSaving]       = useState(false);
+    const [error,        setError]        = useState('');
+
+    const handleGuardar = async () => {
+        if (descripcion.trim().length < 3) { setError('La descripción debe tener al menos 3 caracteres.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/pendientes`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    descripcion: descripcion.trim(),
+                    observacion: observacion.trim() || null,
+                    horometro:   horometro ? Number(horometro) : null,
+                    fecha,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h2 className="text-base font-bold text-gray-900">Nueva falla / pendiente</h2>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
+                            placeholder="Ej: Fuga de aceite en compresor"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <textarea value={observacion} onChange={e => setObservacion(e.target.value)} rows={2}
+                            placeholder="Detalles adicionales..."
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha *</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Horómetro (hrs)</label>
+                            <input type="number" value={horometro} onChange={e => setHorometro(e.target.value)}
+                                placeholder="Ej: 1200"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button onClick={handleGuardar} disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                        {saving ? 'Guardando...' : 'Registrar pendiente'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal: Nuevo ítem de inventario ─────────────────────────────────────────
+
+function NuevoInventarioModal({ equipoId, onClose, onSuccess }: { equipoId: string; onClose: () => void; onSuccess: () => void }) {
+    const [descripcion, setDescripcion] = useState('');
+    const [cantidad,    setCantidad]    = useState('1');
+    const [observacion, setObservacion] = useState('');
+    const [fecha,       setFecha]       = useState(new Date().toISOString().slice(0, 10));
+    const [saving,      setSaving]      = useState(false);
+    const [error,       setError]       = useState('');
+
+    const handleGuardar = async () => {
+        if (!descripcion.trim()) { setError('La descripción es requerida.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/inventario`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    descripcion: descripcion.trim(),
+                    cantidad: Number(cantidad) || 1,
+                    observacion: observacion.trim() || null,
+                    fecha,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h2 className="text-base font-bold text-gray-900">Nuevo ítem de inventario</h2>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
+                            placeholder="Ej: Filtro de aceite"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Cantidad</label>
+                            <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} min="0" step="0.01"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <input type="text" value={observacion} onChange={e => setObservacion(e.target.value)}
+                            placeholder="Notas opcionales..."
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button onClick={handleGuardar} disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                        {saving ? 'Guardando...' : 'Agregar ítem'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── ComponenteCard ───────────────────────────────────────────────────────────
+
+function ComponenteCard({ comp, equipoId, onMovimiento }: { comp: Componente; equipoId: string; onMovimiento: (c: Componente) => void }) {
     const [verHistorial, setVerHistorial] = useState(false);
     const estaAqui = comp.equipoActualId === equipoId;
 
     return (
         <div className="bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow transition-shadow flex flex-col">
-            {/* Header */}
             <div className="flex items-start justify-between p-4 pb-3">
                 <div className="flex items-start gap-3">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${estaAqui ? 'bg-green-50' : 'bg-amber-50'}`}>
@@ -415,7 +771,6 @@ function ComponenteCard({
                 </div>
             )}
 
-            {/* Último movimiento */}
             {comp.historial.length > 0 && (
                 <div className="px-4 pb-3">
                     <div className="bg-gray-50 rounded-lg px-3 py-2">
@@ -431,13 +786,9 @@ function ComponenteCard({
                 </div>
             )}
 
-            {/* Historial expandible */}
             {comp.historial.length > 1 && (
                 <div className="px-4 pb-3">
-                    <button
-                        onClick={() => setVerHistorial(v => !v)}
-                        className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 font-medium"
-                    >
+                    <button onClick={() => setVerHistorial(v => !v)} className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 font-medium">
                         <History size={11} />
                         {verHistorial ? 'Ocultar historial' : `Ver historial (${comp.historial.length} mov.)`}
                         {verHistorial ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
@@ -455,11 +806,6 @@ function ComponenteCard({
                                             <span className="text-xs text-gray-400">{fmtFecha(mov.fecha)}</span>
                                         </div>
                                         <p className="text-xs text-gray-500 mt-0.5 truncate">{mov.notas}</p>
-                                        {mov.equipo && (
-                                            <p className="text-xs text-gray-400">
-                                                {mov.equipo.nombre}{mov.equipo.numeroEconomico ? ` (${mov.equipo.numeroEconomico})` : ''}
-                                            </p>
-                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -468,7 +814,6 @@ function ComponenteCard({
                 </div>
             )}
 
-            {/* Acción */}
             <div className="px-4 pb-4 pt-2 mt-auto border-t border-gray-50">
                 <button
                     onClick={() => onMovimiento(comp)}
@@ -482,7 +827,7 @@ function ComponenteCard({
     );
 }
 
-// ─── Fila de registro diario expandible ──────────────────────────────────────
+// ─── RegistroRow ──────────────────────────────────────────────────────────────
 
 function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => void }) {
     const [exp, setExp] = useState(false);
@@ -492,10 +837,7 @@ function RegistroRow({ r, onDelete }: { r: Registro; onDelete: (id: string) => v
 
     return (
         <>
-            <tr
-                className="hover:bg-blue-50/30 transition-colors group cursor-pointer"
-                onClick={() => setExp(v => !v)}
-            >
+            <tr className="hover:bg-blue-50/30 transition-colors group cursor-pointer" onClick={() => setExp(v => !v)}>
                 <td className="p-3">
                     <div>
                         <p className="text-sm font-semibold text-gray-700">{fecha}</p>
@@ -561,23 +903,32 @@ export default function EquipoDetallePage() {
     const id: string | undefined =
         typeof rawId === 'string' && rawId.trim() !== '' ? rawId : undefined;
 
-    console.log('[EquipoDetalle] raw params:', params);
-    console.log('[EquipoDetalle] id:', id);
-
     const [equipo,      setEquipo]      = useState<Equipo | null>(null);
     const [registros,   setRegistros]   = useState<Registro[]>([]);
     const [componentes, setComponentes] = useState<Componente[]>([]);
+    const [mantenimiento, setMantenimiento] = useState<RegistroMant[]>([]);
+    const [pendientes,  setPendientes]  = useState<Pendiente[]>([]);
+    const [inventario,  setInventario]  = useState<InventarioItem[]>([]);
     const [loading,     setLoading]     = useState(true);
     const [error,       setError]       = useState('');
 
+    // Tab activa
+    const [tab, setTab] = useState<Tab>('registros');
+
     // Modales
-    const [modalMov,   setModalMov]   = useState<Componente | null>(null);
-    const [modalNuevo, setModalNuevo] = useState(false);
+    const [modalMov,        setModalMov]        = useState<Componente | null>(null);
+    const [modalNuevoComp,  setModalNuevoComp]  = useState(false);
+    const [modalNuevoMant,  setModalNuevoMant]  = useState(false);
+    const [modalNuevoPend,  setModalNuevoPend]  = useState(false);
+    const [modalNuevoInv,   setModalNuevoInv]   = useState(false);
 
     // Filtros registros
     const [filtroSemana, setFiltroSemana] = useState('todas');
     const [filtroDesde,  setFiltroDesde]  = useState('');
     const [filtroHasta,  setFiltroHasta]  = useState('');
+
+    // Filtro pendientes
+    const [filtroPend, setFiltroPend] = useState<'abiertos' | 'resueltos' | 'todos'>('abiertos');
 
     const loadComponentes = useCallback(async () => {
         if (!id) return;
@@ -587,20 +938,50 @@ export default function EquipoDetallePage() {
         } catch { /* silencioso */ }
     }, [id]);
 
+    const loadMantenimiento = useCallback(async () => {
+        if (!id) return;
+        try {
+            const data = await fetchApi(`/equipos/${id}/mantenimiento`);
+            setMantenimiento(data);
+        } catch { /* silencioso */ }
+    }, [id]);
+
+    const loadPendientes = useCallback(async () => {
+        if (!id) return;
+        try {
+            const data = await fetchApi(`/equipos/${id}/pendientes?resuelto=all`);
+            setPendientes(data);
+        } catch { /* silencioso */ }
+    }, [id]);
+
+    const loadInventario = useCallback(async () => {
+        if (!id) return;
+        try {
+            const data = await fetchApi(`/equipos/${id}/inventario`);
+            setInventario(data);
+        } catch { /* silencioso */ }
+    }, [id]);
+
     const load = useCallback(async () => {
         if (!id) return;
         setLoading(true);
         setError('');
         try {
-            const [eq, regs, comps] = await Promise.all([
+            const [eq, regs, comps, mant, pend, inv] = await Promise.all([
                 fetchApi(`/equipos/${id}`),
                 fetchApi(`/registros-diarios?equipoId=${id}`),
                 fetchApi(`/componentes?equipoId=${id}`),
+                fetchApi(`/equipos/${id}/mantenimiento`),
+                fetchApi(`/equipos/${id}/pendientes?resuelto=all`),
+                fetchApi(`/equipos/${id}/inventario`),
             ]);
             if (eq.error) throw new Error(eq.error);
             setEquipo(eq);
             setRegistros(regs);
             setComponentes(comps);
+            setMantenimiento(mant);
+            setPendientes(pend);
+            setInventario(inv);
         } catch (e: any) {
             setError(e.message || 'Error al cargar');
         } finally {
@@ -609,10 +990,7 @@ export default function EquipoDetallePage() {
     }, [id]);
 
     useEffect(() => {
-        if (!id) {
-            console.log('[EquipoDetalle] id no válido todavía, abortando fetch');
-            return;
-        }
+        if (!id) return;
         load();
     }, [load, id]);
 
@@ -624,7 +1002,42 @@ export default function EquipoDetallePage() {
         } catch (e: any) { alert(e.message || 'Error'); }
     };
 
-    // Semanas disponibles para filtro
+    const handleDeleteMant = async (regId: string) => {
+        if (!confirm('¿Eliminar este registro de mantenimiento?')) return;
+        try {
+            await fetchApi(`/equipos/${id}/mantenimiento/${regId}`, { method: 'DELETE' });
+            setMantenimiento(m => m.filter(x => x.id !== regId));
+        } catch (e: any) { alert(e.message || 'Error'); }
+    };
+
+    const handleResolverPendiente = async (pend: Pendiente) => {
+        if (!confirm('¿Marcar este pendiente como resuelto?')) return;
+        try {
+            await fetchApi(`/equipos/${id}/pendientes/${pend.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ resuelto: true, fechaResuelto: new Date().toISOString().slice(0, 10) }),
+            });
+            loadPendientes();
+        } catch (e: any) { alert(e.message || 'Error'); }
+    };
+
+    const handleDeletePendiente = async (pendId: string) => {
+        if (!confirm('¿Eliminar este pendiente?')) return;
+        try {
+            await fetchApi(`/equipos/${id}/pendientes/${pendId}`, { method: 'DELETE' });
+            setPendientes(p => p.filter(x => x.id !== pendId));
+        } catch (e: any) { alert(e.message || 'Error'); }
+    };
+
+    const handleDeleteInventario = async (itemId: string) => {
+        if (!confirm('¿Eliminar este ítem del inventario?')) return;
+        try {
+            await fetchApi(`/equipos/${id}/inventario/${itemId}`, { method: 'DELETE' });
+            setInventario(i => i.filter(x => x.id !== itemId));
+        } catch (e: any) { alert(e.message || 'Error'); }
+    };
+
+    // ── Semanas disponibles para filtro ────────────────────────────────────────
     const semanas = Array.from(
         new Set(registros.filter(r => r.semanaNum).map(r => `${r.anoNum}-${String(r.semanaNum).padStart(2, '0')}`))
     ).sort().reverse();
@@ -645,9 +1058,26 @@ export default function EquipoDetallePage() {
     const ltHr = totalHoras > 0 ? (totalLitros / totalHoras).toFixed(2) : '—';
     const mtHr = totalHoras > 0 ? (totalMetros / totalHoras).toFixed(2) : '—';
 
+    const pendientesFiltrados = pendientes.filter(p => {
+        if (filtroPend === 'abiertos')  return !p.resuelto;
+        if (filtroPend === 'resueltos') return p.resuelto;
+        return true;
+    });
+
+    const pendientesAbiertos = pendientes.filter(p => !p.resuelto).length;
+
     if (!id || loading) return <div className="p-10 text-center text-gray-400">Cargando...</div>;
-    if (error)   return <div className="p-10 text-center text-red-500">{error}</div>;
-    if (!equipo) return <div className="p-10 text-center text-gray-400">Equipo no encontrado</div>;
+    if (error)          return <div className="p-10 text-center text-red-500">{error}</div>;
+    if (!equipo)        return <div className="p-10 text-center text-gray-400">Equipo no encontrado</div>;
+
+    // ── Definición de tabs ──────────────────────────────────────────────────────
+    const tabs: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+        { key: 'registros',    label: 'Registros diarios',  icon: <ClipboardList size={14} /> },
+        { key: 'mantenimiento',label: 'Bitácora',           icon: <Settings2 size={14} />,     badge: mantenimiento.length },
+        { key: 'pendientes',   label: 'Pendientes',         icon: <AlertTriangle size={14} />, badge: pendientesAbiertos || undefined },
+        { key: 'inventario',   label: 'Inventario',         icon: <BoxesIcon size={14} />,     badge: inventario.length },
+        { key: 'componentes',  label: 'Componentes',        icon: <Package size={14} />,       badge: componentes.length },
+    ];
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
@@ -703,145 +1133,444 @@ export default function EquipoDetallePage() {
                 </div>
             </div>
 
-            {/* ══════════════════════════════════════════════════════
-                SECCIÓN COMPONENTES
-            ══════════════════════════════════════════════════════ */}
-            <div>
-                <div className="flex items-center justify-between mb-3">
-                    <div>
-                        <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                            <Package size={16} className="text-blue-500" />
-                            Componentes instalados
-                        </h2>
-                        <p className="text-xs text-gray-400 mt-0.5">
-                            Pistolas, cabezales y otros componentes trazables en este equipo
-                        </p>
-                    </div>
+            {/* ── Tabs ── */}
+            <div className="flex gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto">
+                {tabs.map(t => (
                     <button
-                        onClick={() => setModalNuevo(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap relative ${
+                            tab === t.key
+                                ? 'bg-white text-blue-700 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
+                        }`}
                     >
-                        <Plus size={13} /> Agregar componente
+                        {t.icon}
+                        {t.label}
+                        {t.badge !== undefined && t.badge > 0 && (
+                            <span className={`ml-1 px-1.5 py-0.5 rounded-full text-xs font-bold ${
+                                t.key === 'pendientes'
+                                    ? 'bg-orange-100 text-orange-600'
+                                    : 'bg-blue-100 text-blue-600'
+                            }`}>
+                                {t.badge}
+                            </span>
+                        )}
                     </button>
-                </div>
+                ))}
+            </div>
 
-                {componentes.length === 0 ? (
-                    <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
-                        <Package size={32} className="text-gray-200 mx-auto mb-3" />
-                        <p className="text-sm font-medium text-gray-500">Sin componentes instalados</p>
-                        <p className="text-xs text-gray-400 mt-1 mb-4">
-                            Registra pistolas, cabezales u otros componentes para tener trazabilidad completa.
-                        </p>
-                        <button
-                            onClick={() => setModalNuevo(true)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            {/* ══════════════════════════════════════════════════════════════════
+                TAB: REGISTROS DIARIOS
+            ══════════════════════════════════════════════════════════════════ */}
+            {tab === 'registros' && (
+                <div className="space-y-4">
+                    {/* Filtros */}
+                    <div className="flex flex-wrap gap-3 items-center bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <Calendar size={15} className="text-blue-500 flex-shrink-0" />
+                        <span className="text-sm font-semibold text-gray-600">Filtrar:</span>
+
+                        <select
+                            value={filtroSemana}
+                            onChange={e => { setFiltroSemana(e.target.value); setFiltroDesde(''); setFiltroHasta(''); }}
+                            className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
-                            <Plus size={13} /> Agregar primer componente
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {componentes.map(comp => (
-                            <ComponenteCard
-                                key={comp.id}
-                                comp={comp}
-                                equipoId={id}
-                                onMovimiento={setModalMov}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
+                            <option value="todas">Todas las semanas</option>
+                            {semanas.map(s => {
+                                const [ano, sem] = s.split('-');
+                                return <option key={s} value={s}>Semana {parseInt(sem)} / {ano}</option>;
+                            })}
+                        </select>
 
-            {/* ── Filtros de registros ── */}
-            <div className="flex flex-wrap gap-3 items-center bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <Calendar size={15} className="text-blue-500 flex-shrink-0" />
-                <span className="text-sm font-semibold text-gray-600">Filtrar registros:</span>
-
-                <select
-                    value={filtroSemana}
-                    onChange={e => { setFiltroSemana(e.target.value); setFiltroDesde(''); setFiltroHasta(''); }}
-                    className="py-1.5 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                    <option value="todas">Todas las semanas</option>
-                    {semanas.map(s => {
-                        const [ano, sem] = s.split('-');
-                        return <option key={s} value={s}>Semana {parseInt(sem)} / {ano}</option>;
-                    })}
-                </select>
-
-                <span className="text-xs text-gray-400">ó rango:</span>
-                <div className="flex items-center gap-2">
-                    <input type="date" value={filtroDesde} onChange={e => { setFiltroDesde(e.target.value); setFiltroSemana('todas'); }}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white" />
-                    <span className="text-xs text-gray-400">→</span>
-                    <input type="date" value={filtroHasta} onChange={e => { setFiltroHasta(e.target.value); setFiltroSemana('todas'); }}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white" />
-                </div>
-
-                {(filtroSemana !== 'todas' || filtroDesde || filtroHasta) && (
-                    <button
-                        onClick={() => { setFiltroSemana('todas'); setFiltroDesde(''); setFiltroHasta(''); }}
-                        className="text-xs text-red-400 hover:text-red-600 hover:underline"
-                    >
-                        Limpiar filtros
-                    </button>
-                )}
-            </div>
-
-            {/* ── KPIs período ── */}
-            {filtrados.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                    {[
-                        { label: 'Registros',    val: filtrados.length,             unit: '' },
-                        { label: 'Horas',        val: totalHoras.toFixed(1),        unit: 'hrs' },
-                        { label: 'Metros',       val: totalMetros.toFixed(1),       unit: 'm' },
-                        { label: 'Diésel',       val: totalLitros.toLocaleString(), unit: 'lt' },
-                        { label: 'Lt/hr prom.',  val: ltHr,                         unit: '' },
-                        { label: 'Costo diésel', val: `$${totalCosto.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '' },
-                    ].map(k => (
-                        <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
-                            <p className="text-xs text-gray-400 mb-1">{k.label}</p>
-                            <p className="text-lg font-bold text-gray-800">{k.val} <span className="text-xs font-normal text-gray-400">{k.unit}</span></p>
+                        <span className="text-xs text-gray-400">ó rango:</span>
+                        <div className="flex items-center gap-2">
+                            <input type="date" value={filtroDesde} onChange={e => { setFiltroDesde(e.target.value); setFiltroSemana('todas'); }}
+                                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white" />
+                            <span className="text-xs text-gray-400">→</span>
+                            <input type="date" value={filtroHasta} onChange={e => { setFiltroHasta(e.target.value); setFiltroSemana('todas'); }}
+                                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white" />
                         </div>
-                    ))}
+
+                        {(filtroSemana !== 'todas' || filtroDesde || filtroHasta) && (
+                            <button onClick={() => { setFiltroSemana('todas'); setFiltroDesde(''); setFiltroHasta(''); }}
+                                className="text-xs text-red-400 hover:text-red-600 hover:underline">
+                                Limpiar filtros
+                            </button>
+                        )}
+                    </div>
+
+                    {/* KPIs período */}
+                    {filtrados.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                            {[
+                                { label: 'Registros',    val: filtrados.length,             unit: '' },
+                                { label: 'Horas',        val: totalHoras.toFixed(1),        unit: 'hrs' },
+                                { label: 'Metros',       val: totalMetros.toFixed(1),       unit: 'm' },
+                                { label: 'Diésel',       val: totalLitros.toLocaleString(), unit: 'lt' },
+                                { label: 'Lt/hr prom.',  val: ltHr,                         unit: '' },
+                                { label: 'Costo diésel', val: `$${totalCosto.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`, unit: '' },
+                            ].map(k => (
+                                <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                                    <p className="text-xs text-gray-400 mb-1">{k.label}</p>
+                                    <p className="text-lg font-bold text-gray-800">{k.val} <span className="text-xs font-normal text-gray-400">{k.unit}</span></p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <Card>
+                        {filtrados.length === 0 ? (
+                            <div className="p-10 text-center">
+                                <p className="text-sm text-gray-500 font-medium">Sin registros para el filtro seleccionado</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50/50 border-b border-gray-100">
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Horas</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Barrenos</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Metros</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Diésel</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Costo</th>
+                                            <th className="p-3 w-16"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {filtrados.map(r => (
+                                            <RegistroRow key={r.id} r={r} onDelete={handleDeleteRegistro} />
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <div className="p-4 border-t border-gray-100 text-xs text-gray-400">
+                                    {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}
+                                    {filtrados.length !== registros.length && ` (de ${registros.length} totales)`}
+                                </div>
+                            </div>
+                        )}
+                    </Card>
                 </div>
             )}
 
-            {/* ── Tabla registros ── */}
-            <Card>
-                {filtrados.length === 0 ? (
-                    <div className="p-10 text-center">
-                        <p className="text-sm text-gray-500 font-medium">Sin registros para el filtro seleccionado</p>
-                    </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Obra</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Horas</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Barrenos</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Metros</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Diésel</th>
-                                    <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Costo</th>
-                                    <th className="p-3 w-16"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {filtrados.map(r => (
-                                    <RegistroRow key={r.id} r={r} onDelete={handleDeleteRegistro} />
-                                ))}
-                            </tbody>
-                        </table>
-                        <div className="p-4 border-t border-gray-100 text-xs text-gray-400">
-                            {filtrados.length} registro{filtrados.length !== 1 ? 's' : ''}
-                            {filtrados.length !== registros.length && ` (de ${registros.length} totales)`}
+            {/* ══════════════════════════════════════════════════════════════════
+                TAB: BITÁCORA DE MANTENIMIENTO
+            ══════════════════════════════════════════════════════════════════ */}
+            {tab === 'mantenimiento' && (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                <Settings2 size={16} className="text-blue-500" />
+                                Bitácora de mantenimiento
+                            </h2>
+                            <p className="text-xs text-gray-400 mt-0.5">Historial de mantenimientos preventivos y correctivos</p>
                         </div>
+                        <button
+                            onClick={() => setModalNuevoMant(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus size={13} /> Nuevo registro
+                        </button>
                     </div>
-                )}
-            </Card>
+
+                    {mantenimiento.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                            <Settings2 size={32} className="text-gray-200 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-500">Sin registros de mantenimiento</p>
+                            <p className="text-xs text-gray-400 mt-1 mb-4">Registra los mantenimientos realizados al equipo.</p>
+                            <button
+                                onClick={() => setModalNuevoMant(true)}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                            >
+                                <Plus size={13} /> Agregar primer registro
+                            </button>
+                        </div>
+                    ) : (
+                        <Card>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50/50 border-b border-gray-100">
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Descripción</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Horómetro</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Costo</th>
+                                            <th className="p-3 w-12"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {mantenimiento.map(m => (
+                                            <tr key={m.id} className="hover:bg-gray-50/50 transition-colors group">
+                                                <td className="p-3 text-sm text-gray-600">{fmtFecha(m.fecha)}</td>
+                                                <td className="p-3">
+                                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TIPO_MANT[m.tipo ?? '']?.pill ?? 'bg-gray-100 text-gray-600'}`}>
+                                                        {TIPO_MANT[m.tipo ?? '']?.label ?? (m.tipo || '—')}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <p className="text-sm text-gray-700">{m.descripcion}</p>
+                                                    {m.observaciones && <p className="text-xs text-gray-400 mt-0.5">{m.observaciones}</p>}
+                                                    {m.numeroParte && <p className="text-xs text-gray-400 font-mono">P/N: {m.numeroParte}</p>}
+                                                </td>
+                                                <td className="p-3 text-right text-sm text-gray-600">
+                                                    {m.horometro != null ? `${m.horometro} hrs` : '—'}
+                                                </td>
+                                                <td className="p-3 text-right text-sm font-semibold text-gray-700">
+                                                    {m.costo != null && m.costo > 0
+                                                        ? `${m.moneda === 'USD' ? 'US$' : '$'}${Number(m.costo).toLocaleString('es-MX', { maximumFractionDigits: 2 })}`
+                                                        : '—'}
+                                                </td>
+                                                <td className="p-3 text-right">
+                                                    <button
+                                                        onClick={() => handleDeleteMant(m.id)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════
+                TAB: PENDIENTES / FALLAS
+            ══════════════════════════════════════════════════════════════════ */}
+            {tab === 'pendientes' && (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                <AlertTriangle size={16} className="text-orange-500" />
+                                Pendientes y fallas
+                                {pendientesAbiertos > 0 && (
+                                    <span className="bg-orange-100 text-orange-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                                        {pendientesAbiertos} abierto{pendientesAbiertos !== 1 ? 's' : ''}
+                                    </span>
+                                )}
+                            </h2>
+                            <p className="text-xs text-gray-400 mt-0.5">Fallas y tareas pendientes de atender</p>
+                        </div>
+                        <button
+                            onClick={() => setModalNuevoPend(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus size={13} /> Nueva falla
+                        </button>
+                    </div>
+
+                    {/* Filtro */}
+                    <div className="flex gap-2">
+                        {(['abiertos', 'resueltos', 'todos'] as const).map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setFiltroPend(f)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all capitalize ${
+                                    filtroPend === f
+                                        ? 'bg-gray-800 text-white border-gray-800'
+                                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                                }`}
+                            >
+                                {f === 'abiertos' ? 'Abiertos' : f === 'resueltos' ? 'Resueltos' : 'Todos'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {pendientesFiltrados.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                            <CheckCheck size={32} className="text-gray-200 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-500">
+                                {filtroPend === 'abiertos' ? '¡Sin pendientes abiertos! Todo en orden.' : 'Sin registros para mostrar'}
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {pendientesFiltrados.map(p => (
+                                <div key={p.id} className={`bg-white border rounded-xl p-4 flex items-start gap-4 ${p.resuelto ? 'border-gray-100 opacity-75' : 'border-orange-100'}`}>
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${p.resuelto ? 'bg-green-50' : 'bg-orange-50'}`}>
+                                        {p.resuelto
+                                            ? <CheckCircle size={16} className="text-green-500" />
+                                            : <AlertTriangle size={16} className="text-orange-500" />
+                                        }
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <p className={`text-sm font-semibold ${p.resuelto ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                                {p.descripcion}
+                                            </p>
+                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${p.resuelto ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                                                {p.resuelto ? 'Resuelto' : 'Abierto'}
+                                            </span>
+                                        </div>
+                                        {p.observacion && <p className="text-xs text-gray-500 mt-1">{p.observacion}</p>}
+                                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                            <span className="flex items-center gap-1"><Calendar size={10} /> {fmtFecha(p.fecha)}</span>
+                                            {p.horometro != null && <span className="flex items-center gap-1"><Gauge size={10} /> {p.horometro} hrs</span>}
+                                            {p.resuelto && p.fechaResuelto && (
+                                                <span className="flex items-center gap-1 text-green-500"><CheckCircle size={10} /> Resuelto: {fmtFecha(p.fechaResuelto)}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        {!p.resuelto && (
+                                            <button
+                                                onClick={() => handleResolverPendiente(p)}
+                                                title="Marcar como resuelto"
+                                                className="p-1.5 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-md transition-colors"
+                                            >
+                                                <CheckCheck size={15} />
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => handleDeletePendiente(p.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════
+                TAB: INVENTARIO DEL EQUIPO
+            ══════════════════════════════════════════════════════════════════ */}
+            {tab === 'inventario' && (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                <BoxesIcon size={16} className="text-blue-500" />
+                                Inventario del equipo
+                            </h2>
+                            <p className="text-xs text-gray-400 mt-0.5">Piezas, refacciones y materiales asignados a este equipo</p>
+                        </div>
+                        <button
+                            onClick={() => setModalNuevoInv(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus size={13} /> Agregar ítem
+                        </button>
+                    </div>
+
+                    {inventario.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                            <BoxesIcon size={32} className="text-gray-200 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-500">Sin ítems de inventario</p>
+                            <p className="text-xs text-gray-400 mt-1 mb-4">Registra las piezas o refacciones asignadas a este equipo.</p>
+                            <button
+                                onClick={() => setModalNuevoInv(true)}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                            >
+                                <Plus size={13} /> Agregar primer ítem
+                            </button>
+                        </div>
+                    ) : (
+                        <Card>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50/50 border-b border-gray-100">
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Descripción</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Cantidad</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Observación</th>
+                                            <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
+                                            <th className="p-3 w-12"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {inventario.map(item => (
+                                            <tr key={item.id} className="hover:bg-gray-50/50 transition-colors group">
+                                                <td className="p-3 text-sm font-medium text-gray-700">{item.descripcion}</td>
+                                                <td className="p-3 text-right">
+                                                    <span className="text-sm font-bold text-gray-800 bg-blue-50 px-2 py-0.5 rounded-lg">
+                                                        {Number(item.cantidad).toLocaleString('es-MX')}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-xs text-gray-500">{item.observacion || '—'}</td>
+                                                <td className="p-3 text-xs text-gray-400">{fmtFecha(item.fecha)}</td>
+                                                <td className="p-3 text-right">
+                                                    <button
+                                                        onClick={() => handleDeleteInventario(item.id)}
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr className="border-t border-gray-100 bg-gray-50/30">
+                                            <td className="p-3 text-xs text-gray-400">{inventario.length} ítem{inventario.length !== 1 ? 's' : ''}</td>
+                                            <td colSpan={4}></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════
+                TAB: COMPONENTES
+            ══════════════════════════════════════════════════════════════════ */}
+            {tab === 'componentes' && (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                <Package size={16} className="text-blue-500" />
+                                Componentes instalados
+                            </h2>
+                            <p className="text-xs text-gray-400 mt-0.5">Pistolas, cabezales y otros componentes trazables</p>
+                        </div>
+                        <button
+                            onClick={() => setModalNuevoComp(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus size={13} /> Agregar componente
+                        </button>
+                    </div>
+
+                    {componentes.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                            <Package size={32} className="text-gray-200 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-500">Sin componentes instalados</p>
+                            <p className="text-xs text-gray-400 mt-1 mb-4">Registra pistolas, cabezales u otros componentes para tener trazabilidad completa.</p>
+                            <button
+                                onClick={() => setModalNuevoComp(true)}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                            >
+                                <Plus size={13} /> Agregar primer componente
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {componentes.map(comp => (
+                                <ComponenteCard
+                                    key={comp.id}
+                                    comp={comp}
+                                    equipoId={id}
+                                    onMovimiento={setModalMov}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* ══ Modales ══ */}
             {modalMov && (
@@ -852,11 +1581,32 @@ export default function EquipoDetallePage() {
                     onSuccess={loadComponentes}
                 />
             )}
-            {modalNuevo && (
+            {modalNuevoComp && (
                 <NuevoComponenteModal
                     equipoId={id}
-                    onClose={() => setModalNuevo(false)}
+                    onClose={() => setModalNuevoComp(false)}
                     onSuccess={loadComponentes}
+                />
+            )}
+            {modalNuevoMant && (
+                <NuevoMantModal
+                    equipoId={id}
+                    onClose={() => setModalNuevoMant(false)}
+                    onSuccess={loadMantenimiento}
+                />
+            )}
+            {modalNuevoPend && (
+                <NuevoPendienteModal
+                    equipoId={id}
+                    onClose={() => setModalNuevoPend(false)}
+                    onSuccess={loadPendientes}
+                />
+            )}
+            {modalNuevoInv && (
+                <NuevoInventarioModal
+                    equipoId={id}
+                    onClose={() => setModalNuevoInv(false)}
+                    onSuccess={loadInventario}
                 />
             )}
         </div>
