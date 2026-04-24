@@ -9,7 +9,7 @@ import {
     Package, History, X, AlertCircle,
     ArrowRightLeft, MapPin, ClipboardList,
     AlertTriangle, BoxesIcon, DollarSign,
-    CheckCheck, Clock, Settings2,
+    CheckCheck, Clock, Settings2, Search, Pencil,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -572,6 +572,210 @@ function NuevoMantModal({ equipoId, onClose, onSuccess }: { equipoId: string; on
     );
 }
 
+// ─── Modal: Editar registro de mantenimiento ──────────────────────────────────
+
+type EditMantModalProps = {
+    registro: RegistroMant;
+    equipoId: string;
+    onClose: () => void;
+    onSuccess: () => void;
+};
+
+function EditMantModal({ registro, equipoId, onClose, onSuccess }: EditMantModalProps) {
+    const [fecha,         setFecha]         = useState(registro.fecha.slice(0, 10));
+    const [tipo,         setTipo]           = useState(registro.tipo ?? 'CORRECTIVO');
+    const [descripcion,  setDescripcion]    = useState(registro.descripcion);
+    const [observaciones,setObservaciones]  = useState(registro.observaciones ?? '');
+    const [horometro,    setHorometro]      = useState(registro.horometro != null ? String(registro.horometro) : '');
+    const [hrsUso,       setHrsUso]         = useState(registro.hrsUso != null ? String(registro.hrsUso) : '');
+    const [costo,        setCosto]          = useState(registro.costo != null ? String(registro.costo) : '');
+    const [moneda,       setMoneda]         = useState(registro.moneda ?? 'MXN');
+    const [numeroParte,  setNumeroParte]    = useState(registro.numeroParte ?? '');
+    const [saving,       setSaving]         = useState(false);
+    const [error,        setError]          = useState('');
+
+    const handleGuardar = async () => {
+        if (!descripcion.trim()) { setError('La descripción es requerida.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/mantenimiento/${registro.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    fecha,
+                    tipo,
+                    descripcion: descripcion.trim(),
+                    observaciones: observaciones.trim() || null,
+                    horometro:   horometro   ? Number(horometro)   : null,
+                    hrsUso:      hrsUso      ? Number(hrsUso)      : null,
+                    costo:       costo       ? Number(costo)       : null,
+                    moneda,
+                    numeroParte: numeroParte.trim() || null,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Editar registro de mantenimiento</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">Modifica los datos del registro seleccionado</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="px-6 py-5 space-y-4">
+                    {/* Tipo */}
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-2">Tipo</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(TIPO_MANT).map(([key, { label }]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setTipo(key)}
+                                    className={`py-2 px-3 rounded-lg text-xs font-semibold border transition-all text-left ${
+                                        tipo === key
+                                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha *</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Horómetro (hrs)</label>
+                            <input type="number" value={horometro} onChange={e => setHorometro(e.target.value)}
+                                placeholder="Ej: 1450"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <textarea
+                            value={descripcion}
+                            onChange={e => setDescripcion(e.target.value)}
+                            rows={2}
+                            placeholder="Ej: Cambio de aceite de motor y filtros"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <textarea
+                            value={observaciones}
+                            onChange={e => setObservaciones(e.target.value)}
+                            rows={2}
+                            placeholder="Notas adicionales..."
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Hrs de uso</label>
+                            <input type="number" value={hrsUso} onChange={e => setHrsUso(e.target.value)}
+                                placeholder="Ej: 250"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Costo</label>
+                            <input type="number" value={costo} onChange={e => setCosto(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Moneda</label>
+                            <select value={moneda} onChange={e => setMoneda(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                <option value="MXN">MXN</option>
+                                <option value="USD">USD</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Número de parte</label>
+                        <input type="text" value={numeroParte} onChange={e => setNumeroParte(e.target.value)}
+                            placeholder="Ej: 15400-RTA-003"
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleGuardar}
+                        disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                    >
+                        {saving ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal de confirmación de borrado ─────────────────────────────────────────
+
+type ConfirmDeleteModalProps = {
+    mensaje: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+};
+
+function ConfirmDeleteModal({ mensaje, onConfirm, onCancel }: ConfirmDeleteModalProps) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+                <div className="px-6 py-5 flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
+                        <Trash2 size={18} className="text-red-500" />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-bold text-gray-900">¿Eliminar registro?</h3>
+                        <p className="text-xs text-gray-500 mt-1">{mensaje}</p>
+                        <p className="text-xs text-red-500 mt-2 font-medium">Esta acción no se puede deshacer.</p>
+                    </div>
+                </div>
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                        Cancelar
+                    </button>
+                    <button onClick={onConfirm} className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors">
+                        Sí, eliminar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Modal: Nuevo pendiente/falla ─────────────────────────────────────────────
 
 function NuevoPendienteModal({ equipoId, onClose, onSuccess }: { equipoId: string; onClose: () => void; onSuccess: () => void }) {
@@ -930,6 +1134,19 @@ export default function EquipoDetallePage() {
     // Filtro pendientes
     const [filtroPend, setFiltroPend] = useState<'abiertos' | 'resueltos' | 'todos'>('abiertos');
 
+    // Filtros bitácora de mantenimiento
+    const [mantSearch,      setMantSearch]      = useState('');
+    const [mantFiltroTipo,  setMantFiltroTipo]  = useState('todos');
+    const [mantFiltroFecha, setMantFiltroFecha] = useState('todos'); // 'todos' | '3m' | '6m' | '1a' | '2a' | 'personalizado'
+    const [mantDesde,       setMantDesde]       = useState('');
+    const [mantHasta,       setMantHasta]       = useState('');
+
+    // Modal editar mantenimiento
+    const [modalEditMant,   setModalEditMant]   = useState<RegistroMant | null>(null);
+
+    // Confirmación de borrado
+    const [confirmDelete, setConfirmDelete] = useState<{ mensaje: string; onConfirm: () => void } | null>(null);
+
     const loadComponentes = useCallback(async () => {
         if (!id) return;
         try {
@@ -1002,12 +1219,17 @@ export default function EquipoDetallePage() {
         } catch (e: any) { alert(e.message || 'Error'); }
     };
 
-    const handleDeleteMant = async (regId: string) => {
-        if (!confirm('¿Eliminar este registro de mantenimiento?')) return;
-        try {
-            await fetchApi(`/equipos/${id}/mantenimiento/${regId}`, { method: 'DELETE' });
-            setMantenimiento(m => m.filter(x => x.id !== regId));
-        } catch (e: any) { alert(e.message || 'Error'); }
+    const handleDeleteMant = (regId: string, descripcion: string) => {
+        setConfirmDelete({
+            mensaje: `Se eliminará el registro: "${descripcion.slice(0, 80)}${descripcion.length > 80 ? '...' : ''}"`,
+            onConfirm: async () => {
+                setConfirmDelete(null);
+                try {
+                    await fetchApi(`/equipos/${id}/mantenimiento/${regId}`, { method: 'DELETE' });
+                    setMantenimiento(m => m.filter(x => x.id !== regId));
+                } catch (e: any) { alert(e.message || 'Error'); }
+            },
+        });
     };
 
     const handleResolverPendiente = async (pend: Pendiente) => {
@@ -1065,6 +1287,45 @@ export default function EquipoDetallePage() {
     });
 
     const pendientesAbiertos = pendientes.filter(p => !p.resuelto).length;
+
+    // ── Filtrado bitácora de mantenimiento ──────────────────────────────────────
+    const mantFechaMin = mantenimiento.length > 0
+        ? mantenimiento.reduce((min, m) => m.fecha < min ? m.fecha : min, mantenimiento[0].fecha).slice(0, 10)
+        : '';
+
+    const mantFiltrados = mantenimiento.filter(m => {
+        // Búsqueda por texto
+        if (mantSearch.trim()) {
+            const q = mantSearch.toLowerCase();
+            if (
+                !m.descripcion.toLowerCase().includes(q) &&
+                !(m.observaciones ?? '').toLowerCase().includes(q) &&
+                !(m.numeroParte ?? '').toLowerCase().includes(q)
+            ) return false;
+        }
+        // Filtro por tipo
+        if (mantFiltroTipo !== 'todos' && m.tipo !== mantFiltroTipo) return false;
+        // Filtro por fecha preestablecida
+        const hoy = new Date();
+        const fechaM = new Date(m.fecha + (m.fecha.includes('T') ? '' : 'T12:00:00'));
+        if (mantFiltroFecha === '3m') {
+            const desde = new Date(hoy); desde.setMonth(desde.getMonth() - 3);
+            if (fechaM < desde) return false;
+        } else if (mantFiltroFecha === '6m') {
+            const desde = new Date(hoy); desde.setMonth(desde.getMonth() - 6);
+            if (fechaM < desde) return false;
+        } else if (mantFiltroFecha === '1a') {
+            const desde = new Date(hoy); desde.setFullYear(desde.getFullYear() - 1);
+            if (fechaM < desde) return false;
+        } else if (mantFiltroFecha === '2a') {
+            const desde = new Date(hoy); desde.setFullYear(desde.getFullYear() - 2);
+            if (fechaM < desde) return false;
+        } else if (mantFiltroFecha === 'personalizado') {
+            if (mantDesde && m.fecha.slice(0, 10) < mantDesde) return false;
+            if (mantHasta && m.fecha.slice(0, 10) > mantHasta) return false;
+        }
+        return true;
+    });
 
     if (!id || loading) return <div className="p-10 text-center text-gray-400">Cargando...</div>;
     if (error)          return <div className="p-10 text-center text-red-500">{error}</div>;
@@ -1275,6 +1536,106 @@ export default function EquipoDetallePage() {
                         </button>
                     </div>
 
+                    {/* ── Búsqueda y filtros ── */}
+                    {mantenimiento.length > 0 && (
+                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
+                            {/* Búsqueda */}
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    value={mantSearch}
+                                    onChange={e => setMantSearch(e.target.value)}
+                                    placeholder="Buscar por descripción, observaciones o número de parte..."
+                                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                                />
+                            </div>
+
+                            <div className="flex flex-wrap gap-3 items-center">
+                                {/* Filtro por tipo */}
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Tipo:</span>
+                                    <div className="flex gap-1">
+                                        {[{ key: 'todos', label: 'Todos' }, ...Object.entries(TIPO_MANT).map(([key, { label }]) => ({ key, label }))].map(({ key, label }) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setMantFiltroTipo(key)}
+                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                                                    mantFiltroTipo === key
+                                                        ? 'bg-gray-800 text-white border-gray-800'
+                                                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                                                }`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Filtro por fecha */}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Período:</span>
+                                    <div className="flex gap-1 flex-wrap">
+                                        {[
+                                            { key: 'todos',         label: 'Todo el historial' },
+                                            { key: '3m',            label: 'Últimos 3 meses'   },
+                                            { key: '6m',            label: 'Últimos 6 meses'   },
+                                            { key: '1a',            label: 'Último año'        },
+                                            { key: '2a',            label: 'Últimos 2 años'    },
+                                            { key: 'personalizado', label: 'Personalizado'     },
+                                        ].map(({ key, label }) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setMantFiltroFecha(key)}
+                                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                                                    mantFiltroFecha === key
+                                                        ? 'bg-blue-600 text-white border-blue-600'
+                                                        : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                                                }`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Rango personalizado */}
+                            {mantFiltroFecha === 'personalizado' && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs text-gray-400">Desde:</span>
+                                    <input
+                                        type="date"
+                                        value={mantDesde}
+                                        min={mantFechaMin}
+                                        max={new Date().toISOString().slice(0, 10)}
+                                        onChange={e => setMantDesde(e.target.value)}
+                                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white"
+                                    />
+                                    <span className="text-xs text-gray-400">→ Hasta:</span>
+                                    <input
+                                        type="date"
+                                        value={mantHasta}
+                                        min={mantDesde || mantFechaMin}
+                                        max={new Date().toISOString().slice(0, 10)}
+                                        onChange={e => setMantHasta(e.target.value)}
+                                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:ring-1 focus:ring-blue-500 bg-white"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Limpiar filtros */}
+                            {(mantSearch || mantFiltroTipo !== 'todos' || mantFiltroFecha !== 'todos') && (
+                                <button
+                                    onClick={() => { setMantSearch(''); setMantFiltroTipo('todos'); setMantFiltroFecha('todos'); setMantDesde(''); setMantHasta(''); }}
+                                    className="text-xs text-red-400 hover:text-red-600 hover:underline"
+                                >
+                                    Limpiar filtros
+                                </button>
+                            )}
+                        </div>
+                    )}
+
                     {mantenimiento.length === 0 ? (
                         <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
                             <Settings2 size={32} className="text-gray-200 mx-auto mb-3" />
@@ -1287,6 +1648,12 @@ export default function EquipoDetallePage() {
                                 <Plus size={13} /> Agregar primer registro
                             </button>
                         </div>
+                    ) : mantFiltrados.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                            <Search size={28} className="text-gray-200 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-500">Sin resultados para los filtros aplicados</p>
+                            <p className="text-xs text-gray-400 mt-1">Intenta con otros criterios de búsqueda.</p>
+                        </div>
                     ) : (
                         <Card>
                             <div className="overflow-x-auto">
@@ -1298,13 +1665,13 @@ export default function EquipoDetallePage() {
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Descripción</th>
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Horómetro</th>
                                             <th className="p-3 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Costo</th>
-                                            <th className="p-3 w-12"></th>
+                                            <th className="p-3 w-20"></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
-                                        {mantenimiento.map(m => (
+                                        {mantFiltrados.map(m => (
                                             <tr key={m.id} className="hover:bg-gray-50/50 transition-colors group">
-                                                <td className="p-3 text-sm text-gray-600">{fmtFecha(m.fecha)}</td>
+                                                <td className="p-3 text-sm text-gray-600 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                                                 <td className="p-3">
                                                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${TIPO_MANT[m.tipo ?? '']?.pill ?? 'bg-gray-100 text-gray-600'}`}>
                                                         {TIPO_MANT[m.tipo ?? '']?.label ?? (m.tipo || '—')}
@@ -1315,25 +1682,43 @@ export default function EquipoDetallePage() {
                                                     {m.observaciones && <p className="text-xs text-gray-400 mt-0.5">{m.observaciones}</p>}
                                                     {m.numeroParte && <p className="text-xs text-gray-400 font-mono">P/N: {m.numeroParte}</p>}
                                                 </td>
-                                                <td className="p-3 text-right text-sm text-gray-600">
+                                                <td className="p-3 text-right text-sm text-gray-600 whitespace-nowrap">
                                                     {m.horometro != null ? `${m.horometro} hrs` : '—'}
                                                 </td>
-                                                <td className="p-3 text-right text-sm font-semibold text-gray-700">
+                                                <td className="p-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap">
                                                     {m.costo != null && m.costo > 0
                                                         ? `${m.moneda === 'USD' ? 'US$' : '$'}${Number(m.costo).toLocaleString('es-MX', { maximumFractionDigits: 2 })}`
                                                         : '—'}
                                                 </td>
                                                 <td className="p-3 text-right">
-                                                    <button
-                                                        onClick={() => handleDeleteMant(m.id)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => setModalEditMant(m)}
+                                                            title="Editar registro"
+                                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteMant(m.id, m.descripcion)}
+                                                            title="Eliminar registro"
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
+                                    <tfoot>
+                                        <tr className="border-t border-gray-100 bg-gray-50/30">
+                                            <td colSpan={6} className="p-3 text-xs text-gray-400">
+                                                {mantFiltrados.length} registro{mantFiltrados.length !== 1 ? 's' : ''}
+                                                {mantFiltrados.length !== mantenimiento.length && ` (de ${mantenimiento.length} totales)`}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
                                 </table>
                             </div>
                         </Card>
@@ -1593,6 +1978,21 @@ export default function EquipoDetallePage() {
                     equipoId={id}
                     onClose={() => setModalNuevoMant(false)}
                     onSuccess={loadMantenimiento}
+                />
+            )}
+            {modalEditMant && (
+                <EditMantModal
+                    registro={modalEditMant}
+                    equipoId={id}
+                    onClose={() => setModalEditMant(null)}
+                    onSuccess={loadMantenimiento}
+                />
+            )}
+            {confirmDelete && (
+                <ConfirmDeleteModal
+                    mensaje={confirmDelete.mensaje}
+                    onConfirm={confirmDelete.onConfirm}
+                    onCancel={() => setConfirmDelete(null)}
                 />
             )}
             {modalNuevoPend && (
