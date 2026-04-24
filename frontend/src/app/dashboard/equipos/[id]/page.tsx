@@ -118,7 +118,10 @@ const TIPO_MANT: Record<string, { label: string; pill: string }> = {
 };
 
 function fmtFecha(iso: string) {
-    return new Date(iso + (iso.includes('T') ? '' : 'T12:00:00'))
+    // Extraer solo YYYY-MM-DD y construir con mediodia local
+    // para evitar el desfase UTC->local cuando Prisma devuelve T00:00:00.000Z
+    const datePart = iso.slice(0, 10);
+    return new Date(datePart + 'T12:00:00')
         .toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
