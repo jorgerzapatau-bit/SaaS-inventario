@@ -46,11 +46,17 @@ function NewPurchasePageInner() {
                 const productoId = searchParams.get("productoId");
                 if (productoId) {
                     const prod = prodData.find((p: any) => p.id === productoId);
+                    const monedaProducto = prod?.moneda ?? "MXN";
                     setDetalles([{
                         productoId,
                         cantidad: 1,
-                        precioUnitario: prod ? Number(prod.precioCompra ?? 0) : 0,
+                        precioUnitario: prod ? Number(prod.ultimoPrecioCompra ?? prod.precioCompra ?? 0) : 0,
+                        moneda: monedaProducto,
+                        unidad: prod?.unidad ?? "",
                     }]);
+                    if (monedaProducto === "USD") {
+                        setFormData(prev => ({ ...prev, moneda: "USD" }));
+                    }
                 }
             })
             .catch(() => setError("Error al cargar dependencias"));
@@ -77,9 +83,14 @@ function NewPurchasePageInner() {
         const newDetalles = [...detalles];
         if (field === "productoId") {
             const prod = products.find(p => p.id === value);
-            newDetalles[index].precioUnitario = prod ? Number(prod.precioCompra ?? 0) : 0;
-            newDetalles[index].moneda = prod?.moneda ?? "MXN";
+            const monedaProducto = prod?.moneda ?? "MXN";
+            newDetalles[index].precioUnitario = prod ? Number(prod.ultimoPrecioCompra ?? prod.precioCompra ?? 0) : 0;
+            newDetalles[index].moneda = monedaProducto;
             newDetalles[index].unidad = prod?.unidad ?? "";
+            // Si el producto es USD y la operación está en MXN, cambiar moneda de la operación automáticamente
+            if (monedaProducto === "USD" && formData.moneda === "MXN") {
+                setFormData(prev => ({ ...prev, moneda: "USD" }));
+            }
         }
         newDetalles[index][field] = value;
         setDetalles(newDetalles);
@@ -103,7 +114,7 @@ function NewPurchasePageInner() {
             if (proveedorRequerido && !formData.proveedorId)
                 throw new Error("Debes seleccionar un proveedor para registrar una compra.");
             if (detalles.some(d => !d.productoId || Number(d.cantidad) <= 0))
-                throw new Error("Por favor completa correctamente todas las líneas.");
+                throw new Error("Por favor completa correctamente todas las líneas de insumos.");
             if (formData.moneda === 'USD' && !formData.tipoCambio)
                 throw new Error("Debes ingresar el tipo de cambio (USD → MXN) para registrar en dólares.");
 
@@ -186,7 +197,7 @@ function NewPurchasePageInner() {
                     <p className="text-sm text-gray-500 mt-1">
                         {esAjuste
                             ? "Registra un ajuste positivo de inventario."
-                            : "Registra la entrada de nuevos productos de tus proveedores al inventario."}
+                            : "Registra la entrada de nuevos insumos de tus proveedores al inventario."}
                     </p>
                 </div>
             </div>
@@ -330,34 +341,45 @@ function NewPurchasePageInner() {
                 {/* ── Productos ── */}
                 <Card>
                     <CardHeader
-                        title={esAjuste ? "Productos" : "Productos Recibidos"}
-                        subtitle={esAjuste ? "Selecciona los artículos y cantidades a incrementar." : "Ingresa el detalle de la factura de compra."}
+                        title={esAjuste ? "Insumos" : "Insumos Recibidos"}
+                        subtitle={esAjuste ? "Selecciona los insumos y cantidades a incrementar." : "Ingresa el detalle de la factura de compra."}
                     />
                     <CardContent className="space-y-4">
                         <div className="hidden sm:grid grid-cols-12 gap-4 pb-2 border-b border-gray-100 text-sm font-semibold text-gray-500">
-                            <div className="col-span-5">Producto</div>
+                            <div className="col-span-5">Insumo</div>
                             <div className="col-span-2">Costo ({formData.moneda})</div>
                             <div className="col-span-2">Cantidad</div>
                             <div className="col-span-2 text-right">Subtotal</div>
                             <div className="col-span-1"></div>
                         </div>
 
-                        {detalles.map((detalle, index) => (
-                            <div key={index} className="grid grid-cols-12 gap-4 items-center mb-4 sm:mb-0">
+                        {detalles.map((detalle, index) => {
+                            const monedaDetalle = detalle.moneda || formData.moneda;
+                            const mismatch = detalle.productoId && monedaDetalle !== formData.moneda;
+                            return (
+                            <div key={index} className="space-y-1">
+                                {mismatch && (
+                                    <div className="col-span-12 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                                        ⚠️ Este insumo está en <strong>{monedaDetalle}</strong> pero la operación está en <strong>{formData.moneda}</strong>. Se recomienda cambiar la moneda de la operación a <strong>{monedaDetalle}</strong>.
+                                    </div>
+                                )}
+                            <div className="grid grid-cols-12 gap-4 items-center mb-4 sm:mb-0">
                                 <div className="col-span-12 sm:col-span-5">
                                     <select value={detalle.productoId}
                                         onChange={e => handleDetalleChange(index, "productoId", e.target.value)}
                                         className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                                        <option value="">-- Selecciona Producto --</option>
+                                        <option value="">-- Selecciona Insumo --</option>
                                         {products.map(p => (
-                                            <option key={p.id} value={p.id}>{p.sku} - {p.nombre} ({p.unidad})</option>
+                                            <option key={p.id} value={p.id}>
+                                                {p.sku} - {p.nombre} ({p.unidad}){p.moneda && p.moneda !== 'MXN' ? ` [${p.moneda}]` : ''}
+                                            </option>
                                         ))}
                                     </select>
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-blue-500 select-none">
-                                            {formData.moneda}
+                                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold select-none ${monedaDetalle === 'USD' ? 'text-green-600' : 'text-blue-500'}`}>
+                                            {monedaDetalle}
                                         </span>
                                         <input type="number" step="0.01" value={detalle.precioUnitario}
                                             onChange={e => handleDetalleChange(index, "precioUnitario", e.target.value)}
@@ -379,7 +401,9 @@ function NewPurchasePageInner() {
                                     </div>
                                 </div>
                                 <div className="col-span-10 sm:col-span-2 text-right font-bold text-gray-700">
-                                    ${(Number(detalle.precioUnitario) * Number(detalle.cantidad)).toFixed(2)}
+                                    {monedaDetalle === 'USD' ? 'US$' : '$'}{(Number(detalle.precioUnitario) * Number(detalle.cantidad)).toFixed(2)}
+                                    {' '}
+                                    <span className={`text-xs font-semibold ${monedaDetalle === 'USD' ? 'text-green-600' : 'text-blue-500'}`}>{monedaDetalle}</span>
                                 </div>
                                 <div className="col-span-2 sm:col-span-1 flex justify-end">
                                     <button type="button" onClick={() => removeLinea(index)} disabled={detalles.length === 1}
@@ -388,7 +412,9 @@ function NewPurchasePageInner() {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            </div>
+                            );
+                        })}
 
                         <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
                             <button type="button" onClick={addLinea}
@@ -397,7 +423,7 @@ function NewPurchasePageInner() {
                             </button>
                             <div className="text-right">
                                 <p className="text-xs text-gray-400 mb-1">
-                                    {detalles.filter(d => d.productoId).length} {detalles.filter(d => d.productoId).length === 1 ? 'producto' : 'productos'}
+                                    {detalles.filter(d => d.productoId).length} {detalles.filter(d => d.productoId).length === 1 ? 'insumo' : 'insumos'}
                                     {' · '}
                                     {detalles.reduce((a, d) => a + Number(d.cantidad), 0)} uds
                                 </p>
