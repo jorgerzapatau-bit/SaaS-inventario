@@ -801,9 +801,10 @@ function ProductsPageInner() {
                             const c30d       = consumo30dPorProducto(product.id);
                             const monedaDoc  = product.moneda || monedaBase;
                             const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
+                            const tcEfectivo = tipoCambio ?? tcGlobal ?? null;
                             const costo      = Number(product.ultimoPrecioCompra ?? 0);
                             const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
-                                costo, monedaDoc, monedaBase, tipoCambio
+                                costo, monedaDoc, monedaBase, tcEfectivo
                             );
                             return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
@@ -902,18 +903,21 @@ function ProductsPageInner() {
                                         const c30d       = consumo30dPorProducto(product.id);
                                         const monedaDoc  = product.moneda || monedaBase;
                                         const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
+                                        // TC efectivo: usa el de la última entrada, o el global de la empresa como fallback
+                                        const tcEfectivo = tipoCambio ?? tcGlobal ?? null;
+                                        const usaTcFallback = !tipoCambio && !!tcGlobal && monedaDoc !== monedaBase;
                                         const costo      = Number(product.ultimoPrecioCompra ?? 0);
 
-                                        // Valor almacén en moneda base
+                                        // Valor almacén en moneda base — siempre usa tcEfectivo (fallback al TC global)
                                         let valorAlmacenBase = product.stock * costo;
-                                        if (monedaDoc === 'USD' && monedaBase === 'MXN' && tipoCambio) {
-                                            valorAlmacenBase = product.stock * costo * tipoCambio;
-                                        } else if (monedaDoc === 'MXN' && monedaBase === 'USD' && tipoCambio) {
-                                            valorAlmacenBase = product.stock * costo / tipoCambio;
+                                        if (monedaDoc === 'USD' && monedaBase === 'MXN' && tcEfectivo) {
+                                            valorAlmacenBase = product.stock * costo * tcEfectivo;
+                                        } else if (monedaDoc === 'MXN' && monedaBase === 'USD' && tcEfectivo) {
+                                            valorAlmacenBase = product.stock * costo / tcEfectivo;
                                         }
 
                                         const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
-                                            costo, monedaDoc, monedaBase, tipoCambio
+                                            costo, monedaDoc, monedaBase, tcEfectivo
                                         );
 
                                         return (
@@ -955,10 +959,16 @@ function ProductsPageInner() {
                                                 </td>
                                                 {/* Valor almacén en moneda base */}
                                                 <td className="p-3 text-sm font-semibold text-gray-700 text-right">
-                                                    {costo > 0
-                                                        ? fmtBase(valorAlmacenBase)
-                                                        : <span className="text-gray-300">—</span>
-                                                    }
+                                                    {costo > 0 ? (
+                                                        <span>
+                                                            {fmtBase(valorAlmacenBase)}
+                                                            {usaTcFallback && (
+                                                                <span className="block text-[10px] text-amber-500 font-normal leading-tight" title={`Usando TC global: ${tcGlobal}`}>
+                                                                    TC~{tcGlobal}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    ) : <span className="text-gray-300">—</span>}
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     {c30d > 0
