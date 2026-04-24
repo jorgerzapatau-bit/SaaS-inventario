@@ -1,6 +1,6 @@
 // src/app/api/equipos/[id]/inventario/[itemId]/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../../../../../lib/prisma';
+import { prisma } from '../../../../../lib/prisma';
 import { getAuthUser, unauthorized } from '../../../../../lib/auth';
 
 type Params = { params: Promise<{ id: string; itemId: string }> };
