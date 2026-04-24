@@ -40,6 +40,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
             nombre, categoriaId, unidad,
             precioCompra, moneda,
             stockMinimo, imagen, activo, notas, tipoCambioRef,
+            nivelReorden, diasReorden,
         } = await req.json();
 
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
@@ -57,6 +58,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
                 ...(activo          !== undefined && { activo }),
                 ...(notas           !== undefined && { notas }),
                 ...(tipoCambioRef   !== undefined && { tipoCambioRef: tipoCambioRef ? Number(tipoCambioRef) : null }),
+                ...(nivelReorden    !== undefined && { nivelReorden: nivelReorden ? Number(nivelReorden) : null }),
+                ...(diasReorden     !== undefined && { leadTimeDias: diasReorden ? Number(diasReorden) : null }),
                 // stockActual nunca se edita directamente aquí
             },
             include: { categoria: true },

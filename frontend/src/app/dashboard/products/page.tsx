@@ -855,7 +855,7 @@ function ProductsPageInner() {
                                             <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-orange-500 hover:bg-orange-50 rounded-md transition-colors">
                                                 <ArrowDownCircle size={13} /> Consumo
                                             </Link>
-                                            <Link href={`/dashboard/products/${product.id}/edit`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors">
+                                            <Link href={`/dashboard/products/${product.id}`} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-gray-50 rounded-md transition-colors">
                                                 <Edit size={13} />
                                             </Link>
                                             <button onClick={() => handleDelete(product.id, product.nombre)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-gray-500 hover:bg-red-50 hover:text-red-500 rounded-md transition-colors">
@@ -984,7 +984,7 @@ function ProductsPageInner() {
                                                         <Link href={`/dashboard/sales/new?productoId=${product.id}`} className="p-1.5 text-orange-400 hover:bg-orange-50 rounded-md transition-colors inline-flex" title="Registrar consumo">
                                                             <ArrowDownCircle size={15} />
                                                         </Link>
-                                                        <Link href={`/dashboard/products/${product.id}/edit`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors inline-flex">
+                                                        <Link href={`/dashboard/products/${product.id}`} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors inline-flex">
                                                             <Edit size={15} />
                                                         </Link>
                                                         <button onClick={() => handleDelete(product.id, product.nombre)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">

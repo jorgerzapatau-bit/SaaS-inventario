@@ -213,6 +213,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
         sku:'',nombre:'',descripcion:'',categoriaId:'',stockMinimo:'5',
         unidad:'litro',imagen:null as string|null,activo:true,precioReferencia:'',
         moneda:'MXN' as 'MXN'|'USD',
+        tipoCambioRef:'' as string,
+        nivelReorden:'' as string,
+        diasReorden:'' as string,
     });
 
     useEffect(()=>{ const load=async()=>{
@@ -268,6 +271,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
             activo:product?.activo??true,
             precioReferencia:product?.ultimoPrecioCompra!=null?String(product.ultimoPrecioCompra):'',
             moneda:(product?.moneda||'MXN') as 'MXN'|'USD',
+            tipoCambioRef:(product as any)?.tipoCambioRef!=null?String((product as any).tipoCambioRef):'',
+            nivelReorden:(product as any)?.nivelReorden!=null?String((product as any).nivelReorden):'',
+            diasReorden:(product as any)?.diasReorden!=null?String((product as any).diasReorden):'',
         });
         setEditing(true);setSaveError('');setImgError('');
     };
@@ -308,6 +314,9 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 unidad:editData.unidad,stockMinimo:Number(editData.stockMinimo),
                 imagen:editData.imagen,activo:editData.activo,
                 moneda:editData.moneda,
+                tipoCambioRef:editData.tipoCambioRef?Number(editData.tipoCambioRef):null,
+                nivelReorden:editData.nivelReorden?Number(editData.nivelReorden):undefined,
+                diasReorden:editData.diasReorden?Number(editData.diasReorden):undefined,
             })});
             const cat=categorias.find((c:any)=>c.id===editData.categoriaId);
             setProduct(p=>p?{...p,...updated,stock:p.stock,categoria:cat||p.categoria,moneda:editData.moneda}:p);
@@ -681,7 +690,54 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     )}
                                 </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
+                            {/* ── Tipo de cambio de referencia — solo USD ── */}
+                            {editData.moneda === 'USD' && (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                    <p className="text-xs font-semibold text-amber-700 mb-2">💱 Tipo de cambio de referencia (USD → MXN)</p>
+                                    <div className="grid grid-cols-2 gap-3 items-end">
+                                        <div>
+                                            <label className="text-xs font-medium text-amber-700 block mb-1">TC de este insumo <span className="font-normal text-amber-500">(MXN por 1 USD)</span></label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500 text-sm font-bold">$</span>
+                                                <input type="number" step="0.01" min="0"
+                                                    value={editData.tipoCambioRef}
+                                                    onChange={e=>setEditData(p=>({...p,tipoCambioRef:e.target.value}))}
+                                                    placeholder="Ej: 17.50"
+                                                    className="w-full pl-8 pr-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 text-gray-800"/>
+                                            </div>
+                                            <p className="text-xs text-amber-500 mt-1">Usado como fallback cuando el movimiento no trae TC.</p>
+                                        </div>
+                                        {editData.tipoCambioRef && Number(editData.precioReferencia)>0 && (
+                                            <div className="bg-white rounded-lg px-3 py-2 border border-amber-200">
+                                                <p className="text-xs text-amber-500 mb-0.5">Equivalencia del costo</p>
+                                                <p className="text-sm font-bold text-amber-700">${(Number(editData.precioReferencia)*Number(editData.tipoCambioRef)).toLocaleString('es-MX',{maximumFractionDigits:2})} MXN</p>
+                                                <p className="text-xs text-amber-400">US${editData.precioReferencia} × ${Number(editData.tipoCambioRef).toFixed(2)}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                            {/* ── Nivel de reorden y días ── */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700 block mb-1">Nivel de reorden</label>
+                                    <input type="number" min="0" step="1"
+                                        value={editData.nivelReorden}
+                                        onChange={e=>setEditData(p=>({...p,nivelReorden:e.target.value}))}
+                                        placeholder="Ej: 164"
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    <p className="text-xs text-gray-400 mt-1">Cantidad a pedir cuando se activa la alerta.</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium text-gray-700 block mb-1">Días de reorden <span className="font-normal text-gray-400">(tiempo de entrega)</span></label>
+                                    <input type="number" min="0" step="1"
+                                        value={editData.diasReorden}
+                                        onChange={e=>setEditData(p=>({...p,diasReorden:e.target.value}))}
+                                        placeholder="Ej: 7"
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                    <p className="text-xs text-gray-400 mt-1">Días hábiles que tarda en llegar el pedido.</p>
+                                </div>
+                            </div>
                                 <div className={isNew ? '' : 'bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200'}>
                                     {isNew ? (
                                         <>
