@@ -1,7 +1,7 @@
 // src/app/api/equipos/[id]/mantenimiento/[regId]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from '@/lib/prisma';
-import { TipoMantenimiento } from '@prisma/client';
+import { TipoMantenimiento, Moneda } from '@prisma/client';
 
 interface RouteContext {
   params: Promise<{ id: string; regId: string }>;
@@ -29,15 +29,33 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { fecha, tipo, descripcion, tecnico, costo, proximoMantenimiento } =
-    body as {
-      fecha?: string;
-      tipo?: TipoMantenimiento;
-      descripcion?: string;
-      tecnico?: string;
-      costo?: number | null;
-      proximoMantenimiento?: string | null;
-    };
+  const {
+    fecha,
+    tipo,
+    descripcion,
+    observaciones,
+    costo,
+    moneda,
+    tipoCambio,
+    horometro,
+    hrsUso,
+    numeroParte,
+    proveedorId,
+    obraId,
+  } = body as {
+    fecha?: string;
+    tipo?: TipoMantenimiento;
+    descripcion?: string;
+    observaciones?: string;
+    costo?: number | null;
+    moneda?: Moneda;
+    tipoCambio?: number | null;
+    horometro?: number | null;
+    hrsUso?: number | null;
+    numeroParte?: string | null;
+    proveedorId?: string | null;
+    obraId?: string | null;
+  };
 
   const actualizado = await prisma.registroMantenimiento.update({
     where: { id: regId },
@@ -45,13 +63,15 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
       ...(fecha !== undefined && { fecha: new Date(fecha) }),
       ...(tipo !== undefined && { tipo }),
       ...(descripcion !== undefined && { descripcion }),
-      ...(tecnico !== undefined && { tecnico }),
+      ...(observaciones !== undefined && { observaciones }),
       ...(costo !== undefined && { costo }),
-      ...(proximoMantenimiento !== undefined && {
-        proximoMantenimiento: proximoMantenimiento
-          ? new Date(proximoMantenimiento)
-          : null,
-      }),
+      ...(moneda !== undefined && { moneda }),
+      ...(tipoCambio !== undefined && { tipoCambio }),
+      ...(horometro !== undefined && { horometro }),
+      ...(hrsUso !== undefined && { hrsUso }),
+      ...(numeroParte !== undefined && { numeroParte }),
+      ...(proveedorId !== undefined && { proveedorId }),
+      ...(obraId !== undefined && { obraId }),
     },
   });
 

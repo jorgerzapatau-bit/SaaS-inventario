@@ -1,7 +1,7 @@
 // src/app/api/equipos/[id]/mantenimiento/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
-import { TipoMantenimiento } from '@prisma/client';
+import { TipoMantenimiento, Moneda } from '@prisma/client';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -40,34 +40,57 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { fecha, tipo, descripcion, tecnico, costo, proximoMantenimiento } =
-    body as {
-      fecha?: string;
-      tipo?: TipoMantenimiento;
-      descripcion?: string;
-      tecnico?: string;
-      costo?: number;
-      proximoMantenimiento?: string;
-    };
+  const {
+    fecha,
+    tipo,
+    descripcion,
+    observaciones,
+    costo,
+    moneda,
+    tipoCambio,
+    horometro,
+    hrsUso,
+    numeroParte,
+    proveedorId,
+    obraId,
+  } = body as {
+    fecha?: string;
+    tipo?: TipoMantenimiento;
+    descripcion?: string;
+    observaciones?: string;
+    costo?: number;
+    moneda?: Moneda;
+    tipoCambio?: number;
+    horometro?: number;
+    hrsUso?: number;
+    numeroParte?: string;
+    proveedorId?: string;
+    obraId?: string;
+  };
 
-  if (!fecha || !tipo || !descripcion) {
+  if (!fecha || !descripcion) {
     return NextResponse.json(
-      { error: "Los campos fecha, tipo y descripcion son requeridos" },
+      { error: "Los campos fecha y descripcion son requeridos" },
       { status: 400 }
     );
   }
 
   const registro = await prisma.registroMantenimiento.create({
     data: {
+      empresaId: equipo.empresaId,
       equipoId,
       fecha: new Date(fecha),
-      tipo,
+      tipo: tipo ?? undefined,
       descripcion,
-      tecnico: tecnico ?? null,
+      observaciones: observaciones ?? null,
       costo: costo ?? null,
-      proximoMantenimiento: proximoMantenimiento
-        ? new Date(proximoMantenimiento)
-        : null,
+      moneda: moneda ?? undefined,
+      tipoCambio: tipoCambio ?? null,
+      horometro: horometro ?? null,
+      hrsUso: hrsUso ?? null,
+      numeroParte: numeroParte ?? null,
+      proveedorId: proveedorId ?? null,
+      obraId: obraId ?? null,
     },
   });
 
