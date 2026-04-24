@@ -987,7 +987,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                 <ProductChart
                     movements={[...movements].reverse()}
                     unidad={product?.unidad ?? ''}
-                    moneda={monedaBase}
+                    moneda={monedaDoc}
+                    monedaBase={monedaBase}
                     stockActual={product?.stock ?? 0}
                     costoUnitario={costoUltimaEntrada}
                 />

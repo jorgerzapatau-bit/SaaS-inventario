@@ -359,7 +359,7 @@ function ProductsPageInner() {
     const [showImport, setShowImport] = useState(false);
 
     // ── Moneda base de la empresa ──────────────────────────────────────────────
-    const { moneda: monedaBase } = useCompany();
+    const { moneda: monedaBase, tipoCambio: tcGlobal } = useCompany();
 
     const searchParams = useSearchParams();
 
@@ -466,26 +466,38 @@ function ProductsPageInner() {
     });
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
-    // Valor almacén = Σ(stock_actual × último_costo) por producto, convertido a moneda base.
-    // Usa ultimoPrecioCompra (con fallback a precioCompra del producto) y tipoCambio de ultimaEntrada.
-    const totalValor = products.reduce((a, p) => {
+    // Valor almacén = Σ(stock_actual × último_costo) de productos FILTRADOS, en moneda base.
+    // TC preferido: el del último movimiento registrado; fallback: TC global de la empresa.
+    const totalValor = filtered.reduce((a, p) => {
         const stock = Number(p.stock ?? 0);
         const costo = Number(p.ultimoPrecioCompra ?? 0);
         if (stock <= 0 || costo <= 0) return a;
         const monedaDoc = (p.moneda || monedaBase) as string;
-        const tc = (p.ultimaEntrada as any)?.tipoCambio ?? null;
+        const tc = (p.ultimaEntrada as any)?.tipoCambio ?? tcGlobal;
         let costoBase = costo;
         if (monedaDoc === 'USD' && monedaBase === 'MXN') {
-            costoBase = tc && tc > 0 ? costo * tc : costo;
+            costoBase = tc > 0 ? costo * tc : costo;
         } else if (monedaDoc === 'MXN' && monedaBase === 'USD') {
-            costoBase = tc && tc > 0 ? costo / tc : costo;
+            costoBase = tc > 0 ? costo / tc : costo;
         }
         return a + stock * costoBase;
     }, 0);
 
-    const costoPromUnitario = filtered.length > 0
-        ? filtered.reduce((a, p) => a + Number(p.ultimoPrecioCompra ?? 0), 0) / (filtered.filter(p => p.ultimoPrecioCompra).length || 1)
-        : 0;
+    // Costo prom. unitario normalizado a moneda base (usa tcGlobal si no hay TC por movimiento)
+    const costoPromUnitario = (() => {
+        const conPrecio = filtered.filter(p => p.ultimoPrecioCompra);
+        if (conPrecio.length === 0) return 0;
+        const suma = conPrecio.reduce((a, p) => {
+            const costo = Number(p.ultimoPrecioCompra ?? 0);
+            const monedaDoc = (p.moneda || monedaBase) as string;
+            const tc = (p.ultimaEntrada as any)?.tipoCambio ?? tcGlobal;
+            let costoBase = costo;
+            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = tc > 0 ? costo * tc : costo;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
+            return a + costoBase;
+        }, 0);
+        return suma / conPrecio.length;
+    })();
 
     const bajosStock = filtered.filter(p => p.stock <= p.stockMinimo).length;
 
@@ -506,16 +518,16 @@ function ProductsPageInner() {
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: monedaBase, maximumFractionDigits: 0 }).format(v);
 
     // ── Category stats ────────────────────────────────────────────────────────
-    // Distribución por categoría — usa `filtered` para respetar búsqueda/filtros activos
+    // Distribución por categoría — usa `filtered` + tcGlobal como fallback de conversión
     const catStats = Array.from(new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
         const prods = filtered.filter(p => p.categoria?.nombre === cat);
         const valor = prods.reduce((a, p) => {
             const costo = Number(p.ultimoPrecioCompra ?? 0);
-            const tc = (p.ultimaEntrada as any)?.tipoCambio ?? null;
+            const tc = (p.ultimaEntrada as any)?.tipoCambio ?? tcGlobal;
             const monedaDoc = (p.moneda || monedaBase) as string;
             let costoBase = costo;
-            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = tc && tc > 0 ? costo * tc : costo;
-            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc && tc > 0 ? costo / tc : costo;
+            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = tc > 0 ? costo * tc : costo;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
             return a + (Number(p.stock ?? 0) * costoBase);
         }, 0);
         return { cat, count: prods.length, valor };
@@ -587,11 +599,11 @@ function ProductsPageInner() {
                     </div>
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
-                            <p className="text-xs text-gray-400">Costo prom. unitario</p>
-                            <InfoTooltip text="Promedio del último costo de compra de los insumos visibles (en la moneda original de cada producto)." position="bottom" />
+                            <p className="text-xs text-gray-400">Costo prom. unitario ({monedaBase})</p>
+                            <InfoTooltip text={`Promedio del último costo de compra convertido a ${monedaBase}. Usa tipo de cambio del último movimiento o el TC global de la empresa.`} position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{fmtBase(costoPromUnitario)}</p>
-                        <p className="text-xs text-gray-400 mt-1">insumos visibles</p>
+                        <p className="text-xs text-gray-400 mt-1">normalizado a {monedaBase}</p>
                     </div>
 
                     <button

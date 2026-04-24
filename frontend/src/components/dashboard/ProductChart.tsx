@@ -33,7 +33,8 @@ interface Movimiento {
 interface Props {
     movements: Movimiento[];   // DESC (más reciente primero) — como llegan del estado
     unidad: string;
-    moneda?: string; // símbolo de moneda, ej: "MXN" | "USD" — default "MXN"
+    moneda?: string;      // Moneda del producto, ej: "MXN" | "USD" — default "MXN"
+    monedaBase?: string;  // Moneda base de la empresa, para mostrar equivalente
     stockActual?: number;      // Stock real del producto (KPI)
     costoUnitario?: number;    // Último precio de compra conocido (fallback cuando no hay movimientos)
 }
@@ -102,9 +103,15 @@ function CustomTooltip({ active, payload, label, metric, unidad, currencyFmt }: 
     );
 }
 
-export default function ProductChart({ movements, unidad, moneda = 'MXN', stockActual = 0, costoUnitario = 0 }: Props) {
-    const currencyFmt = (v: number) =>
-        new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(v);
+export default function ProductChart({ movements, unidad, moneda = 'MXN', monedaBase = 'MXN', stockActual = 0, costoUnitario = 0 }: Props) {
+    // Formatea valor con moneda explícita (evita ambigüedad entre USD$ y MXN$)
+    const currencyFmt = (v: number, cur: string = moneda) => {
+        const formatted = new Intl.NumberFormat('es-MX', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v);
+        // Prefija la moneda cuando no está ya incluida en el símbolo (ej: "USD $11,726" → "USD$11,726")
+        if (cur === 'USD') return `USD${formatted}`;
+        if (cur === 'MXN') return `MXN${formatted}`;
+        return formatted;
+    };
     const [metric, setMetric] = useState<MetricKey>('stock');
     const [period, setPeriod] = useState<'30d' | '90d' | '1y' | 'all' | 'manual'>('all');
 
@@ -407,7 +414,10 @@ export default function ProductChart({ movements, unidad, moneda = 'MXN', stockA
                             <span className="text-gray-500">Neto: {totalEntradas-totalSalidas>=0?'+':''}{totalEntradas-totalSalidas} {unidad}</span>
                         </>}
                         {metric === 'valor' && <>
-                            <span className="text-amber-600">Valor final: {currencyFmt(valorFinal)}</span>
+                            <span className="text-amber-600">
+                                Valor final: {currencyFmt(valorFinal)}
+                                {moneda !== monedaBase && <span className="text-gray-400 font-normal ml-1 text-[10px]">({moneda})</span>}
+                            </span>
                         </>}
                         {metric === 'dinero' && <>
                             <span className="text-blue-600">Inversión: {currencyFmt(totalCosto)}</span>
