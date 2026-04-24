@@ -1,6 +1,7 @@
 // src/app/api/equipos/[id]/mantenimiento/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
+import { TipoMantenimiento } from '@prisma/client';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
   const { fecha, tipo, descripcion, tecnico, costo, proximoMantenimiento } =
     body as {
       fecha?: string;
-      tipo?: string;
+      tipo?: TipoMantenimiento;
       descripcion?: string;
       tecnico?: string;
       costo?: number;
