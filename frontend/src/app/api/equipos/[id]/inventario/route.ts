@@ -1,7 +1,7 @@
 // src/app/api/equipos/[id]/inventario/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -83,3 +83,4 @@ export async function POST(req: NextRequest, { params }: Params) {
         return Response.json({ error: 'Error al crear el ítem de inventario' }, { status: 500 });
     }
 }
+

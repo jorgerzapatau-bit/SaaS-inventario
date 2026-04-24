@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -30,3 +30,4 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         return Response.json({ error: 'Error al eliminar categoría' }, { status: 500 });
     }
 }
+

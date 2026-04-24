@@ -1,6 +1,6 @@
     // src/app/api/equipos/[id]/mantenimiento/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import prisma from '../../../lib/prisma';
+import prisma from '@/lib/prisma';
 
 interface RouteContext {
   params: { id: string };
@@ -84,3 +84,4 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
 
   return NextResponse.json(registro, { status: 201 });
 }
+

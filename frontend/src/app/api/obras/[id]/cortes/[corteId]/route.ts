@@ -1,7 +1,7 @@
 // src/app/api/obras/[id]/cortes/[corteId]/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string; corteId: string }> };
 
@@ -234,3 +234,4 @@ function serializeCorte(c: any) {
         })) ?? [],
     };
 }
+

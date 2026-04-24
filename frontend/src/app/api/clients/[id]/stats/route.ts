@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const user = getAuthUser(req);
@@ -21,3 +21,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         return Response.json({ cliente, stats: { totalVentas, montoTotal, ultimaVenta, totalProductos: productosSet.size }, movimientos });
     } catch (error) { console.error(error); return Response.json({ error: 'Error fetching client stats' }, { status: 500 }); }
 }
+

@@ -1,7 +1,7 @@
 // src/app/api/componentes/[id]/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -102,3 +102,4 @@ function serializeComponente(c: any) {
             : 'Taller / Almacén',
     };
 }
+

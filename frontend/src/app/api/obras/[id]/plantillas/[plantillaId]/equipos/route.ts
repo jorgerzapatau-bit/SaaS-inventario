@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string; plantillaId: string }> };
 
@@ -138,3 +138,4 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         return Response.json({ error: 'Error al desasignar equipo' }, { status: 500 });
     }
 }
+

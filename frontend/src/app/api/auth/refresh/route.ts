@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getAuthUser } from '../../lib/auth';
+import { getAuthUser } from '@/lib/auth';
 
 // POST /api/auth/refresh
 // Verifica el token actual y emite uno nuevo con 1 día más de vigencia.
@@ -19,3 +19,4 @@ export async function POST(req: NextRequest) {
 
     return Response.json({ token: newToken });
 }
+

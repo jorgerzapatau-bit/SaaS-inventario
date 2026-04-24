@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 function validateRFC(rfc: string): boolean {
     return /^([A-ZÑ&]{3,4})\d{6}([A-Z\d]{3})$/i.test(rfc.trim().toUpperCase());
@@ -48,3 +48,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ ...proveedor, totalCompras: 0, ultimaCompra: null, montoTotal: 0 }, { status: 201 });
     } catch { return Response.json({ error: 'Error creating supplier' }, { status: 500 }); }
 }
+

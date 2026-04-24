@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
+import prisma from '@/lib/prisma';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
     try {
@@ -20,3 +20,4 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
         return Response.json({ message: 'Error interno del servidor' }, { status: 500 });
     }
 }
+

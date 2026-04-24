@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // PATCH /api/purchases/:id — Cambia el estado de una compra
 // PENDIENTE → COMPLETADA: genera movimientos de ENTRADA en el kardex
@@ -185,3 +185,4 @@ export async function PUT(
         return Response.json({ error: e.message || 'Error al editar la compra.' }, { status: 500 });
     }
 }
+

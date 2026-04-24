@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ─── GET /api/obras ───────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
@@ -202,3 +202,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Error al crear la obra' }, { status: 500 });
     }
 }
+

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ─── GET /api/products ────────────────────────────────────────────────────────
 // Devuelve productos con stockActual ya almacenado en la tabla.
@@ -99,3 +99,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Error al crear el producto' }, { status: 500 });
     }
 }
+

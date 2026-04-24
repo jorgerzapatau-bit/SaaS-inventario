@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ─── GET /api/purchases ───────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
@@ -277,3 +277,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Error al registrar la entrada' }, { status: 500 });
     }
 }
+

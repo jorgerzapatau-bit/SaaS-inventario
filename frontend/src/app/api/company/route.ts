@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
@@ -30,3 +30,4 @@ export async function PUT(req: NextRequest) {
         return Response.json({ error: 'Error updating company info' }, { status: 500 });
     }
 }
+

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -252,3 +252,4 @@ export async function GET(req: NextRequest, { params }: Params) {
         return Response.json({ error: 'Error al obtener datos' }, { status: 500 });
     }
 }
+

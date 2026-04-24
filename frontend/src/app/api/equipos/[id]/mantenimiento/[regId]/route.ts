@@ -1,6 +1,6 @@
 // src/app/api/equipos/[id]/mantenimiento/[regId]/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from '../../../lib/prisma';
+import { prisma } from '@/lib/prisma';
 
 interface RouteContext {
   params: { id: string; regId: string };
@@ -79,3 +79,4 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   return new NextResponse(null, { status: 204 });
 }
+

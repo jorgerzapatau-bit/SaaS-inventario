@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // Lee stockActual directamente del campo almacenado en Producto (rápido)
 // Si se pasa almacenId, calcula desde movimientos (desglose por almacén)
@@ -42,3 +42,4 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prod
         return Response.json({ error: 'Error calculating stock' }, { status: 500 });
     }
 }
+

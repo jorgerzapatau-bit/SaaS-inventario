@@ -1,7 +1,7 @@
 // src/app/api/equipos/[id]/pendientes/[pendienteId]/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../../../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string; pendienteId: string }> };
 
@@ -82,3 +82,4 @@ export async function DELETE(req: NextRequest, { params }: Params) {
         return Response.json({ error: 'Error al eliminar el pendiente' }, { status: 500 });
     }
 }
+

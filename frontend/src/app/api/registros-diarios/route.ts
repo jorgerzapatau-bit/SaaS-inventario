@@ -1,7 +1,7 @@
 // src/app/api/registros-diarios/route.ts
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ─── GET /api/registros-diarios ───────────────────────────────────────────────
 // Query params:
@@ -291,3 +291,4 @@ function getISOWeek(date: Date): number {
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
+

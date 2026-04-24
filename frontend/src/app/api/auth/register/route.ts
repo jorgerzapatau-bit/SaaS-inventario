@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
-import prisma from '../../lib/prisma';
+import prisma from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
     try {
@@ -40,3 +40,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Server error during registration' }, { status: 500 });
     }
 }
+

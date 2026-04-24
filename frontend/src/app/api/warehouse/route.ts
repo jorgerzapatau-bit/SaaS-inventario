@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
     const user = getAuthUser(req);
@@ -21,3 +21,4 @@ export async function POST(req: NextRequest) {
         return Response.json(almacen, { status: 201 });
     } catch { return Response.json({ error: 'Error al crear almacén' }, { status: 500 }); }
 }
+

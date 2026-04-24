@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../lib/prisma';
-import { getAuthUser, unauthorized } from '../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 async function getDefaultAlmacen(empresaId: string): Promise<string | null> {
     const a = await prisma.almacen.findFirst({ where: { empresaId }, orderBy: { nombre: 'asc' }, select: { id: true } });
@@ -245,3 +245,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: (error as Error)?.message || 'Error al crear el gasto operativo' }, { status: 500 });
     }
 }
+

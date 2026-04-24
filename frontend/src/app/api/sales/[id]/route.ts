@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ── GET /api/sales/:id — Cargar una salida formal para editar ─────────────────
 export async function GET(
@@ -182,3 +182,4 @@ export async function PUT(
         return Response.json({ error: e.message || 'Error al editar la salida' }, { status: 500 });
     }
 }
+

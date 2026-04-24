@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import prisma from '../../lib/prisma';
-import { getAuthUser, unauthorized } from '../../lib/auth';
+import prisma from '@/lib/prisma';
+import { getAuthUser, unauthorized } from '@/lib/auth';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -239,3 +239,4 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: (error as Error)?.message || 'Error registrando movimiento' }, { status: 500 });
     }
 }
+
