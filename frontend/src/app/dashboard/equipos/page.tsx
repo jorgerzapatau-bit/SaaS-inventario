@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { Wrench, Plus, Edit, Trash2, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Wrench, Plus, Edit, Trash2, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp, Search, X, Filter } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Link from 'next/link';
 import { Card } from '@/components/ui/Card';
@@ -243,6 +243,61 @@ export default function EquiposPage() {
     const [error,    setError]    = useState('');
     const [modal,    setModal]    = useState<{ open: boolean; equipo?: Equipo }>({ open: false });
 
+    // ── Búsqueda y filtros ────────────────────────────────────────────────────
+    const [search,       setSearch]       = useState('');
+    const [filterEstado, setFilterEstado] = useState<'todos' | 'activo' | 'inactivo'>('todos');
+    const [filterTipo,   setFilterTipo]   = useState('todos');
+    const [showFilters,  setShowFilters]  = useState(false);
+
+    // Tipos únicos derivados de los nombres
+    const tiposUnicos = useMemo(() => {
+        const nombres = equipos.map(e => {
+            const n = e.nombre.toLowerCase();
+            if (n.includes('track drill')) return 'Track Drill';
+            if (n.includes('compr') && n.includes('aire')) return 'Compresor de Aire';
+            if (n.includes('perforadora')) return 'Perforadora';
+            if (n.includes('hidrotrack')) return 'Hidrotrack';
+            return 'Otro';
+        });
+        return ['todos', ...Array.from(new Set(nombres))];
+    }, [equipos]);
+
+    const equiposFiltrados = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        return equipos.filter(eq => {
+            // Búsqueda de texto
+            if (q) {
+                const haystack = [
+                    eq.nombre, eq.modelo, eq.marca, eq.numeroSerie,
+                    eq.numeroEconomico, eq.apodo, eq.acopladoCon,
+                ].filter(Boolean).join(' ').toLowerCase();
+                if (!haystack.includes(q)) return false;
+            }
+            // Filtro estado
+            if (filterEstado === 'activo'   && !eq.activo) return false;
+            if (filterEstado === 'inactivo' &&  eq.activo) return false;
+            // Filtro tipo
+            if (filterTipo !== 'todos') {
+                const n = eq.nombre.toLowerCase();
+                const tipo =
+                    n.includes('track drill')             ? 'Track Drill'        :
+                    n.includes('compr') && n.includes('aire') ? 'Compresor de Aire' :
+                    n.includes('perforadora')             ? 'Perforadora'        :
+                    n.includes('hidrotrack')              ? 'Hidrotrack'         : 'Otro';
+                if (tipo !== filterTipo) return false;
+            }
+            return true;
+        });
+    }, [equipos, search, filterEstado, filterTipo]);
+
+    const hayFiltrosActivos = search || filterEstado !== 'todos' || filterTipo !== 'todos';
+
+    const limpiarFiltros = () => {
+        setSearch('');
+        setFilterEstado('todos');
+        setFilterTipo('todos');
+    };
+
     const load = async () => {
         setLoading(true);
         try {
@@ -324,6 +379,115 @@ export default function EquiposPage() {
                 </div>
             )}
 
+            {/* ── Búsqueda y filtros ─────────────────────────────────────────── */}
+            <div className="space-y-3">
+                {/* Barra de búsqueda */}
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Buscar por nombre, modelo, serie, N° económico, apodo…"
+                            className="w-full pl-9 pr-9 py-2.5 text-sm border border-gray-200 rounded-lg bg-white shadow-sm
+                                       focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        />
+                        {search && (
+                            <button
+                                onClick={() => setSearch('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Botón mostrar/ocultar filtros */}
+                    <button
+                        onClick={() => setShowFilters(v => !v)}
+                        className={`flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium rounded-lg border transition-colors shadow-sm ${
+                            showFilters || (filterEstado !== 'todos' || filterTipo !== 'todos')
+                                ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                        }`}
+                    >
+                        <Filter size={15} />
+                        Filtros
+                        {(filterEstado !== 'todos' || filterTipo !== 'todos') && (
+                            <span className="ml-0.5 w-5 h-5 rounded-full bg-white/20 text-xs flex items-center justify-center font-bold">
+                                {(filterEstado !== 'todos' ? 1 : 0) + (filterTipo !== 'todos' ? 1 : 0)}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
+                {/* Panel de filtros desplegable */}
+                {showFilters && (
+                    <div className="bg-white border border-gray-100 rounded-xl shadow-sm p-4 flex flex-wrap gap-4 items-end animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Filtro estado */}
+                        <div className="min-w-[160px]">
+                            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Estado</label>
+                            <div className="flex gap-1.5">
+                                {(['todos', 'activo', 'inactivo'] as const).map(op => (
+                                    <button
+                                        key={op}
+                                        onClick={() => setFilterEstado(op)}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                                            filterEstado === op
+                                                ? op === 'activo'   ? 'bg-green-100 text-green-700 border-green-200'
+                                                : op === 'inactivo' ? 'bg-gray-200 text-gray-700 border-gray-300'
+                                                                    : 'bg-blue-100 text-blue-700 border-blue-200'
+                                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {op === 'todos' ? 'Todos' : op === 'activo' ? '✓ Activo' : '✗ Inactivo'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Filtro tipo */}
+                        <div className="flex-1 min-w-[180px]">
+                            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Tipo de equipo</label>
+                            <select
+                                value={filterTipo}
+                                onChange={e => setFilterTipo(e.target.value)}
+                                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white
+                                           focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            >
+                                {tiposUnicos.map(t => (
+                                    <option key={t} value={t}>{t === 'todos' ? 'Todos los tipos' : t}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Limpiar filtros */}
+                        {hayFiltrosActivos && (
+                            <button
+                                onClick={limpiarFiltros}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-100 transition-colors"
+                            >
+                                <X size={13} /> Limpiar filtros
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Contador de resultados */}
+                {(hayFiltrosActivos || search) && !loading && (
+                    <p className="text-xs text-gray-400">
+                        Mostrando <span className="font-semibold text-gray-600">{equiposFiltrados.length}</span> de{' '}
+                        <span className="font-semibold text-gray-600">{equipos.length}</span> equipos
+                        {hayFiltrosActivos && (
+                            <button onClick={limpiarFiltros} className="ml-2 text-blue-500 hover:underline">
+                                Limpiar
+                            </button>
+                        )}
+                    </p>
+                )}
+            </div>
+
             {/* Tabla */}
             <Card>
                 {loading ? (
@@ -333,6 +497,18 @@ export default function EquiposPage() {
                         <Wrench size={36} className="text-gray-300 mx-auto mb-3" />
                         <p className="text-sm font-semibold text-gray-600">No hay equipos registrados</p>
                         <p className="text-xs text-gray-400 mt-1">Crea el primer equipo con el botón de arriba.</p>
+                    </div>
+                ) : equiposFiltrados.length === 0 ? (
+                    <div className="p-10 text-center">
+                        <Search size={32} className="text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm font-semibold text-gray-600">Sin resultados</p>
+                        <p className="text-xs text-gray-400 mt-1">Ningún equipo coincide con los filtros aplicados.</p>
+                        <button
+                            onClick={limpiarFiltros}
+                            className="mt-3 text-xs text-blue-500 hover:underline"
+                        >
+                            Limpiar filtros
+                        </button>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -350,7 +526,7 @@ export default function EquiposPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {equipos.map(eq => (
+                                {equiposFiltrados.map(eq => (
                                     <tr key={eq.id} className="hover:bg-blue-50/30 transition-colors group">
                                         <td className="p-3">
                                             <div className="flex items-center gap-2">
