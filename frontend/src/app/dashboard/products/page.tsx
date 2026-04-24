@@ -506,16 +506,17 @@ function ProductsPageInner() {
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: monedaBase, maximumFractionDigits: 0 }).format(v);
 
     // ── Category stats ────────────────────────────────────────────────────────
-    const catStats = Array.from(new Set(products.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
-        const prods = products.filter(p => p.categoria?.nombre === cat);
+    // Distribución por categoría — usa `filtered` para respetar búsqueda/filtros activos
+    const catStats = Array.from(new Set(filtered.map(p => p.categoria?.nombre).filter(Boolean))).map(cat => {
+        const prods = filtered.filter(p => p.categoria?.nombre === cat);
         const valor = prods.reduce((a, p) => {
             const costo = Number(p.ultimoPrecioCompra ?? 0);
-            const tc = p.ultimaEntrada?.tipoCambio ?? 1;
-            const monedaDoc = p.moneda || monedaBase;
+            const tc = (p.ultimaEntrada as any)?.tipoCambio ?? null;
+            const monedaDoc = (p.moneda || monedaBase) as string;
             let costoBase = costo;
-            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = costo * tc;
-            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
-            return a + (p.stock * costoBase);
+            if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = tc && tc > 0 ? costo * tc : costo;
+            else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc && tc > 0 ? costo / tc : costo;
+            return a + (Number(p.stock ?? 0) * costoBase);
         }, 0);
         return { cat, count: prods.length, valor };
     }).sort((a, b) => b.valor - a.valor);
