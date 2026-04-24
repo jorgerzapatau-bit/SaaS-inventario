@@ -3,14 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from '@/lib/prisma';
 
 interface RouteContext {
-  params: { id: string; regId: string };
+  params: Promise<{ id: string; regId: string }>;
 }
 
 // PUT /api/equipos/:id/mantenimiento/:regId
-// Actualiza un registro de mantenimiento existente.
-// Solo se actualizan los campos que vengan en el body.
 export async function PUT(req: NextRequest, { params }: RouteContext) {
-  const { id: equipoId, regId } = params;
+  const { id: equipoId, regId } = await params;
 
   const registro = await prisma.registroMantenimiento.findFirst({
     where: { id: regId, equipoId },
@@ -60,9 +58,8 @@ export async function PUT(req: NextRequest, { params }: RouteContext) {
 }
 
 // DELETE /api/equipos/:id/mantenimiento/:regId
-// Elimina un registro de mantenimiento.
 export async function DELETE(_req: NextRequest, { params }: RouteContext) {
-  const { id: equipoId, regId } = params;
+  const { id: equipoId, regId } = await params;
 
   const registro = await prisma.registroMantenimiento.findFirst({
     where: { id: regId, equipoId },
@@ -79,4 +76,3 @@ export async function DELETE(_req: NextRequest, { params }: RouteContext) {
 
   return new NextResponse(null, { status: 204 });
 }
-
