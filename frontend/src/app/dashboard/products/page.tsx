@@ -466,17 +466,21 @@ function ProductsPageInner() {
     });
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
-    // Valor almacén normalizado a moneda base
-    const totalValor = allMovements.reduce((a, m) => {
-        const qty = Number(m.cantidad || 0), costo = Number(m.costoUnitario || 0);
-        const tc = m.tipoCambio ?? 1;
-        const monedaDoc = m.moneda || monedaBase;
+    // Valor almacén = Σ(stock_actual × último_costo) por producto, convertido a moneda base.
+    // Usa ultimoPrecioCompra (con fallback a precioCompra del producto) y tipoCambio de ultimaEntrada.
+    const totalValor = products.reduce((a, p) => {
+        const stock = Number(p.stock ?? 0);
+        const costo = Number(p.ultimoPrecioCompra ?? 0);
+        if (stock <= 0 || costo <= 0) return a;
+        const monedaDoc = (p.moneda || monedaBase) as string;
+        const tc = (p.ultimaEntrada as any)?.tipoCambio ?? null;
         let costoBase = costo;
-        if (monedaDoc === 'USD' && monedaBase === 'MXN') costoBase = costo * tc;
-        else if (monedaDoc === 'MXN' && monedaBase === 'USD') costoBase = tc > 0 ? costo / tc : costo;
-        if (['ENTRADA', 'AJUSTE_POSITIVO'].includes(m.tipoMovimiento)) return a + qty * costoBase;
-        if (['SALIDA', 'AJUSTE_NEGATIVO', 'CONSUMO_INTERNO'].includes(m.tipoMovimiento)) return a - qty * costoBase;
-        return a;
+        if (monedaDoc === 'USD' && monedaBase === 'MXN') {
+            costoBase = tc && tc > 0 ? costo * tc : costo;
+        } else if (monedaDoc === 'MXN' && monedaBase === 'USD') {
+            costoBase = tc && tc > 0 ? costo / tc : costo;
+        }
+        return a + stock * costoBase;
     }, 0);
 
     const costoPromUnitario = filtered.length > 0
@@ -575,7 +579,7 @@ function ProductsPageInner() {
                     <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
                         <div className="flex items-center gap-1 mb-1">
                             <p className="text-xs text-gray-400">Valor almacén ({monedaBase})</p>
-                            <InfoTooltip text="Σ(entradas×costo) − Σ(consumos×costo). Valores convertidos a moneda base de la empresa usando el tipo de cambio del movimiento." position="bottom" />
+                            <InfoTooltip text="Stock actual × último precio de compra por insumo. Convertido a moneda base de la empresa." position="bottom" />
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{fmtBase(totalValor)}</p>
                         <p className="text-xs text-gray-400 mt-1">normalizado a {monedaBase}</p>

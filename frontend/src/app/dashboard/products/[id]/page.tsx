@@ -449,7 +449,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
     const tipoCambioProducto = product?.ultimaEntrada?.tipoCambio ?? ultimaEntrada?.tipoCambio ?? null;
 
     // ── Métricas de contexto ──────────────────────────────────────────────────
-    const ultimoCosto = Number(ultimaEntrada?.costoUnitario ?? 0);
+    // Usar costo de la última entrada, o bien el precioCompra del producto como fallback
+    const ultimoCosto = Number(ultimaEntrada?.costoUnitario ?? product?.ultimoPrecioCompra ?? 0);
     const valorEsteProducto = (product?.stock ?? 0) * ultimoCosto;
     // Valor en moneda base para % del inventario
     const valorEsteProductoBase = convertirABase(valorEsteProducto, monedaDoc, monedaBase, tipoCambioProducto) ?? valorEsteProducto;
