@@ -34,6 +34,8 @@ interface Props {
     movements: Movimiento[];   // DESC (más reciente primero) — como llegan del estado
     unidad: string;
     moneda?: string; // símbolo de moneda, ej: "MXN" | "USD" — default "MXN"
+    stockActual?: number;      // Stock real del producto (KPI)
+    costoUnitario?: number;    // Último precio de compra conocido (fallback cuando no hay movimientos)
 }
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -100,7 +102,7 @@ function CustomTooltip({ active, payload, label, metric, unidad, currencyFmt }: 
     );
 }
 
-export default function ProductChart({ movements, unidad, moneda = 'MXN' }: Props) {
+export default function ProductChart({ movements, unidad, moneda = 'MXN', stockActual = 0, costoUnitario = 0 }: Props) {
     const currencyFmt = (v: number) =>
         new Intl.NumberFormat('es-MX', { style: 'currency', currency: moneda, maximumFractionDigits: 0 }).format(v);
     const [metric, setMetric] = useState<MetricKey>('stock');
@@ -218,7 +220,11 @@ export default function ProductChart({ movements, unidad, moneda = 'MXN' }: Prop
     const totalIngresos   = filteredAsc.filter(m => ['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad)*Number(m.precioVenta||0),0);
     const margenBruto     = totalIngresos - filteredAsc.filter(m=>['SALIDA','AJUSTE_NEGATIVO'].includes(m.tipoMovimiento)).reduce((a,m)=>a+Number(m.cantidad)*Number(m.costoUnitario),0);
     const stockFinal      = stockData.length > 0 ? stockData[stockData.length-1].stock : 0;
-    const valorFinal      = valorData.length > 0 ? valorData[valorData.length-1].valor : 0;
+    // Si no hay movimientos en el período pero el producto tiene stock y precio conocidos,
+    // mostrar el valor real del inventario (stock × costo) en lugar de $0.
+    const valorFinalMovimientos = valorData.length > 0 ? valorData[valorData.length - 1].valor : 0;
+    const valorFallback = stockActual > 0 && costoUnitario > 0 ? stockActual * costoUnitario : 0;
+    const valorFinal = valorFinalMovimientos > 0 ? valorFinalMovimientos : valorFallback;
 
     const btnPeriod = (p: typeof period, label: string) => (
         <button key={p} onClick={() => applyPeriod(p)}
@@ -230,6 +236,34 @@ export default function ProductChart({ movements, unidad, moneda = 'MXN' }: Prop
     const isEmpty = filteredAsc.length === 0;
 
     const renderChart = () => {
+        // Para la tab de valor: si no hay movimientos pero sí hay stock y costo, mostrar gráfica
+        // estática con el valor actual en lugar de mensaje vacío.
+        if (isEmpty && metric === 'valor' && valorFallback > 0) {
+            const today = new Date().toISOString().split('T')[0];
+            const staticValorData = [{ name: fmtDate(today), valor: valorFallback }];
+            return (
+                <ResponsiveContainer width="100%" height={280}>
+                    <AreaChart data={staticValorData} margin={{ top:10, right:20, left:10, bottom:0 }}>
+                        <defs>
+                            <linearGradient id="gradValorStatic" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%"  stopColor="#f59e0b" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fill:'#9CA3AF', fontSize:11 }} dx={-8}
+                            tickFormatter={(v) => currencyFmt(v)} domain={[0, valorFallback * 1.2]} />
+                        <Tooltip content={<CustomTooltip metric="valor" unidad={unidad} currencyFmt={currencyFmt} />} />
+                        <Area type="monotone" dataKey="valor" stroke="#f59e0b" strokeWidth={2.5}
+                            fill="url(#gradValorStatic)" fillOpacity={1}
+                            dot={{ r:6, fill:'#f59e0b', strokeWidth:2, stroke:'#fff' }}
+                            activeDot={{ r:8 }} name="Valor en almacén" />
+                    </AreaChart>
+                </ResponsiveContainer>
+            );
+        }
+
         if (isEmpty) return (
             <div className="h-[280px] flex items-center justify-center text-gray-400 text-sm">
                 No hay movimientos en este periodo.

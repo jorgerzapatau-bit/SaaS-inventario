@@ -988,6 +988,8 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                     movements={[...movements].reverse()}
                     unidad={product?.unidad ?? ''}
                     moneda={monedaBase}
+                    stockActual={product?.stock ?? 0}
+                    costoUnitario={costoUltimaEntrada}
                 />
             )}
 
