@@ -473,7 +473,7 @@ function ProductsPageInner() {
         const costo = Number(p.ultimoPrecioCompra ?? 0);
         if (stock <= 0 || costo <= 0) return a;
         const monedaDoc = (p.moneda || monedaBase) as string;
-        const tc = (p.ultimaEntrada as any)?.tipoCambio ?? tcGlobal;
+        const tc = (p.ultimaEntrada as any)?.tipoCambio ?? p.tipoCambioRef ?? tcGlobal;
         let costoBase = costo;
         if (monedaDoc === 'USD' && monedaBase === 'MXN') {
             costoBase = tc > 0 ? costo * tc : costo;
@@ -801,7 +801,7 @@ function ProductsPageInner() {
                             const c30d       = consumo30dPorProducto(product.id);
                             const monedaDoc  = product.moneda || monedaBase;
                             const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
-                            const tcEfectivo = tipoCambio ?? tcGlobal ?? null;
+                            const tcEfectivo = tipoCambio ?? product.tipoCambioRef ?? tcGlobal ?? null;
                             const costo      = Number(product.ultimoPrecioCompra ?? 0);
                             const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
                                 costo, monedaDoc, monedaBase, tcEfectivo
@@ -903,9 +903,9 @@ function ProductsPageInner() {
                                         const c30d       = consumo30dPorProducto(product.id);
                                         const monedaDoc  = product.moneda || monedaBase;
                                         const tipoCambio = product.ultimaEntrada?.tipoCambio ?? null;
-                                        // TC efectivo: usa el de la última entrada, o el global de la empresa como fallback
-                                        const tcEfectivo = tipoCambio ?? tcGlobal ?? null;
-                                        const usaTcFallback = !tipoCambio && !!tcGlobal && monedaDoc !== monedaBase;
+                                        // Prioridad TC: movimiento → TC del producto → TC global empresa
+                                        const tcEfectivo = tipoCambio ?? product.tipoCambioRef ?? tcGlobal ?? null;
+                                        const usaTcFallback = !tipoCambio && !!tcEfectivo && monedaDoc !== monedaBase;
                                         const costo      = Number(product.ultimoPrecioCompra ?? 0);
 
                                         // Valor almacén en moneda base — siempre usa tcEfectivo (fallback al TC global)

@@ -144,6 +144,7 @@ model Producto {
   leadTimeDias     Int?
   nivelReorden     Decimal?               @default(0) @db.Decimal
   cantidadReorden  Decimal?               @default(0) @db.Decimal
+  tipoCambioRef    Decimal?               @db.Decimal
   suspendido       Boolean?               @default(false)
   equipoId         String?
   notas            String?

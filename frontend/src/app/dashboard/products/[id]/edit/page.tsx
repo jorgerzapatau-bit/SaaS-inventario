@@ -83,6 +83,7 @@ export default function EditProductPage() {
         stockMinimo: '',
         unidad: 'litro',
         moneda: 'MXN' as MonedaType,
+        tipoCambioRef: '' as string,
         imagen: '' as string | null,
         activo: true,
     });
@@ -110,6 +111,7 @@ export default function EditProductPage() {
                     stockMinimo: product.stockMinimo ?? '',
                     unidad: product.unidad || 'litro',
                     moneda: (product.moneda as MonedaType) || 'MXN',
+                    tipoCambioRef: product.tipoCambioRef ?? '',
                     imagen: product.imagen || null,
                     activo: product.activo ?? true,
                 });
@@ -159,6 +161,7 @@ export default function EditProductPage() {
                     stockMinimo: Number(formData.stockMinimo),
                     nivelReorden: formData.nivelReorden ? Number(formData.nivelReorden) : undefined,
                     diasReorden: formData.diasReorden ? Number(formData.diasReorden) : undefined,
+                    tipoCambioRef: formData.tipoCambioRef ? Number(formData.tipoCambioRef) : null,
                     imagen: formData.imagen,
                     activo: formData.activo,
                 }),
@@ -416,6 +419,48 @@ export default function EditProductPage() {
                                     <p className="text-xs text-gray-400 mt-1">Cantidad a pedir cuando se activa la alerta</p>
                                 </div>
                             </div>
+
+                            {/* ── Tipo de cambio de referencia — solo para productos USD ── */}
+                            {formData.moneda === 'USD' && (
+                                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="text-base">💱</span>
+                                        <p className="text-sm font-semibold text-amber-800">Tipo de cambio de referencia (USD → MXN)</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                                        <div>
+                                            <label className="text-sm font-medium text-amber-700 block mb-1.5">
+                                                TC de este insumo <span className="font-normal text-amber-500">(MXN por 1 USD)</span>
+                                            </label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-500 text-sm font-bold">$</span>
+                                                <input
+                                                    type="number" step="0.01" min="0"
+                                                    name="tipoCambioRef"
+                                                    value={formData.tipoCambioRef}
+                                                    onChange={handleChange}
+                                                    placeholder="Ej: 17.50"
+                                                    className="w-full pl-8 pr-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-500 text-gray-800"
+                                                />
+                                            </div>
+                                            <p className="text-xs text-amber-600 mt-1">
+                                                Se usa para calcular el valor almacén en MXN cuando no hay TC en el movimiento.
+                                            </p>
+                                        </div>
+                                        {formData.tipoCambioRef && costoUnitario > 0 && (
+                                            <div className="bg-white rounded-lg px-4 py-3 border border-amber-200">
+                                                <p className="text-xs text-amber-500 font-medium mb-1">Equivalencia del costo</p>
+                                                <p className="text-lg font-bold text-amber-700">
+                                                    ${(costoUnitario * Number(formData.tipoCambioRef)).toLocaleString('es-MX', { maximumFractionDigits: 2 })} MXN
+                                                </p>
+                                                <p className="text-xs text-amber-400 mt-0.5">
+                                                    US${costoUnitario} × ${Number(formData.tipoCambioRef).toFixed(2)}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>

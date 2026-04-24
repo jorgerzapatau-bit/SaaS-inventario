@@ -41,8 +41,9 @@ export async function GET(req: NextRequest) {
             stockActual:        Number(p.stockActual),
             stock:              Number(p.stockActual),          // alias que usa la página
             stockMinimo:        Number(p.stockMinimo),
+            tipoCambioRef:      p.tipoCambioRef ? Number(p.tipoCambioRef) : null,
             // moneda ya viene del modelo (MXN | USD)
-            ultimaEntrada:      lastCostoMap[p.id] ?? (Number(p.precioCompra) > 0 ? { costo: Number(p.precioCompra), moneda: p.moneda, tipoCambio: null } : null),
+            ultimaEntrada:      lastCostoMap[p.id] ?? (Number(p.precioCompra) > 0 ? { costo: Number(p.precioCompra), moneda: p.moneda, tipoCambio: p.tipoCambioRef ? Number(p.tipoCambioRef) : null } : null),
             // Si no hay entradas en kardex, usar el precioCompra guardado en el producto
             ultimoPrecioCompra: lastCostoMap[p.id]?.costo ?? (Number(p.precioCompra) > 0 ? Number(p.precioCompra) : null),
             // alerta de stock bajo

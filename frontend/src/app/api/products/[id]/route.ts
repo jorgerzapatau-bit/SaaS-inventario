@@ -18,9 +18,10 @@ export async function GET(req: NextRequest, { params }: Params) {
 
         return Response.json({
             ...product,
-            precioCompra: Number(product.precioCompra),
-            stockActual:  Number(product.stockActual),
-            stockMinimo:  Number(product.stockMinimo),
+            precioCompra:  Number(product.precioCompra),
+            stockActual:   Number(product.stockActual),
+            stockMinimo:   Number(product.stockMinimo),
+            tipoCambioRef: product.tipoCambioRef ? Number(product.tipoCambioRef) : null,
         });
     } catch {
         return Response.json({ error: 'Error fetching product' }, { status: 500 });
@@ -38,7 +39,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const {
             nombre, categoriaId, unidad,
             precioCompra, moneda,
-            stockMinimo, imagen, activo, notas,
+            stockMinimo, imagen, activo, notas, tipoCambioRef,
         } = await req.json();
 
         const monedaVal = moneda === 'USD' ? 'USD' : moneda === 'MXN' ? 'MXN' : undefined;
@@ -46,15 +47,16 @@ export async function PUT(req: NextRequest, { params }: Params) {
         const product = await prisma.producto.update({
             where: { id },
             data: {
-                ...(nombre       !== undefined && { nombre }),
-                ...(categoriaId  !== undefined && { categoriaId }),
-                ...(unidad       !== undefined && { unidad }),
-                ...(precioCompra !== undefined && { precioCompra: Number(precioCompra) }),
-                ...(monedaVal    !== undefined && { moneda: monedaVal }),
-                ...(stockMinimo  !== undefined && { stockMinimo: Number(stockMinimo) }),
-                ...(imagen       !== undefined && { imagen }),
-                ...(activo       !== undefined && { activo }),
-                ...(notas        !== undefined && { notas }),
+                ...(nombre          !== undefined && { nombre }),
+                ...(categoriaId     !== undefined && { categoriaId }),
+                ...(unidad          !== undefined && { unidad }),
+                ...(precioCompra    !== undefined && { precioCompra: Number(precioCompra) }),
+                ...(monedaVal       !== undefined && { moneda: monedaVal }),
+                ...(stockMinimo     !== undefined && { stockMinimo: Number(stockMinimo) }),
+                ...(imagen          !== undefined && { imagen }),
+                ...(activo          !== undefined && { activo }),
+                ...(notas           !== undefined && { notas }),
+                ...(tipoCambioRef   !== undefined && { tipoCambioRef: tipoCambioRef ? Number(tipoCambioRef) : null }),
                 // stockActual nunca se edita directamente aquí
             },
             include: { categoria: true },
@@ -62,9 +64,10 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
         return Response.json({
             ...product,
-            precioCompra: Number(product.precioCompra),
-            stockActual:  Number(product.stockActual),
-            stockMinimo:  Number(product.stockMinimo),
+            precioCompra:  Number(product.precioCompra),
+            stockActual:   Number(product.stockActual),
+            stockMinimo:   Number(product.stockMinimo),
+            tipoCambioRef: product.tipoCambioRef ? Number(product.tipoCambioRef) : null,
         });
     } catch (error: unknown) {
         if ((error as { code?: string }).code === 'P2002')
