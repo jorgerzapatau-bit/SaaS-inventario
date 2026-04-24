@@ -52,5 +52,10 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
         throw new Error(errorMsg);
     }
 
+    // 204 No Content y 205 Reset Content no tienen body — no parsear JSON
+    if (response.status === 204 || response.status === 205) {
+        return null;
+    }
+
     return response.json();
 };
