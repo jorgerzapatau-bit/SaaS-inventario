@@ -115,6 +115,7 @@ function ConsumoInsumoPageInner() {
                         productoId,
                         cantidad: 1,
                         precioUnitario: prod ? Number(prod.precioCompra ?? 0) : 0,
+                        moneda: prod?.moneda ?? "MXN",  // ← FIX: moneda desde URL
                     }]);
                 }
 
@@ -163,15 +164,24 @@ function ConsumoInsumoPageInner() {
         if (field === "productoId") {
             const prod = products.find((p: any) => p.id === value);
             newDetalles[index].precioUnitario = prod ? Number(prod.precioCompra ?? 0) : 0;
+            // ← FIX: copiar la moneda del producto para mostrar el símbolo correcto
+            newDetalles[index].moneda = prod?.moneda ?? "MXN";
         }
         newDetalles[index][field] = value;
         setDetalles(newDetalles);
     };
 
-    const addLinea    = () => setDetalles([...detalles, { productoId: "", cantidad: 1, precioUnitario: 0 }]);
+    const addLinea    = () => setDetalles([...detalles, { productoId: "", cantidad: 1, precioUnitario: 0, moneda: "MXN" }]);
     const removeLinea = (i: number) => { if (detalles.length > 1) setDetalles(detalles.filter((_, idx) => idx !== i)); };
 
-    const costoTotal = detalles.reduce((acc, d) => acc + Number(d.precioUnitario) * Number(d.cantidad), 0);
+    // Helper: símbolo de moneda por línea
+    const simbolo = (moneda?: string) => moneda === "USD" ? "USD $" : "MXN $";
+
+    // Totales separados por moneda para mostrar correctamente
+    const totalMXN = detalles.filter(d => (d.moneda ?? "MXN") !== "USD").reduce((acc, d) => acc + Number(d.precioUnitario) * Number(d.cantidad), 0);
+    const totalUSD = detalles.filter(d => d.moneda === "USD").reduce((acc, d) => acc + Number(d.precioUnitario) * Number(d.cantidad), 0);
+    // costoTotal para el payload (la BD guarda moneda por movimiento)
+    const costoTotal = totalMXN + totalUSD;
 
     const calcularResumenStock = () => {
         const mapa: Record<string, { nombre: string; stockActual: number; cantOriginal: number; cantNueva: number }> = {};
@@ -369,10 +379,12 @@ function ConsumoInsumoPageInner() {
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
                                     <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
+                                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold ${detalle.moneda === "USD" ? "text-blue-600" : "text-gray-500"}`}>
+                                            {detalle.moneda === "USD" ? "USD" : "MXN"}
+                                        </span>
                                         <input type="number" step="0.01" min="0" value={detalle.precioUnitario}
                                             onChange={e => handleDetalleChange(index, "precioUnitario", e.target.value)}
-                                            className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                            className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                                     </div>
                                 </div>
                                 <div className="col-span-6 sm:col-span-2">
@@ -380,8 +392,8 @@ function ConsumoInsumoPageInner() {
                                         onChange={e => handleDetalleChange(index, "cantidad", e.target.value)}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
                                 </div>
-                                <div className="col-span-10 sm:col-span-2 text-right font-bold text-gray-700">
-                                    ${(Number(detalle.precioUnitario) * Number(detalle.cantidad)).toFixed(2)}
+                                <div className={`col-span-10 sm:col-span-2 text-right font-bold text-xs ${detalle.moneda === "USD" ? "text-blue-700" : "text-gray-700"}`}>
+                                    {simbolo(detalle.moneda)}{(Number(detalle.precioUnitario) * Number(detalle.cantidad)).toFixed(2)}
                                 </div>
                                 <div className="col-span-2 sm:col-span-1 flex justify-end">
                                     <button type="button" onClick={() => removeLinea(index)} disabled={detalles.length === 1}
@@ -397,9 +409,14 @@ function ConsumoInsumoPageInner() {
                                 className="flex items-center gap-2 px-4 py-2 text-orange-600 hover:bg-orange-50 font-medium rounded-lg transition-colors">
                                 <Plus size={18}/> Añadir insumo
                             </button>
-                            <div className="text-right">
-                                <span className="text-gray-500 mr-4">Costo total:</span>
-                                <span className="text-2xl font-bold text-gray-900">${costoTotal.toFixed(2)}</span>
+                            <div className="text-right space-y-0.5">
+                                <div className="text-gray-500 text-sm mb-1">Costo total:</div>
+                                {totalMXN > 0 && (
+                                    <div className="text-xl font-bold text-gray-900">MXN ${totalMXN.toFixed(2)}</div>
+                                )}
+                                {totalUSD > 0 && (
+                                    <div className="text-xl font-bold text-blue-700">USD ${totalUSD.toFixed(2)}</div>
+                                )}
                             </div>
                         </div>
                     </CardContent>
