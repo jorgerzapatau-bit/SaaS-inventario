@@ -738,6 +738,7 @@ export default function ProductDetailPage({ isNew = false }: { isNew?: boolean }
                                     <p className="text-xs text-gray-400 mt-1">Días hábiles que tarda en llegar el pedido.</p>
                                 </div>
                             </div>
+                            <div className="grid grid-cols-3 gap-3">
                                 <div className={isNew ? '' : 'bg-gray-50 rounded-lg p-3 border border-dashed border-gray-200'}>
                                     {isNew ? (
                                         <>
