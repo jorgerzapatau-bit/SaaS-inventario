@@ -10,7 +10,25 @@ interface CompanyInfo {
     id: string;
     nombre: string;
     logo?: string | null;
-    loginBg?: string | null;
+    loginBg?: string | string[] | null;
+}
+
+// Devuelve una imagen aleatoria de loginBg (soporta string o array JSON)
+function pickBg(loginBg: string | string[] | null | undefined, fallback: string): string {
+    if (!loginBg) return fallback;
+    let list: string[];
+    if (Array.isArray(loginBg)) {
+        list = loginBg;
+    } else {
+        try {
+            const parsed = JSON.parse(loginBg);
+            list = Array.isArray(parsed) ? parsed : [loginBg];
+        } catch {
+            return loginBg; // string simple (retrocompatible)
+        }
+    }
+    if (list.length === 0) return fallback;
+    return list[Math.floor(Math.random() * list.length)];
 }
 
 function LoginForm() {
@@ -33,7 +51,7 @@ function LoginForm() {
             fetchApi(`/company/${companySlug}`)
                 .then((data: CompanyInfo) => {
                     setCompanyInfo(data);
-                    if (data.loginBg) setBgImage(data.loginBg);
+                    if (data.loginBg) setBgImage(pickBg(data.loginBg, DEFAULT_BG));
                 })
                 .catch(() => setCompanyNotFound(true))
                 .finally(() => setLoadingCompany(false));
