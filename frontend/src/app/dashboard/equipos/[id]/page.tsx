@@ -748,11 +748,14 @@ function EditMantModal({ registro, equipoId, onClose, onSuccess }: EditMantModal
 
 type ConfirmDeleteModalProps = {
     mensaje: string;
+    titulo?: string;
+    confirmLabel?: string;
+    confirmClass?: string;
     onConfirm: () => void;
     onCancel: () => void;
 };
 
-function ConfirmDeleteModal({ mensaje, onConfirm, onCancel }: ConfirmDeleteModalProps) {
+function ConfirmDeleteModal({ mensaje, titulo, confirmLabel, confirmClass, onConfirm, onCancel }: ConfirmDeleteModalProps) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
@@ -761,7 +764,7 @@ function ConfirmDeleteModal({ mensaje, onConfirm, onCancel }: ConfirmDeleteModal
                         <Trash2 size={18} className="text-red-500" />
                     </div>
                     <div>
-                        <h3 className="text-sm font-bold text-gray-900">¿Eliminar registro?</h3>
+                        <h3 className="text-sm font-bold text-gray-900">{titulo ?? '¿Eliminar registro?'}</h3>
                         <p className="text-xs text-gray-500 mt-1">{mensaje}</p>
                         <p className="text-xs text-red-500 mt-2 font-medium">Esta acción no se puede deshacer.</p>
                     </div>
@@ -770,8 +773,8 @@ function ConfirmDeleteModal({ mensaje, onConfirm, onCancel }: ConfirmDeleteModal
                     <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
                         Cancelar
                     </button>
-                    <button onClick={onConfirm} className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors">
-                        Sí, eliminar
+                    <button onClick={onConfirm} className={`flex-1 py-2 rounded-lg text-white text-sm font-semibold transition-colors ${confirmClass ?? 'bg-red-600 hover:bg-red-700'}`}>
+                        {confirmLabel ?? 'Sí, eliminar'}
                     </button>
                 </div>
             </div>
@@ -944,9 +947,246 @@ function NuevoInventarioModal({ equipoId, onClose, onSuccess }: { equipoId: stri
     );
 }
 
+// ─── Modal: Editar pendiente ──────────────────────────────────────────────────
+
+function EditPendienteModal({ pendiente, equipoId, onClose, onSuccess }: { pendiente: Pendiente; equipoId: string; onClose: () => void; onSuccess: () => void }) {
+    const [descripcion, setDescripcion] = useState(pendiente.descripcion);
+    const [observacion, setObservacion] = useState(pendiente.observacion ?? '');
+    const [horometro,   setHorometro]   = useState(pendiente.horometro != null ? String(pendiente.horometro) : '');
+    const [fecha,       setFecha]       = useState(pendiente.fecha.slice(0, 10));
+    const [saving,      setSaving]      = useState(false);
+    const [error,       setError]       = useState('');
+
+    const handleGuardar = async () => {
+        if (descripcion.trim().length < 3) { setError('La descripción debe tener al menos 3 caracteres.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/pendientes/${pendiente.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    descripcion: descripcion.trim(),
+                    observacion: observacion.trim() || null,
+                    horometro:   horometro ? Number(horometro) : null,
+                    fecha,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Editar pendiente / falla</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">Modifica los datos del pendiente</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <textarea value={observacion} onChange={e => setObservacion(e.target.value)} rows={2}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha *</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Horómetro (hrs)</label>
+                            <input type="number" value={horometro} onChange={e => setHorometro(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button onClick={handleGuardar} disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                        {saving ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal: Editar ítem de inventario ─────────────────────────────────────────
+
+function EditInventarioModal({ item, equipoId, onClose, onSuccess }: { item: InventarioItem; equipoId: string; onClose: () => void; onSuccess: () => void }) {
+    const [descripcion, setDescripcion] = useState(item.descripcion);
+    const [cantidad,    setCantidad]    = useState(String(item.cantidad));
+    const [observacion, setObservacion] = useState(item.observacion ?? '');
+    const [fecha,       setFecha]       = useState(item.fecha.slice(0, 10));
+    const [saving,      setSaving]      = useState(false);
+    const [error,       setError]       = useState('');
+
+    const handleGuardar = async () => {
+        if (!descripcion.trim()) { setError('La descripción es requerida.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/equipos/${equipoId}/inventario/${item.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    descripcion: descripcion.trim(),
+                    cantidad: Number(cantidad) || 1,
+                    observacion: observacion.trim() || null,
+                    fecha,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Editar ítem de inventario</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">Modifica los datos del ítem</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Descripción *</label>
+                        <input type="text" value={descripcion} onChange={e => setDescripcion(e.target.value)}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Cantidad</label>
+                            <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} min="0" step="0.01"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Fecha</label>
+                            <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Observaciones</label>
+                        <input type="text" value={observacion} onChange={e => setObservacion(e.target.value)}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                    </div>
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button onClick={handleGuardar} disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                        {saving ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal: Editar componente ─────────────────────────────────────────────────
+
+function EditComponenteModal({ componente, onClose, onSuccess }: { componente: Componente; onClose: () => void; onSuccess: () => void }) {
+    const [nombre, setNombre] = useState(componente.nombre);
+    const [serie,  setSerie]  = useState(componente.serie ?? '');
+    const [tipo,   setTipo]   = useState(componente.tipo ?? '');
+    const [notas,  setNotas]  = useState(componente.notas ?? '');
+    const [saving, setSaving] = useState(false);
+    const [error,  setError]  = useState('');
+
+    const handleGuardar = async () => {
+        if (!nombre.trim()) { setError('El nombre es requerido.'); return; }
+        setSaving(true); setError('');
+        try {
+            await fetchApi(`/componentes/${componente.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    nombre: nombre.trim(),
+                    serie:  serie.trim()  || null,
+                    tipo:   tipo.trim()   || null,
+                    notas:  notas.trim()  || null,
+                }),
+            });
+            onSuccess();
+            onClose();
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Editar componente</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">Modifica los datos del componente</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Nombre *</label>
+                            <input value={nombre} onChange={e => setNombre(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">N° de serie</label>
+                            <input value={serie} onChange={e => setSerie(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Tipo</label>
+                            <input value={tipo} onChange={e => setTipo(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                        <div className="col-span-2">
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Notas</label>
+                            <input value={notas} onChange={e => setNotas(e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400" />
+                        </div>
+                    </div>
+                    {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+                </div>
+                <div className="flex gap-3 px-6 py-4 border-t border-gray-100">
+                    <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button onClick={handleGuardar} disabled={saving}
+                        className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                        {saving ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── ComponenteCard ───────────────────────────────────────────────────────────
 
-function ComponenteCard({ comp, equipoId, onMovimiento }: { comp: Componente; equipoId: string; onMovimiento: (c: Componente) => void }) {
+function ComponenteCard({ comp, equipoId, onMovimiento, onEditar, onEliminar }: { comp: Componente; equipoId: string; onMovimiento: (c: Componente) => void; onEditar: (c: Componente) => void; onEliminar: (c: Componente) => void }) {
     const [verHistorial, setVerHistorial] = useState(false);
     const estaAqui = comp.equipoActualId === equipoId;
 
@@ -967,9 +1207,19 @@ function ComponenteCard({ comp, equipoId, onMovimiento }: { comp: Componente; eq
                         )}
                     </div>
                 </div>
-                <span className={`text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0 ml-2 ${estaAqui ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {estaAqui ? 'Instalado' : 'En taller'}
-                </span>
+                <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full ${estaAqui ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {estaAqui ? 'Instalado' : 'En taller'}
+                    </span>
+                    <button onClick={() => onEditar(comp)} title="Editar componente"
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                        <Pencil size={13} />
+                    </button>
+                    <button onClick={() => onEliminar(comp)} title="Eliminar componente"
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                        <Trash2 size={13} />
+                    </button>
+                </div>
             </div>
 
             {comp.notas && (
@@ -1128,6 +1378,9 @@ export default function EquipoDetallePage() {
     const [modalNuevoMant,  setModalNuevoMant]  = useState(false);
     const [modalNuevoPend,  setModalNuevoPend]  = useState(false);
     const [modalNuevoInv,   setModalNuevoInv]   = useState(false);
+    const [modalEditPend,   setModalEditPend]   = useState<Pendiente | null>(null);
+    const [modalEditInv,    setModalEditInv]    = useState<InventarioItem | null>(null);
+    const [modalEditComp,   setModalEditComp]   = useState<Componente | null>(null);
 
     // Filtros registros
     const [filtroSemana, setFiltroSemana] = useState('todas');
@@ -1148,7 +1401,7 @@ export default function EquipoDetallePage() {
     const [modalEditMant,   setModalEditMant]   = useState<RegistroMant | null>(null);
 
     // Confirmación de borrado
-    const [confirmDelete, setConfirmDelete] = useState<{ mensaje: string; onConfirm: () => void } | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState<{ mensaje: string; titulo?: string; confirmLabel?: string; confirmClass?: string; onConfirm: () => void } | null>(null);
 
     const loadComponentes = useCallback(async () => {
         if (!id) return;
@@ -1235,31 +1488,62 @@ export default function EquipoDetallePage() {
         });
     };
 
-    const handleResolverPendiente = async (pend: Pendiente) => {
-        if (!confirm('¿Marcar este pendiente como resuelto?')) return;
-        try {
-            await fetchApi(`/equipos/${id}/pendientes/${pend.id}`, {
-                method: 'PUT',
-                body: JSON.stringify({ resuelto: true, fechaResuelto: new Date().toISOString().slice(0, 10) }),
-            });
-            loadPendientes();
-        } catch (e: any) { alert(e.message || 'Error'); }
+    const handleResolverPendiente = (pend: Pendiente) => {
+        setConfirmDelete({
+            mensaje: `Se marcará como resuelto: "${pend.descripcion.slice(0, 80)}${pend.descripcion.length > 80 ? '...' : ''}"`,
+            titulo: '¿Marcar como resuelto?',
+            confirmLabel: 'Sí, marcar resuelto',
+            confirmClass: 'bg-green-600 hover:bg-green-700',
+            onConfirm: async () => {
+                setConfirmDelete(null);
+                try {
+                    await fetchApi(`/equipos/${id}/pendientes/${pend.id}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ resuelto: true, fechaResuelto: new Date().toISOString().slice(0, 10) }),
+                    });
+                    loadPendientes();
+                } catch (e: any) { alert(e.message || 'Error'); }
+            },
+        });
     };
 
-    const handleDeletePendiente = async (pendId: string) => {
-        if (!confirm('¿Eliminar este pendiente?')) return;
-        try {
-            await fetchApi(`/equipos/${id}/pendientes/${pendId}`, { method: 'DELETE' });
-            setPendientes(p => p.filter(x => x.id !== pendId));
-        } catch (e: any) { alert(e.message || 'Error'); }
+    const handleDeletePendiente = (pendId: string, descripcion: string) => {
+        setConfirmDelete({
+            mensaje: `Se eliminará el pendiente: "${descripcion.slice(0, 80)}${descripcion.length > 80 ? '...' : ''}"`,
+            onConfirm: async () => {
+                setConfirmDelete(null);
+                try {
+                    await fetchApi(`/equipos/${id}/pendientes/${pendId}`, { method: 'DELETE' });
+                    setPendientes(p => p.filter(x => x.id !== pendId));
+                } catch (e: any) { alert(e.message || 'Error'); }
+            },
+        });
     };
 
-    const handleDeleteInventario = async (itemId: string) => {
-        if (!confirm('¿Eliminar este ítem del inventario?')) return;
-        try {
-            await fetchApi(`/equipos/${id}/inventario/${itemId}`, { method: 'DELETE' });
-            setInventario(i => i.filter(x => x.id !== itemId));
-        } catch (e: any) { alert(e.message || 'Error'); }
+    const handleDeleteInventario = (itemId: string, descripcion: string) => {
+        setConfirmDelete({
+            mensaje: `Se eliminará el ítem: "${descripcion.slice(0, 80)}${descripcion.length > 80 ? '...' : ''}"`,
+            onConfirm: async () => {
+                setConfirmDelete(null);
+                try {
+                    await fetchApi(`/equipos/${id}/inventario/${itemId}`, { method: 'DELETE' });
+                    setInventario(i => i.filter(x => x.id !== itemId));
+                } catch (e: any) { alert(e.message || 'Error'); }
+            },
+        });
+    };
+
+    const handleDeleteComponente = (comp: Componente) => {
+        setConfirmDelete({
+            mensaje: `Se eliminará el componente: "${comp.nombre}"${comp.serie ? ` (S/N ${comp.serie})` : ''}`,
+            onConfirm: async () => {
+                setConfirmDelete(null);
+                try {
+                    await fetchApi(`/componentes/${comp.id}`, { method: 'DELETE' });
+                    loadComponentes();
+                } catch (e: any) { alert(e.message || 'Error'); }
+            },
+        });
     };
 
     // ── Semanas disponibles para filtro ────────────────────────────────────────
@@ -1818,7 +2102,14 @@ export default function EquipoDetallePage() {
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => handleDeletePendiente(p.id)}
+                                            onClick={() => setModalEditPend(p)}
+                                            title="Editar pendiente"
+                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                        >
+                                            <Pencil size={13} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeletePendiente(p.id, p.descripcion)}
                                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                         >
                                             <Trash2 size={13} />
@@ -1889,12 +2180,22 @@ export default function EquipoDetallePage() {
                                                 <td className="p-3 text-xs text-gray-500">{item.observacion || '—'}</td>
                                                 <td className="p-3 text-xs text-gray-400">{fmtFecha(item.fecha)}</td>
                                                 <td className="p-3 text-right">
-                                                    <button
-                                                        onClick={() => handleDeleteInventario(item.id)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <button
+                                                            onClick={() => setModalEditInv(item)}
+                                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                            title="Editar ítem"
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteInventario(item.id, item.descripcion)}
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                            title="Eliminar ítem"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1953,6 +2254,8 @@ export default function EquipoDetallePage() {
                                     comp={comp}
                                     equipoId={id}
                                     onMovimiento={setModalMov}
+                                    onEditar={setModalEditComp}
+                                    onEliminar={handleDeleteComponente}
                                 />
                             ))}
                         </div>
@@ -1994,6 +2297,9 @@ export default function EquipoDetallePage() {
             {confirmDelete && (
                 <ConfirmDeleteModal
                     mensaje={confirmDelete.mensaje}
+                    titulo={confirmDelete.titulo}
+                    confirmLabel={confirmDelete.confirmLabel}
+                    confirmClass={confirmDelete.confirmClass}
                     onConfirm={confirmDelete.onConfirm}
                     onCancel={() => setConfirmDelete(null)}
                 />
@@ -2010,6 +2316,29 @@ export default function EquipoDetallePage() {
                     equipoId={id}
                     onClose={() => setModalNuevoInv(false)}
                     onSuccess={loadInventario}
+                />
+            )}
+            {modalEditPend && (
+                <EditPendienteModal
+                    pendiente={modalEditPend}
+                    equipoId={id}
+                    onClose={() => setModalEditPend(null)}
+                    onSuccess={loadPendientes}
+                />
+            )}
+            {modalEditInv && (
+                <EditInventarioModal
+                    item={modalEditInv}
+                    equipoId={id}
+                    onClose={() => setModalEditInv(null)}
+                    onSuccess={loadInventario}
+                />
+            )}
+            {modalEditComp && (
+                <EditComponenteModal
+                    componente={modalEditComp}
+                    onClose={() => setModalEditComp(null)}
+                    onSuccess={loadComponentes}
                 />
             )}
         </div>
