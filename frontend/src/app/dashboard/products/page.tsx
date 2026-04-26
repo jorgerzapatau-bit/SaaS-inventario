@@ -1081,7 +1081,6 @@ function ProductsPageInner() {
             {showImport && (
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
-        </div>
             {deleteTarget && (
                 <DeleteModal
                     nombre={deleteTarget.nombre}
@@ -1090,6 +1089,7 @@ function ProductsPageInner() {
                     deleting={deleting}
                 />
             )}
+        </div>
     );
 }
 
