@@ -161,18 +161,25 @@ export default function DashboardPage() {
         return new Date(bare + 'T12:00:00');
     };
 
+    // Comparación de fechas por string YYYY-MM-DD para evitar desfase de timezone
+    const dateStr = (d: Date) => d.toISOString().slice(0, 10);
+    const regFecha = (r: any): string =>
+        typeof r.fecha === 'string' ? r.fecha.slice(0, 10)
+        : r.fecha instanceof Date   ? r.fecha.toISOString().slice(0, 10)
+        : '';
+
     const registrosPeriodo = useMemo(() =>
         registros.filter(r => {
             if (period === 'general') return true;
-            const f = toSafeDate(r.fecha);
-            return f >= desde && f <= hasta;
+            const f = regFecha(r);
+            return f >= dateStr(desde) && f <= dateStr(hasta);
         }), [registros, period, desde, hasta]);
 
     const registrosPrev = useMemo(() => {
         if (!prevRange) return [];
         return registros.filter(r => {
-            const f = toSafeDate(r.fecha);
-            return f >= prevRange.prevDesde && f <= prevRange.prevHasta;
+            const f = regFecha(r);
+            return f >= dateStr(prevRange.prevDesde) && f <= dateStr(prevRange.prevHasta);
         });
     }, [registros, prevRange]);
 
@@ -274,7 +281,10 @@ export default function DashboardPage() {
                     {/* Equipos activos */}
                     <Link href="/dashboard/equipos" className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-blue-200 transition-all group block">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Equipos activos</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-xs text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Equipos activos</p>
+                                <InfoTooltip text="Equipos con status Activo. El total incluye equipos dados de baja o en mantenimiento." />
+                            </div>
                             <div className="p-1.5 bg-blue-50 rounded-lg"><Wrench size={14} className="text-blue-600" /></div>
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{loading ? '…' : equipos.filter(e => e.activo).length}</p>
@@ -284,7 +294,10 @@ export default function DashboardPage() {
                     {/* Obras activas */}
                     <Link href="/dashboard/obras" className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-yellow-200 transition-all group block">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs text-gray-500 font-medium group-hover:text-yellow-600 transition-colors">Obras activas</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-xs text-gray-500 font-medium group-hover:text-yellow-600 transition-colors">Obras activas</p>
+                                <InfoTooltip text="Obras con status Activa o En curso actualmente. No varía con el filtro de período." />
+                            </div>
                             <div className="p-1.5 bg-yellow-50 rounded-lg"><FileText size={14} className="text-yellow-600" /></div>
                         </div>
                         <p className="text-2xl font-bold text-gray-800">{loading ? '…' : obras.length}</p>
@@ -307,7 +320,10 @@ export default function DashboardPage() {
                     {/* Stock bajo mínimo */}
                     <div className={`rounded-xl border shadow-sm p-4 ${lowStockProducts.length > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-100'}`}>
                         <div className="flex items-center justify-between mb-2">
-                            <p className={`text-xs font-medium ${lowStockProducts.length > 0 ? 'text-orange-600' : 'text-gray-500'}`}>Stock bajo mínimo</p>
+                            <div className="flex items-center gap-1">
+                                <p className={`text-xs font-medium ${lowStockProducts.length > 0 ? 'text-orange-600' : 'text-gray-500'}`}>Stock bajo mínimo</p>
+                                <InfoTooltip text="Insumos cuyo stockActual ≤ stockMínimo configurado. Requiere atención inmediata para no detener operaciones." />
+                            </div>
                             <div className={`p-1.5 rounded-lg ${lowStockProducts.length > 0 ? 'bg-orange-100' : 'bg-gray-100'}`}>
                                 <AlertTriangle size={14} className={lowStockProducts.length > 0 ? 'text-orange-500' : 'text-gray-400'} />
                             </div>
@@ -323,7 +339,10 @@ export default function DashboardPage() {
                     {/* Último registro */}
                     <Link href="/dashboard/registros-diarios" className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:shadow-md hover:border-green-200 transition-all group block">
                         <div className="flex items-center justify-between mb-2">
-                            <p className="text-xs text-gray-500 font-medium group-hover:text-green-600 transition-colors">Último registro</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-xs text-gray-500 font-medium group-hover:text-green-600 transition-colors">Último registro</p>
+                                <InfoTooltip text="Fecha y métricas del registro diario más reciente: horas trabajadas, metros perforados y litros de diésel." />
+                            </div>
                             <div className="p-1.5 bg-green-50 rounded-lg"><ClipboardList size={14} className="text-green-600" /></div>
                         </div>
                         {loading || !ultimoRegistro ? (
@@ -382,7 +401,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/registros-diarios" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Horas operadas</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Horas operadas</p>
+                                <InfoTooltip text="Suma de horas trabajadas (horometroFin − horometroInicio) de todos los registros diarios del período." />
+                            </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><Gauge size={16} className="text-blue-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-gray-800">{loading ? '…' : opKPIs.horas.toFixed(1)}</p>
@@ -394,7 +416,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/registros-diarios" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Metros perforados</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Metros perforados</p>
+                                <InfoTooltip text="Suma de metros lineales perforados en todos los registros diarios del período. Se muestra también el promedio de metros por día y el total de barrenos." />
+                            </div>
                             <div className="p-2 bg-green-50 rounded-lg"><TrendingUp size={16} className="text-green-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-gray-800">{loading ? '…' : opKPIs.metros.toFixed(1)}</p>
@@ -408,7 +433,7 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-1">
                                 <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Consumo diésel</p>
-                                <InfoTooltip text="Litros de diésel registrados en registros diarios del período." />
+                                <InfoTooltip text="Litros de diésel totales del período. Lt/hr = litros ÷ horas trabajadas (eficiencia). Mt/hr = metros ÷ horas (rendimiento)." />
                             </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><Droplets size={16} className="text-blue-600" /></div>
                         </div>
@@ -424,7 +449,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/resumen-semanal" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-orange-600 transition-colors">Costo diésel período</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-orange-600 transition-colors">Costo diésel período</p>
+                                <InfoTooltip text="Costo total de diésel = litros × precio por litro registrado en cada registro diario del período." />
+                            </div>
                             <div className="p-2 bg-orange-50 rounded-lg"><DollarSign size={16} className="text-orange-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-gray-800">${loading ? '…' : fmt(opKPIs.costoDiesel)}</p>
@@ -447,7 +475,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/purchases" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-green-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Entradas (insumos)</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-green-600 transition-colors">Entradas (insumos)</p>
+                                <InfoTooltip text="Cantidad total de unidades ingresadas al inventario (compras y ajustes positivos) durante el período seleccionado." />
+                            </div>
                             <div className="p-2 bg-green-50 rounded-lg"><ArrowUpCircle size={16} className="text-green-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-green-600">{loading ? '…' : `+${entradasActual.toLocaleString('es-MX', { maximumFractionDigits: 1 })}`}</p>
@@ -458,7 +489,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/sales" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-red-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-red-500 transition-colors">Salidas / Consumos</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-red-500 transition-colors">Salidas / Consumos</p>
+                                <InfoTooltip text="Cantidad total de unidades consumidas o retiradas del inventario (salidas y ajustes negativos) durante el período." />
+                            </div>
                             <div className="p-2 bg-red-50 rounded-lg"><ArrowDownCircle size={16} className="text-red-500" /></div>
                         </div>
                         <p className="text-3xl font-bold text-red-500">{loading ? '…' : `-${salidasActual.toLocaleString('es-MX', { maximumFractionDigits: 1 })}`}</p>
@@ -469,7 +503,10 @@ export default function DashboardPage() {
 
                     <Link href="/dashboard/purchases" className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group block p-5">
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Costo compras</p>
+                            <div className="flex items-center gap-1">
+                                <p className="text-sm text-gray-500 font-medium group-hover:text-blue-600 transition-colors">Costo compras</p>
+                                <InfoTooltip text="Monto total de capital invertido en compras de insumos del período = suma de (cantidad × costo unitario) de todas las entradas." />
+                            </div>
                             <div className="p-2 bg-blue-50 rounded-lg"><ShoppingCart size={16} className="text-blue-600" /></div>
                         </div>
                         <p className="text-3xl font-bold text-gray-800">{loading ? '…' : `$${fmt(costoEntradas)}`}</p>
