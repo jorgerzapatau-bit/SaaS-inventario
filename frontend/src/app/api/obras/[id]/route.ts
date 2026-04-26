@@ -76,6 +76,24 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
         });
 
+        // Métricas por plantilla: metros perforados y conteo de registros
+        const registrosPorPlantilla = await prisma.registroDiario.groupBy({
+            by: ['plantillaId'],
+            where: { obraId: id, empresaId: user.empresaId },
+            _sum:   { metrosLineales: true, barrenos: true },
+            _count: { id: true },
+        });
+        const plantillaMetricsMap = new Map(
+            registrosPorPlantilla.map(r => [
+                r.plantillaId ?? '__null__',
+                {
+                    metrosPerforados: Number(r._sum.metrosLineales ?? 0),
+                    barrenosPerforados: Number(r._sum.barrenos ?? 0),
+                    totalRegistros: r._count.id,
+                },
+            ])
+        );
+
         // Monto total cobrado (solo cortes en status COBRADO)
         // Solo COBRADO cuenta como ingreso real — FACTURADO y BORRADOR son pendientes
         const facturacion = await prisma.corteFacturacion.aggregate({
@@ -159,16 +177,22 @@ export async function GET(req: NextRequest, { params }: Params) {
             bordo:             obra.bordo             ? Number(obra.bordo)             : null,
             espesor:           obra.espesor           ? Number(obra.espesor)           : null,
             tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
-            plantillas: (obra.plantillas ?? []).map(p => ({
-                ...p,
-                metrosContratados: Number(p.metrosContratados),
-                barrenos:          Number(p.barrenos ?? 0),
-                bordo:             p.bordo         ? Number(p.bordo)         : null,
-                espaciamiento:     p.espaciamiento ? Number(p.espaciamiento) : null,
-                precioUnitario:    p.precioUnitario ? Number(p.precioUnitario) : null,
-                status:            p.status,
-                plantillaEquipos:  (p.plantillaEquipos ?? []),
-            })),
+            plantillas: (obra.plantillas ?? []).map(p => {
+                const pm = plantillaMetricsMap.get(p.id) ?? { metrosPerforados: 0, barrenosPerforados: 0, totalRegistros: 0 };
+                return {
+                    ...p,
+                    metrosContratados:  Number(p.metrosContratados),
+                    barrenos:           Number(p.barrenos ?? 0),
+                    bordo:              p.bordo          ? Number(p.bordo)          : null,
+                    espaciamiento:      p.espaciamiento  ? Number(p.espaciamiento)  : null,
+                    precioUnitario:     p.precioUnitario ? Number(p.precioUnitario) : null,
+                    status:             p.status,
+                    plantillaEquipos:   (p.plantillaEquipos ?? []),
+                    metrosPerforados:   pm.metrosPerforados,
+                    barrenosPerforados: pm.barrenosPerforados,
+                    totalRegistros:     pm.totalRegistros,
+                };
+            }),
             obraEquipos: obra.obraEquipos.map(oe => ({
                 ...oe,
                 equipo: {

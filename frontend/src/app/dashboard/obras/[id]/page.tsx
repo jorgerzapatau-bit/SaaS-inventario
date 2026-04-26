@@ -92,6 +92,9 @@ type PlantillaObraDetalle = {
     fechaFin: string | null;
     status: 'ACTIVA' | 'PAUSADA' | 'TERMINADA';
     notas: string | null;
+    metrosPerforados?: number;
+    barrenosPerforados?: number;
+    totalRegistros?: number;
     plantillaEquipos?: {
         equipoId: string;
         equipo: { id: string; nombre: string; numeroEconomico: string | null; modelo: string | null };
@@ -1692,19 +1695,60 @@ function TabPlantillas({ obra, onReload }: { obra: ObraDetalle; onReload: () => 
                                 </div>
                             </div>
 
-                            {/* Métricas */}
-                            <div className="grid grid-cols-2 gap-3 text-xs text-gray-500 mb-3">
-                                <div>
-                                    <span className="text-gray-400">Metros contratados: </span>
-                                    <strong className="text-gray-700">{p.metrosContratados} m</strong>
-                                </div>
-                                {p.barrenos > 0 && (
-                                    <div>
-                                        <span className="text-gray-400">Barrenos: </span>
-                                        <strong className="text-gray-700">{p.barrenos}</strong>
+                            {/* Métricas con progreso */}
+                            {(() => {
+                                const mPerf = p.metrosPerforados ?? 0;
+                                const mCont = p.metrosContratados;
+                                const bPerf = p.barrenosPerforados ?? 0;
+                                const bCont = p.barrenos;
+                                const pctM  = mCont > 0 ? Math.min((mPerf / mCont) * 100, 100) : null;
+                                const pctB  = bCont > 0 ? Math.min((bPerf / bCont) * 100, 100) : null;
+                                const complM = pctM !== null && pctM >= 100;
+                                const regs  = p.totalRegistros ?? 0;
+                                return (
+                                    <div className="space-y-2 mb-3">
+                                        {/* Metros */}
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-1">
+                                                <span className="text-gray-500">Metros</span>
+                                                <span className={`font-semibold ${complM ? 'text-green-600' : 'text-blue-600'}`}>
+                                                    {mPerf.toFixed(1)} / {mCont} m
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${complM ? 'bg-green-500' : 'bg-blue-500'}`}
+                                                    style={{ width: `${pctM ?? 0}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                        {/* Barrenos (si aplica) */}
+                                        {bCont > 0 && (
+                                            <div>
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-gray-500">Barrenos</span>
+                                                    <span className={`font-semibold ${(pctB ?? 0) >= 100 ? 'text-green-600' : 'text-purple-600'}`}>
+                                                        {bPerf} / {bCont}
+                                                    </span>
+                                                </div>
+                                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full transition-all ${(pctB ?? 0) >= 100 ? 'bg-green-500' : 'bg-purple-500'}`}
+                                                        style={{ width: `${pctB ?? 0}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* Conteo de registros diarios */}
+                                        <div className="flex items-center gap-1.5 pt-0.5">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+                                            <span className="text-xs text-gray-400">
+                                                {regs} registro{regs !== 1 ? 's' : ''} diario{regs !== 1 ? 's' : ''}
+                                            </span>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
+                                );
+                            })()}
 
                             {/* Equipos asignados a esta plantilla */}
                             <div className="border-t border-gray-100 pt-3">
