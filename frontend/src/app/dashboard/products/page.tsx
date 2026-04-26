@@ -72,61 +72,7 @@ function formatDualCurrency(
 /** Badge de moneda para mostrar junto al precio */
 function CurrencyBadge({ moneda }: { moneda: string }) {
     if (!moneda || moneda === 'MXN') return null;
-    // Modal de confirmación de eliminación
-    
-
     return (
-                {/* Delete confirmation modal */}
-        {deleteConfirm && (
-(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-        )}
-
         <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 align-middle">
             {moneda}
         </span>
@@ -150,55 +96,6 @@ function DualPrice({
     if (valor == null || isNaN(Number(valor))) return <span className="text-gray-300">—</span>;
     const v = Number(valor);
     const { principal, equivalente } = formatDualCurrency(v, monedaDoc || monedaBase, monedaBase, tipoCambio);
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <span className={className}>
             {principal}
@@ -213,55 +110,6 @@ function DualPrice({
 function ProductImage({ imagen, nombre, categoria, size = 40 }: { imagen?: string; nombre: string; categoria?: string; size?: number }) {
     const color = getCatColor(categoria || '');
     if (imagen) return <img src={imagen} alt={nombre} style={{ width: size, height: size, objectFit: 'cover', borderRadius: 8 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />;
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <div style={{ width: size, height: size, borderRadius: 8, background: color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: size * 0.45, fontWeight: 600, color }}>{nombre?.[0]?.toUpperCase() || '?'}</span>
@@ -274,55 +122,6 @@ function StockBar({ stock, stockMinimo }: { stock: number; stockMinimo: number }
     const max = Math.max(stockMinimo * 2, stock, 1);
     const pct = Math.min((stock / max) * 100, 100);
     const color = stock === 0 ? '#dc2626' : stock <= stockMinimo ? '#ea580c' : '#16a34a';
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 48, height: 5, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
@@ -349,55 +148,6 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <span className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
             {label}
@@ -457,55 +207,6 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         setImporting(false);
         if (ok > 0) setTimeout(() => { onDone(); }, 1500);
     };
-
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
 
     return (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -571,55 +272,6 @@ function AlertBanner({ productos, onFilter }: { productos: any[]; onFilter: () =
     const nombres = [...criticos, ...bajos].slice(0, 3).map(p => p.nombre).join(', ');
     const hayMas = total > 3;
 
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <div className="flex items-center justify-between gap-4 bg-red-50 border border-red-200 rounded-xl px-5 py-3.5">
             <div className="flex items-center gap-3">
@@ -650,55 +302,6 @@ function AlertBanner({ productos, onFilter }: { productos: any[]; onFilter: () =
 
 // ── MEJORA 3: Acciones rápidas ────────────────────────────────────────────────
 function QuickActions() {
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <div className="grid grid-cols-3 gap-3">
             <Link href="/dashboard/purchases/new"
@@ -783,6 +386,10 @@ function ProductsPageInner() {
     };
     useEffect(() => { loadProducts(); }, []);
 
+    const handleDelete = (id: string, name: string) => {
+        setDeleteConfirm({ id, nombre: name });
+    };
+
     const confirmDelete = async () => {
         if (!deleteConfirm) return;
         setDeleting(true);
@@ -795,10 +402,6 @@ function ProductsPageInner() {
         } finally {
             setDeleting(false);
         }
-    };
-
-    const handleDelete = (id: string, name: string) => {
-        setDeleteConfirm({ id, nombre: name });
     };
 
     const handleSort = (key: SortKey) => {
@@ -959,57 +562,43 @@ function ProductsPageInner() {
     const thClass = (key: SortKey) =>
         `p-3 text-xs font-semibold uppercase tracking-wider cursor-pointer select-none hover:text-blue-600 transition-colors whitespace-nowrap ${sortKey === key ? 'text-blue-600' : 'text-gray-400'}`;
 
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
-        <div className="space-y-5 animate-in fade-in duration-500">
+        <>
+            {deleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{zIndex: 9999}}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-3 bg-red-100 rounded-xl">
+                                <Trash2 size={20} className="text-red-600" />
+                            </div>
+                            <div>
+                                <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
+                                <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
+                            </div>
+                        </div>
+                        <div className="mb-5 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                            <p className="text-sm text-gray-800 font-medium break-words">&#34;{deleteConfirm.nombre}&#34;</p>
+                        </div>
+                        <p className="text-xs text-gray-400 mb-5">
+                            Se eliminará del catálogo. Los movimientos históricos quedarán intactos.
+                        </p>
+                        <div className="flex gap-2">
+                            <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
+                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                                Cancelar
+                            </button>
+                            <button onClick={confirmDelete} disabled={deleting}
+                                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                                {deleting
+                                    ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Eliminando...</>
+                                    : <><Trash2 size={14} />Eliminar</>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <div className="space-y-5 animate-in fade-in duration-500">
 
             {/* ── Header ────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1117,56 +706,7 @@ function ProductsPageInner() {
                         {catStats.map(({ cat, count, valor }) => {
                             const color    = getCatColor(cat);
                             const isActive = filterCat === cat;
-                            // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
-    return (
+                            return (
                                 <button key={cat}
                                     onClick={() => setFilterCat(isActive ? 'Todas' : cat)}
                                     className={`text-left rounded-xl p-3 border transition-all cursor-pointer relative ${isActive ? 'border-2 shadow-md' : 'border hover:shadow-sm'}`}
@@ -1315,56 +855,7 @@ function ProductsPageInner() {
                             const { principal: costoPrincipal, equivalente: costoEquiv } = formatDualCurrency(
                                 costo, monedaDoc, monedaBase, tcEfectivo
                             );
-                            // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
-    return (
+                            return (
                                 <div key={product.id} className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all overflow-hidden ${isLow ? 'border-orange-200' : isSelected ? 'border-blue-400' : 'border-gray-100'}`}>
                                     <div className="relative">
                                         <Link href={`/dashboard/products/${product.id}`}>
@@ -1478,56 +969,7 @@ function ProductsPageInner() {
                                             costo, monedaDoc, monedaBase, tcEfectivo
                                         );
 
-                                        // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
-    return (
+                                        return (
                                             <tr key={product.id} className={`hover:bg-blue-50/30 transition-colors group ${isLow ? 'bg-orange-50/30' : ''} ${isSelected ? 'bg-blue-50/40' : ''}`}>
                                                 <td className="p-3">
                                                     <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)} className="w-4 h-4 cursor-pointer accent-blue-600" />
@@ -1633,59 +1075,12 @@ function ProductsPageInner() {
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
         </div>
+            </div>
+        </>
     );
 }
 
 export default function ProductsPage() {
-    // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-red-100 rounded-lg">
-                        <AlertTriangle size={20} className="text-red-600" />
-                    </div>
-                    <div>
-                        <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                        <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                    </div>
-                </div>
-                <div className="mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-sm text-gray-700 font-medium break-words">"{deleteConfirm.nombre}"</p>
-                </div>
-                <p className="text-xs text-gray-600 mb-4 leading-relaxed">
-                    Se eliminará este insumo del catálogo. Los registros de movimientos históricamente quedarán intactos.
-                </p>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setDeleteConfirm(null)}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={confirmDelete}
-                        disabled={deleting}
-                        className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                        {deleting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                Eliminando...
-                            </>
-                        ) : (
-                            <>
-                                <Trash2 size={14} />
-                                Eliminar
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     return (
         <Suspense fallback={<div className="p-8 text-center text-gray-400 text-sm">Cargando insumos...</div>}>
             <ProductsPageInner />
