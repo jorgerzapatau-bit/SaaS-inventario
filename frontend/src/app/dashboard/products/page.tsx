@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { StockBarChart } from '@/components/dashboard/StockBarChart';
@@ -339,6 +340,47 @@ function QuickActions() {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Modal de confirmación de eliminación (portal, no afecta el árbol JSX) ─────
+function DeleteModal({ nombre, onConfirm, onCancel, deleting }: {
+    nombre: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+    deleting: boolean;
+}) {
+    if (typeof document === 'undefined') return null;
+    return createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 9999, background: 'rgba(0,0,0,0.45)' }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-150">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2.5 bg-red-100 rounded-xl flex-shrink-0">
+                        <Trash2 size={18} className="text-red-600" />
+                    </div>
+                    <div>
+                        <p className="font-semibold text-gray-900 text-sm">Eliminar insumo</p>
+                        <p className="text-xs text-gray-400">Esta acción no se puede deshacer</p>
+                    </div>
+                </div>
+                <div className="bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 mb-5">
+                    <p className="text-sm text-gray-700 font-medium truncate">&#34;{nombre}&#34;</p>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={onCancel} disabled={deleting}
+                        className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40">
+                        Cancelar
+                    </button>
+                    <button onClick={onConfirm} disabled={deleting}
+                        className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+                        {deleting
+                            ? <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />Eliminando</>
+                            : <><Trash2 size={13} />Eliminar</>}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
 function ProductsPageInner() {
     const [products, setProducts]       = useState<any[]>([]);
     const [loading, setLoading]         = useState(true);
@@ -357,6 +399,8 @@ function ProductsPageInner() {
     const [sortDir, setSortDir]   = useState<SortDir>('asc');
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showImport, setShowImport] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; nombre: string } | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // ── Moneda base de la empresa ──────────────────────────────────────────────
     const { moneda: monedaBase, tipoCambio: tcGlobal } = useCompany();
@@ -384,10 +428,22 @@ function ProductsPageInner() {
     };
     useEffect(() => { loadProducts(); }, []);
 
-    const handleDelete = async (id: string, name: string) => {
-        if (!window.confirm(`¿Eliminar "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
-        try { await fetchApi(`/products/${id}`, { method: 'DELETE' }); setProducts(p => p.filter(x => x.id !== id)); }
-        catch (err: any) { alert(err.message || 'Error al eliminar'); }
+    const handleDelete = (id: string, name: string) => {
+        setDeleteTarget({ id, nombre: name });
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            await fetchApi(`/products/${deleteTarget.id}`, { method: 'DELETE' });
+            setProducts(p => p.filter(x => x.id !== deleteTarget.id));
+            setDeleteTarget(null);
+        } catch (err: any) {
+            alert(err.message || 'Error al eliminar');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const handleSort = (key: SortKey) => {
@@ -1026,6 +1082,14 @@ function ProductsPageInner() {
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
         </div>
+            {deleteTarget && (
+                <DeleteModal
+                    nombre={deleteTarget.nombre}
+                    onConfirm={confirmDelete}
+                    onCancel={() => setDeleteTarget(null)}
+                    deleting={deleting}
+                />
+            )}
     );
 }
 
