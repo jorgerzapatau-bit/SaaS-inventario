@@ -355,8 +355,6 @@ function ProductsPageInner() {
     const [allMovements, setAllMovements]     = useState<any[]>([]);
     const [sortKey, setSortKey]   = useState<SortKey>('nombre');
     const [sortDir, setSortDir]   = useState<SortDir>('asc');
-    const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; nombre: string } | null>(null);
-    const [deleting, setDeleting] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [showImport, setShowImport] = useState(false);
 
@@ -386,22 +384,10 @@ function ProductsPageInner() {
     };
     useEffect(() => { loadProducts(); }, []);
 
-    const handleDelete = (id: string, name: string) => {
-        setDeleteConfirm({ id, nombre: name });
-    };
-
-    const confirmDelete = async () => {
-        if (!deleteConfirm) return;
-        setDeleting(true);
-        try {
-            await fetchApi(`/products/${deleteConfirm.id}`, { method: 'DELETE' });
-            setProducts(p => p.filter(x => x.id !== deleteConfirm.id));
-            setDeleteConfirm(null);
-        } catch (err: any) {
-            alert(err.message || 'Error al eliminar');
-        } finally {
-            setDeleting(false);
-        }
+    const handleDelete = async (id: string, name: string) => {
+        if (!window.confirm(`¿Eliminar "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
+        try { await fetchApi(`/products/${id}`, { method: 'DELETE' }); setProducts(p => p.filter(x => x.id !== id)); }
+        catch (err: any) { alert(err.message || 'Error al eliminar'); }
     };
 
     const handleSort = (key: SortKey) => {
@@ -563,42 +549,7 @@ function ProductsPageInner() {
         `p-3 text-xs font-semibold uppercase tracking-wider cursor-pointer select-none hover:text-blue-600 transition-colors whitespace-nowrap ${sortKey === key ? 'text-blue-600' : 'text-gray-400'}`;
 
     return (
-        <>
-            {deleteConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{zIndex: 9999}}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-3 bg-red-100 rounded-xl">
-                                <Trash2 size={20} className="text-red-600" />
-                            </div>
-                            <div>
-                                <h2 className="font-semibold text-gray-900">Eliminar insumo</h2>
-                                <p className="text-xs text-gray-500">Esta acción no se puede deshacer</p>
-                            </div>
-                        </div>
-                        <div className="mb-5 p-3 bg-gray-50 rounded-lg border border-gray-100">
-                            <p className="text-sm text-gray-800 font-medium break-words">&#34;{deleteConfirm.nombre}&#34;</p>
-                        </div>
-                        <p className="text-xs text-gray-400 mb-5">
-                            Se eliminará del catálogo. Los movimientos históricos quedarán intactos.
-                        </p>
-                        <div className="flex gap-2">
-                            <button onClick={() => setDeleteConfirm(null)} disabled={deleting}
-                                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50">
-                                Cancelar
-                            </button>
-                            <button onClick={confirmDelete} disabled={deleting}
-                                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                                {deleting
-                                    ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Eliminando...</>
-                                    : <><Trash2 size={14} />Eliminar</>
-                                }
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            <div className="space-y-5 animate-in fade-in duration-500">
+        <div className="space-y-5 animate-in fade-in duration-500">
 
             {/* ── Header ────────────────────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1075,8 +1026,6 @@ function ProductsPageInner() {
                 <ImportModal onClose={() => setShowImport(false)} onDone={() => { setShowImport(false); loadProducts(); }} />
             )}
         </div>
-            </div>
-        </>
     );
 }
 
