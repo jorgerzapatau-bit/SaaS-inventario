@@ -76,9 +76,10 @@ export async function GET(req: NextRequest, { params }: Params) {
             },
         });
 
-        // Monto total facturado
+        // Monto total cobrado (solo cortes en status COBRADO)
+        // Solo COBRADO cuenta como ingreso real — FACTURADO y BORRADOR son pendientes
         const facturacion = await prisma.corteFacturacion.aggregate({
-            where: { obraId: id },
+            where: { obraId: id, status: 'COBRADO' },
             _sum: { montoFacturado: true },
         });
 

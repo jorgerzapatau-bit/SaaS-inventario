@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
     HardHat, ArrowLeft, Plus, Edit, Trash2,
@@ -138,6 +138,30 @@ type ObraDetalle = {
         costoPorMetro: number | null;
     };
 };
+
+// ─── HelpTip ──────────────────────────────────────────────────────────────────
+function HelpTip({ text }: { text: string }) {
+    const [show, setShow] = React.useState(false);
+    return (
+        <span className="relative inline-flex items-center ml-1 align-middle">
+            <button
+                type="button"
+                onMouseEnter={() => setShow(true)}
+                onMouseLeave={() => setShow(false)}
+                onFocus={() => setShow(true)}
+                onBlur={() => setShow(false)}
+                className="w-3.5 h-3.5 rounded-full bg-gray-300 hover:bg-gray-400 text-white flex items-center justify-center text-[9px] font-bold leading-none transition-colors focus:outline-none"
+                aria-label="Más información"
+            >?</button>
+            {show && (
+                <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-gray-900 text-white text-[11px] leading-snug rounded-lg px-3 py-2 shadow-xl pointer-events-none whitespace-normal">
+                    {text}
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                </span>
+            )}
+        </span>
+    );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_STYLE: Record<string, string> = {
@@ -2093,7 +2117,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* A) Ganancia real al día */}
                     <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${utilPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia real al día</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia real al día<HelpTip text="Monto COBRADO (cortes en status Cobrado) menos el costo total (producción + gastos adicionales + insumos). Refleja la utilidad con base en dinero ya recibido." /></p>
                         <p className={`text-2xl font-extrabold tracking-tight leading-none ${utilPos ? 'text-green-600' : 'text-red-600'}`}>
                             {utilPrefix}{mxn(rf.utilidad ?? 0)}
                         </p>
@@ -2104,7 +2128,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
 
                     {/* B) Facturación pendiente — Caso A: completo | Caso B: parcial | Caso C: no disponible */}
                     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col gap-0.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Facturación pendiente</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Facturación pendiente<HelpTip text="Estimación del monto que aún falta por cobrar: metros contratados en plantillas con precio × P.U., descontando lo ya facturado. Solo se considera si las plantillas tienen precio unitario definido." /></p>
                         {facturacionPendienteDisp ? (
                             <p className="text-2xl font-extrabold tracking-tight leading-none text-gray-800">
                                 {mxn(montoPendienteEstimado)}
@@ -2136,7 +2160,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
 
                     {/* C) Estado de la obra */}
                     <div className={`rounded-xl border px-4 py-3 flex flex-col gap-1 ${estadoObraColor}`}>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Estado de la obra</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Estado de la obra<HelpTip text="Refleja si todos los metros producidos están cubiertos por una plantilla de contrato con precio definido. 'Con inconsistencias' aparece cuando hay metros sin plantilla o plantillas sin precio." /></p>
                         <div className="flex items-center gap-2 mt-0.5">
                             <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${estadoObraDot}`} />
                             <p className="text-sm font-bold leading-snug">{estadoObraLabel}</p>
@@ -2161,7 +2185,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                     {/* D) Ganancia proyectada — Caso A: completo | Caso B: parcial | Caso C: no disponible */}
                     {gananciaProyectada !== null ? (
                         <div className={`rounded-xl border px-4 py-3 flex flex-col gap-0.5 ${proyPos ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada<HelpTip text="Ganancia real al día + facturación pendiente estimada. Proyecta la utilidad total al cierre de la obra, asumiendo que todo lo pendiente se cobrará al precio pactado." /></p>
                             <p className={`text-2xl font-extrabold tracking-tight leading-none ${proyPos ? 'text-green-600' : 'text-red-600'}`}>
                                 {(gananciaProyectada >= 0 ? '+' : '')}{mxn(gananciaProyectada)}
                             </p>
@@ -2183,7 +2207,7 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
                         </div>
                     ) : (
                         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-0.5">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Ganancia proyectada<HelpTip text="Ganancia real al día + facturación pendiente estimada. Proyecta la utilidad total al cierre de la obra, asumiendo que todo lo pendiente se cobrará al precio pactado." /></p>
                             <p className="text-base font-bold text-gray-400 italic mt-0.5">No disponible</p>
                             <p className="text-xs text-gray-400 mt-0.5">Requiere completar plantillas o precios</p>
                         </div>
@@ -2259,25 +2283,25 @@ function ResumenFinanciero({ rf, moneda, metrosPerforados, cortes, plantillas, o
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                 {/* Facturado */}
                 <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-0.5">Facturado</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Facturado<HelpTip text="Suma del monto de los cortes con status 'Cobrado'. No incluye cortes en Borrador ni Facturado (pendientes de cobro)." /></p>
                     <p className="text-sm font-bold text-gray-800">{mxn(rf.facturado ?? 0)}</p>
                     <p className="text-xs text-gray-400">{moneda}</p>
                 </div>
                 {/* Costo Producción */}
                 <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-0.5">Costo Producción</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Costo Producción<HelpTip text="Suma del costo de cada registro diario: (litros × precio diésel) + (operadores × $450/día) + (peones × $283.33/día) + renta de equipo diaria." /></p>
                     <p className="text-sm font-bold text-gray-800">{mxn(rf.costoProduccion ?? 0)}</p>
                     <p className="text-xs text-gray-400">(Registro diario)</p>
                 </div>
                 {/* Gastos Adicionales */}
                 <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-0.5">Gastos Adicionales</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Gastos Adicionales<HelpTip text="Gastos operativos registrados manualmente (tipo Externo o Insumo) que no provienen del registro diario. Corresponde al módulo 'Gastos Operativos'." /></p>
                     <p className="text-sm font-bold text-gray-800">{mxn(rf.gastosAdicionales ?? 0)}</p>
                     <p className="text-xs text-gray-400">(No incluidos en operación)</p>
                 </div>
                 {/* Insumos */}
                 <div className="bg-gray-50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-0.5">Insumos</p>
+                    <p className="text-xs text-gray-400 mb-0.5">Insumos<HelpTip text="Costo de los movimientos de inventario (salidas de almacén) vinculados a esta obra. Se calcula como cantidad × costo unitario de cada movimiento." /></p>
                     <p className="text-sm font-bold text-gray-800">{mxn(rf.costoInsumos ?? 0)}</p>
                     <p className="text-xs text-gray-400">Costo de insumos vinculados</p>
                 </div>
@@ -2458,7 +2482,7 @@ export default function ObraDetallePage() {
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
                                 {/* Metros perforados con barra */}
                                 <div className="bg-gray-50 rounded-xl p-3">
-                                    <p className="text-xs text-gray-400 mb-1">Metros perforados</p>
+                                    <p className="text-xs text-gray-400 mb-1">Metros perforados<HelpTip text="Total de metros lineales perforados sumando todos los registros diarios de la obra." /></p>
                                     <p className="text-lg font-bold text-gray-800">{fmt(metrosPerf)} m</p>
                                     {metrosTotales > 0 && (
                                         <>
@@ -2475,7 +2499,7 @@ export default function ObraDetallePage() {
 
                                 {/* % Avance */}
                                 <div className="bg-gray-50 rounded-xl p-3">
-                                    <p className="text-xs text-gray-400 mb-1">% Avance</p>
+                                    <p className="text-xs text-gray-400 mb-1">% Avance<HelpTip text="Metros perforados ÷ metros contratados (suma de todas las plantillas). Puede superar 100% si se perforó más de lo pactado." /></p>
                                     {pctMetros !== null ? (
                                         <>
                                             <p className={`text-lg font-bold ${pctMetros > 100 ? 'text-orange-600' : pctMetros >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
@@ -2498,7 +2522,7 @@ export default function ObraDetallePage() {
 
                                 {/* Barrenos */}
                                 <div className="bg-gray-50 rounded-xl p-3">
-                                    <p className="text-xs text-gray-400 mb-1">Barrenos</p>
+                                    <p className="text-xs text-gray-400 mb-1">Barrenos<HelpTip text="Total de barrenos perforados. Se compara contra el número de barrenos pactados en las plantillas de contrato." /></p>
                                     <p className="text-lg font-bold text-gray-800">{fmt(barrenosPerf)}</p>
                                     {barrTotales > 0 && (
                                         <>
@@ -2515,7 +2539,7 @@ export default function ObraDetallePage() {
 
                                 {/* Horas + Monto */}
                                 <div className="bg-gray-50 rounded-xl p-3">
-                                    <p className="text-xs text-gray-400 mb-1">Horas / Facturado</p>
+                                    <p className="text-xs text-gray-400 mb-1">Horas / Facturado<HelpTip text="Horas: suma de horas trabajadas en todos los registros diarios.&#10;Facturado: suma del monto de los cortes de facturación con status COBRADO (dinero ya recibido)." /></p>
                                     <p className="text-lg font-bold text-gray-800">{fmt2Local(obra.metricas?.horasTotales ?? 0)} hrs</p>
                                     <p className="text-sm font-semibold text-green-700 mt-0.5">${fmt(obra.metricas?.montoFacturado ?? 0)} <span className="text-xs font-normal text-gray-400">{obra.moneda}</span></p>
                                 </div>
