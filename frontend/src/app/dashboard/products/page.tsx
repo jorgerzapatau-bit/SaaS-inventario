@@ -73,7 +73,12 @@ function formatDualCurrency(
 function CurrencyBadge({ moneda }: { moneda: string }) {
     if (!moneda || moneda === 'MXN') return null;
     // Modal de confirmación de eliminación
-    const DeleteConfirmModal = deleteConfirm && (
+    
+
+    return (
+                {/* Delete confirmation modal */}
+        {deleteConfirm && (
+(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center gap-3 mb-4">
@@ -119,9 +124,9 @@ function CurrencyBadge({ moneda }: { moneda: string }) {
                 </div>
             </div>
         </div>
-    );
+    )
+        )}
 
-    return (
         <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 align-middle">
             {moneda}
         </span>
