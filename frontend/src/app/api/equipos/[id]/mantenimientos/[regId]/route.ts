@@ -1,59 +1,27 @@
-// src/app/api/equipos/[id]/mantenimientos/[regId]/route.ts
-import { NextRequest } from "next/server";
-import prisma from "@/lib/prisma";
-import { getAuthUser, unauthorized } from "@/lib/auth";
-import { Moneda, OrigenInsumo, TipoMovimiento } from "@prisma/client";
+// src/app/api/equipos/[id]/mantenimientos/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { Moneda, OrigenInsumo, TipoBitacora, TipoMovimiento } from "@prisma/client";
 
-type Params = { params: Promise<{ id: string; regId: string }> };
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
 
-// ─── PUT /api/equipos/:id/mantenimientos/:regId ───────────────────────────────
-// Edita los campos generales del registro (descripcion, observaciones, fecha,
-// horometro). No permite modificar insumos ya procesados (kardex ya fue movido).
-export async function PUT(req: NextRequest, { params }: Params) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+// ─── GET /api/equipos/:id/mantenimientos ──────────────────────────────────────
+// Devuelve registros nuevos (MantenimientoEquipo) ordenados por fecha desc.
+// El frontend los mezcla con RegistroMantenimiento (legacy) para mostrar
+// la bitácora unificada.
+export async function GET(req: NextRequest, { params }: RouteContext) {
+  const { id: equipoId } = await params;
 
-  const { id: equipoId, regId } = await params;
-
-  const registro = await prisma.mantenimientoEquipo.findFirst({
-    where: { id: regId, equipoId, empresaId: user.empresaId },
-  });
-  if (!registro) {
-    return Response.json(
-      { error: "Registro no encontrado para este equipo" },
-      { status: 404 }
-    );
+  const equipo = await prisma.equipo.findUnique({ where: { id: equipoId } });
+  if (!equipo) {
+    return NextResponse.json({ error: "Equipo no encontrado" }, { status: 404 });
   }
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "JSON inválido" }, { status: 400 });
-  }
-
-  const { fecha, descripcion, observaciones, horometro } = body as {
-    fecha?: string;
-    descripcion?: string;
-    observaciones?: string | null;
-    horometro?: number | null;
-  };
-
-  if (descripcion !== undefined && String(descripcion).trim().length < 2) {
-    return Response.json(
-      { error: "descripcion debe tener al menos 2 caracteres" },
-      { status: 400 }
-    );
-  }
-
-  const actualizado = await prisma.mantenimientoEquipo.update({
-    where: { id: regId },
-    data: {
-      ...(fecha        !== undefined && { fecha:        new Date(fecha) }),
-      ...(descripcion  !== undefined && { descripcion:  String(descripcion).trim() }),
-      ...(observaciones !== undefined && { observaciones: observaciones?.trim() ?? null }),
-      ...(horometro    !== undefined && { horometro }),
-    },
+  const registros = await prisma.mantenimientoEquipo.findMany({
+    where: { equipoId },
+    orderBy: { fecha: "desc" },
     include: {
       insumos: {
         include: {
@@ -67,101 +35,227 @@ export async function PUT(req: NextRequest, { params }: Params) {
     },
   });
 
-  return Response.json(actualizado);
+  return NextResponse.json(registros);
 }
 
-// ─── DELETE /api/equipos/:id/mantenimientos/:regId ────────────────────────────
-// Elimina el registro y revierte todos sus efectos:
-//   1. Por cada insumo de tipo ALMACEN:
-//      - Crea un MovimientoInventario de ENTRADA compensatorio en el Kardex.
-//      - Restaura el stock en Producto.
-//   2. Libera los PendienteEquipo vinculados (los vuelve a "abierto").
-//   3. Elimina los MantenimientoInsumo y el MantenimientoEquipo.
-// Todo en una única transacción.
-export async function DELETE(req: NextRequest, { params }: Params) {
-  const user = getAuthUser(req);
-  if (!user) return unauthorized();
+// ─── POST /api/equipos/:id/mantenimientos ─────────────────────────────────────
+// Crea un registro de bitácora (EVENTO o MANTENIMIENTO).
+// Si es MANTENIMIENTO:
+//   - Por cada insumo de tipo ALMACEN: verifica stock, descuenta Producto.stockActual
+//     y crea MovimientoInventario (Kardex).
+//   - Por cada insumo de tipo COMPRA_DIRECTA: solo registra el costo, sin tocar almacén.
+//   - Marca los pendientesIds como resueltos y los vincula a este mantenimiento.
+// Todo ocurre en una única transacción de Prisma.
+export async function POST(req: NextRequest, { params }: RouteContext) {
+  const { id: equipoId } = await params;
 
-  const { id: equipoId, regId } = await params;
+  const equipo = await prisma.equipo.findUnique({ where: { id: equipoId } });
+  if (!equipo) {
+    return NextResponse.json({ error: "Equipo no encontrado" }, { status: 404 });
+  }
 
-  const registro = await prisma.mantenimientoEquipo.findFirst({
-    where: { id: regId, equipoId, empresaId: user.empresaId },
-    include: {
-      insumos: true,
-      pendientesResueltos: { select: { id: true } },
-    },
-  });
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
 
-  if (!registro) {
-    return Response.json(
-      { error: "Registro no encontrado para este equipo" },
-      { status: 404 }
+  const {
+    fecha,
+    tipo,
+    descripcion,
+    observaciones,
+    horometro,
+    insumos,
+    pendientesIds,
+    usuarioId,
+  } = body as {
+    fecha?: string;
+    tipo?: TipoBitacora;
+    descripcion?: string;
+    observaciones?: string;
+    horometro?: number;
+    usuarioId?: string;
+    insumos?: {
+      origen: OrigenInsumo;
+      // ALMACEN
+      productoId?: string;
+      almacenId?: string;
+      // COMPRA_DIRECTA
+      descripcionLibre?: string;
+      // comunes
+      cantidad: number;
+      precioUnitario: number;
+      moneda?: Moneda;
+      tipoCambio?: number;
+    }[];
+    pendientesIds?: string[];
+  };
+
+  // ── Validaciones básicas ──────────────────────────────────────────────────
+  if (!fecha || !descripcion?.trim()) {
+    return NextResponse.json(
+      { error: "Los campos fecha y descripcion son requeridos" },
+      { status: 400 }
     );
   }
 
+  const tipoFinal: TipoBitacora = tipo ?? TipoBitacora.MANTENIMIENTO;
+
+  // Solo MANTENIMIENTO puede tener insumos / pendientes
+  const insumosLista = tipoFinal === TipoBitacora.MANTENIMIENTO ? (insumos ?? []) : [];
+  const pendientesLista = tipoFinal === TipoBitacora.MANTENIMIENTO ? (pendientesIds ?? []) : [];
+
+  // ── Pre-validar stock de insumos de ALMACEN ───────────────────────────────
+  // Lo hacemos ANTES de abrir la transacción para devolver errores descriptivos.
+  for (const ins of insumosLista) {
+    if (ins.origen === OrigenInsumo.ALMACEN) {
+      if (!ins.productoId || !ins.almacenId) {
+        return NextResponse.json(
+          { error: "Insumos de tipo ALMACEN requieren productoId y almacenId" },
+          { status: 400 }
+        );
+      }
+      const producto = await prisma.producto.findUnique({
+        where: { id: ins.productoId },
+        select: { nombre: true, stockActual: true, unidad: true },
+      });
+      if (!producto) {
+        return NextResponse.json(
+          { error: `Producto ${ins.productoId} no encontrado` },
+          { status: 404 }
+        );
+      }
+      if (Number(producto.stockActual) < ins.cantidad) {
+        return NextResponse.json(
+          {
+            error: `Stock insuficiente para "${producto.nombre}". Disponible: ${producto.stockActual} ${producto.unidad}, solicitado: ${ins.cantidad}`,
+          },
+          { status: 422 }
+        );
+      }
+    } else {
+      // COMPRA_DIRECTA
+      if (!ins.descripcionLibre?.trim()) {
+        return NextResponse.json(
+          { error: "Insumos de tipo COMPRA_DIRECTA requieren descripcionLibre" },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  // ── Transacción ───────────────────────────────────────────────────────────
   try {
-    await prisma.$transaction(async (tx) => {
-      // 1. Revertir insumos de ALMACEN
-      for (const ins of registro.insumos) {
-        if (ins.origen === OrigenInsumo.ALMACEN && ins.productoId && ins.almacenId) {
-          // a) Movimiento compensatorio en Kardex
-          await tx.movimientoInventario.create({
+    const resultado = await prisma.$transaction(async (tx) => {
+      // 1. Crear el registro de bitácora
+      const registro = await tx.mantenimientoEquipo.create({
+        data: {
+          empresaId:    equipo.empresaId,
+          equipoId,
+          fecha:        new Date(fecha),
+          tipo:         tipoFinal,
+          descripcion:  descripcion.trim(),
+          observaciones: observaciones?.trim() ?? null,
+          horometro:    horometro ?? null,
+        },
+      });
+
+      // 2. Procesar insumos
+      for (const ins of insumosLista) {
+        if (ins.origen === OrigenInsumo.ALMACEN) {
+          // a) Crear línea de insumo
+          const insumoCreado = await tx.mantenimientoInsumo.create({
             data: {
-              empresaId:      user.empresaId,
-              productoId:     ins.productoId,
-              almacenId:      ins.almacenId,
-              tipoMovimiento: TipoMovimiento.ENTRADA,
-              cantidad:       ins.cantidad,
-              costoUnitario:  ins.precioUnitario,
-              moneda:         ins.moneda as Moneda,
-              tipoCambio:     ins.tipoCambio ?? null,
-              fecha:          new Date(),
-              referencia:     `REVERSA-MANT-${regId}`,
-              notas:          `Reversa por eliminación de mantenimiento: ${registro.descripcion}`,
-              // usuarioId es requerido por el schema; usamos empresaId como sistema
-              // (el frontend no envía body en DELETE, así que tomamos el del token)
-              usuarioId:      user.id,
+              mantenimientoId:  registro.id,
+              origen:           OrigenInsumo.ALMACEN,
+              productoId:       ins.productoId!,
+              almacenId:        ins.almacenId!,
+              cantidad:         ins.cantidad,
+              precioUnitario:   ins.precioUnitario,
+              moneda:           ins.moneda ?? Moneda.MXN,
+              tipoCambio:       ins.tipoCambio ?? null,
             },
           });
 
-          // b) Restaurar stock
+          // b) Descontar stock del producto
           await tx.producto.update({
-            where: { id: ins.productoId },
-            data:  { stockActual: { increment: ins.cantidad } },
+            where: { id: ins.productoId! },
+            data:  { stockActual: { decrement: ins.cantidad } },
+          });
+
+          // c) Crear movimiento en Kardex
+          await tx.movimientoInventario.create({
+            data: {
+              empresaId:            equipo.empresaId,
+              productoId:           ins.productoId!,
+              almacenId:            ins.almacenId!,
+              tipoMovimiento:       TipoMovimiento.SALIDA,
+              cantidad:             ins.cantidad,
+              costoUnitario:        ins.precioUnitario,
+              moneda:               ins.moneda ?? Moneda.MXN,
+              tipoCambio:           ins.tipoCambio ?? null,
+              fecha:                new Date(fecha),
+              referencia:           `MANT-${registro.id}`,
+              notas:                `Mantenimiento: ${descripcion.trim()}`,
+              usuarioId:            usuarioId ?? equipo.empresaId, // fallback; el frontend debe enviar usuarioId
+              mantenimientoInsumoId: insumoCreado.id,
+            },
+          });
+        } else {
+          // COMPRA_DIRECTA — solo registrar el costo, sin tocar almacén
+          await tx.mantenimientoInsumo.create({
+            data: {
+              mantenimientoId:  registro.id,
+              origen:           OrigenInsumo.COMPRA_DIRECTA,
+              descripcionLibre: ins.descripcionLibre!.trim(),
+              cantidad:         ins.cantidad,
+              precioUnitario:   ins.precioUnitario,
+              moneda:           ins.moneda ?? Moneda.MXN,
+              tipoCambio:       ins.tipoCambio ?? null,
+            },
           });
         }
       }
 
-      // 2. Liberar pendientes vinculados (volver a "abierto")
-      if (registro.pendientesResueltos.length > 0) {
+      // 3. Marcar pendientes como resueltos y vincularlos
+      if (pendientesLista.length > 0) {
         await tx.pendienteEquipo.updateMany({
           where: {
-            id:              { in: registro.pendientesResueltos.map((p) => p.id) },
-            mantenimientoId: regId,
+            id:       { in: pendientesLista },
+            equipoId,           // seguridad: solo pendientes de este equipo
+            resuelto: false,
           },
           data: {
-            resuelto:        false,
-            fechaResuelto:   null,
-            mantenimientoId: null,
+            resuelto:       true,
+            fechaResuelto:  new Date(fecha),
+            mantenimientoId: registro.id,
           },
         });
       }
 
-      // 3. Eliminar insumos (cascade por schema, pero explícito por claridad)
-      await tx.mantenimientoInsumo.deleteMany({
-        where: { mantenimientoId: regId },
-      });
-
-      // 4. Eliminar el registro principal
-      await tx.mantenimientoEquipo.delete({
-        where: { id: regId },
+      // 4. Devolver el registro completo con relaciones
+      return tx.mantenimientoEquipo.findUniqueOrThrow({
+        where: { id: registro.id },
+        include: {
+          insumos: {
+            include: {
+              producto: { select: { id: true, nombre: true, sku: true, unidad: true } },
+              almacen:  { select: { id: true, nombre: true } },
+            },
+          },
+          pendientesResueltos: {
+            select: { id: true, descripcion: true, fecha: true },
+          },
+        },
       });
     });
 
-    return new Response(null, { status: 204 });
+    return NextResponse.json(resultado, { status: 201 });
   } catch (err: unknown) {
-    console.error("[DELETE /mantenimientos/:regId]", err);
+    console.error("[POST /mantenimientos]", err);
     const message = err instanceof Error ? err.message : "Error interno";
-    return Response.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
