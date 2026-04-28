@@ -35,6 +35,7 @@ model Empresa {
   equipos                Equipo[]
   gastosOperativos       GastoOperativo[]
   InventarioEquipo       InventarioEquipo[]
+  mantenimientos         MantenimientoEquipo[]
   movimientosInventario  MovimientoInventario[]
   obras                  Obra[]
   PendienteEquipo        PendienteEquipo[]
@@ -116,45 +117,47 @@ model Cliente {
 }
 
 model Almacen {
-  id          String                 @id @default(uuid())
-  empresaId   String
-  nombre      String
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-  empresa     Empresa                @relation(fields: [empresaId], references: [id])
-  movimientos MovimientoInventario[]
+  id                   String                 @id @default(uuid())
+  empresaId            String
+  nombre               String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  empresa              Empresa                @relation(fields: [empresaId], references: [id])
+  insumosMantenimiento MantenimientoInsumo[]
+  movimientos          MovimientoInventario[]
 }
 
 model Producto {
-  id               String                 @id @default(uuid())
-  empresaId        String
-  nombre           String
-  sku              String
-  categoriaId      String
-  unidad           String                 @default("pza")
-  stockMinimo      Int                    @default(0)
-  activo           Boolean                @default(true)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  imagen           String?
-  moneda           Moneda                 @default(MXN)
-  precioCompra     Decimal                @default(0)
-  stockActual      Decimal                @default(0)
-  partNumber       String?
-  leadTimeDias     Int?
-  nivelReorden     Decimal?               @default(0) @db.Decimal
-  cantidadReorden  Decimal?               @default(0) @db.Decimal
-  tipoCambioRef    Decimal?               @db.Decimal
-  suspendido       Boolean?               @default(false)
-  equipoId         String?
-  notas            String?
-  detallesCompra   DetalleCompra[]
-  detallesSalida   DetalleSalida[]
-  gastosOperativos GastoOperativo[]       @relation("GastosProducto")
-  movimientos      MovimientoInventario[]
-  categoria        Categoria              @relation(fields: [categoriaId], references: [id])
-  empresa          Empresa                @relation(fields: [empresaId], references: [id])
-  equipo           Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
+  id                   String                 @id @default(uuid())
+  empresaId            String
+  nombre               String
+  sku                  String
+  categoriaId          String
+  unidad               String                 @default("pza")
+  stockMinimo          Int                    @default(0)
+  activo               Boolean                @default(true)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  imagen               String?
+  moneda               Moneda                 @default(MXN)
+  precioCompra         Decimal                @default(0)
+  stockActual          Decimal                @default(0)
+  partNumber           String?
+  leadTimeDias         Int?
+  nivelReorden         Decimal?               @default(0) @db.Decimal
+  cantidadReorden      Decimal?               @default(0) @db.Decimal
+  suspendido           Boolean?               @default(false)
+  equipoId             String?
+  notas                String?
+  tipoCambioRef        Decimal?               @db.Decimal
+  detallesCompra       DetalleCompra[]
+  detallesSalida       DetalleSalida[]
+  gastosOperativos     GastoOperativo[]       @relation("GastosProducto")
+  insumosMantenimiento MantenimientoInsumo[]
+  movimientos          MovimientoInventario[]
+  categoria            Categoria              @relation(fields: [categoriaId], references: [id])
+  empresa              Empresa                @relation(fields: [empresaId], references: [id])
+  equipo               Equipo?                @relation("ProductosEquipo", fields: [equipoId], references: [id], onUpdate: NoAction)
 
   @@unique([empresaId, sku])
   @@index([equipoId])
@@ -225,36 +228,38 @@ model DetalleSalida {
 }
 
 model MovimientoInventario {
-  id               String          @id @default(uuid())
-  empresaId        String
-  productoId       String
-  almacenId        String
-  tipoMovimiento   TipoMovimiento
-  cantidad         Decimal
-  costoUnitario    Decimal
-  fecha            DateTime        @default(now())
-  referencia       String?
-  usuarioId        String
-  createdAt        DateTime        @default(now())
-  precioVenta      Decimal?
-  proveedorId      String?
-  clienteNombre    String?
-  clienteId        String?
-  compraId         String?
-  moneda           Moneda          @default(MXN)
-  notas            String?
-  registroDiarioId String?
-  tipoCambio       Decimal?
-  obraId           String?
-  almacen          Almacen         @relation(fields: [almacenId], references: [id])
-  cliente          Cliente?        @relation(fields: [clienteId], references: [id])
-  compra           Compra?         @relation(fields: [compraId], references: [id])
-  empresa          Empresa         @relation(fields: [empresaId], references: [id])
-  obra             Obra?           @relation(fields: [obraId], references: [id])
-  producto         Producto        @relation(fields: [productoId], references: [id])
-  proveedor        Proveedor?      @relation(fields: [proveedorId], references: [id])
-  registroDiario   RegistroDiario? @relation(fields: [registroDiarioId], references: [id])
-  usuario          Usuario         @relation(fields: [usuarioId], references: [id])
+  id                    String               @id @default(uuid())
+  empresaId             String
+  productoId            String
+  almacenId             String
+  tipoMovimiento        TipoMovimiento
+  cantidad              Decimal
+  costoUnitario         Decimal
+  fecha                 DateTime             @default(now())
+  referencia            String?
+  usuarioId             String
+  createdAt             DateTime             @default(now())
+  precioVenta           Decimal?
+  proveedorId           String?
+  clienteNombre         String?
+  clienteId             String?
+  compraId              String?
+  moneda                Moneda               @default(MXN)
+  notas                 String?
+  registroDiarioId      String?
+  tipoCambio            Decimal?
+  obraId                String?
+  mantenimientoInsumoId String?              @unique
+  almacen               Almacen              @relation(fields: [almacenId], references: [id])
+  cliente               Cliente?             @relation(fields: [clienteId], references: [id])
+  compra                Compra?              @relation(fields: [compraId], references: [id])
+  empresa               Empresa              @relation(fields: [empresaId], references: [id])
+  mantenimientoInsumo   MantenimientoInsumo? @relation(fields: [mantenimientoInsumoId], references: [id], onUpdate: NoAction)
+  obra                  Obra?                @relation(fields: [obraId], references: [id])
+  producto              Producto             @relation(fields: [productoId], references: [id])
+  proveedor             Proveedor?           @relation(fields: [proveedorId], references: [id])
+  registroDiario        RegistroDiario?      @relation(fields: [registroDiarioId], references: [id])
+  usuario               Usuario              @relation(fields: [usuarioId], references: [id])
 
   @@index([empresaId])
   @@index([productoId])
@@ -263,6 +268,7 @@ model MovimientoInventario {
   @@index([compraId])
   @@index([registroDiarioId])
   @@index([obraId])
+  @@index([mantenimientoInsumoId])
 }
 
 model Equipo {
@@ -296,6 +302,7 @@ model Equipo {
   empresa                Empresa                 @relation(fields: [empresaId], references: [id])
   gastosOperativos       GastoOperativo[]
   InventarioEquipo       InventarioEquipo[]
+  mantenimientos         MantenimientoEquipo[]
   movimientosComponente  MovimientoComponente[]  @relation("MovimientosComponenteEquipo")
   obraEquipos            ObraEquipo[]
   PendienteEquipo        PendienteEquipo[]
@@ -563,6 +570,54 @@ model RegistroMantenimiento {
   @@index([fecha])
 }
 
+/// Registro de la bitácora del equipo. tipo=EVENTO para traslados/notas simples,
+/// tipo=MANTENIMIENTO para reparaciones/servicios que consumen insumos.
+model MantenimientoEquipo {
+  id                  String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId           String
+  equipoId            String
+  fecha               DateTime              @db.Date
+  tipo                TipoBitacora          @default(MANTENIMIENTO)
+  descripcion         String
+  observaciones       String?
+  horometro           Decimal?              @db.Decimal
+  createdAt           DateTime              @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamp(6)
+  empresa             Empresa               @relation(fields: [empresaId], references: [id], onUpdate: NoAction)
+  equipo              Equipo                @relation(fields: [equipoId], references: [id], onUpdate: NoAction)
+  insumos             MantenimientoInsumo[]
+  pendientesResueltos PendienteEquipo[]
+
+  @@index([empresaId])
+  @@index([equipoId])
+  @@index([fecha])
+}
+
+/// Línea de insumo dentro de un mantenimiento.
+/// origen=ALMACEN descuenta stock y genera movimiento en Kardex.
+/// origen=COMPRA_DIRECTA es un costo externo sin afectar almacén.
+model MantenimientoInsumo {
+  id               String                @id @default(dbgenerated("(gen_random_uuid())::text"))
+  mantenimientoId  String
+  origen           OrigenInsumo
+  productoId       String?
+  almacenId        String?
+  descripcionLibre String?
+  cantidad         Decimal               @db.Decimal
+  precioUnitario   Decimal               @db.Decimal
+  moneda           Moneda                @default(MXN)
+  /// Si null se toma el tipo de cambio global de la empresa
+  tipoCambio       Decimal?              @db.Decimal
+  createdAt        DateTime              @default(now()) @db.Timestamp(6)
+  almacen          Almacen?              @relation(fields: [almacenId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  mantenimiento    MantenimientoEquipo   @relation(fields: [mantenimientoId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  producto         Producto?             @relation(fields: [productoId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  movimientoKardex MovimientoInventario?
+
+  @@index([mantenimientoId])
+  @@index([productoId])
+}
+
 model GastoOperativo {
   id             String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
   empresaId      String
@@ -674,21 +729,25 @@ model InventarioEquipo {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model PendienteEquipo {
-  id            String    @id @default(dbgenerated("(gen_random_uuid())::text"))
-  empresaId     String
-  equipoId      String
-  descripcion   String
-  observacion   String?
-  horometro     Decimal?  @db.Decimal
-  fecha         DateTime  @db.Date
-  resuelto      Boolean   @default(false)
-  fechaResuelto DateTime? @db.Date
-  createdAt     DateTime  @default(now())
-  Empresa       Empresa   @relation(fields: [empresaId], references: [id])
-  Equipo        Equipo    @relation(fields: [equipoId], references: [id])
+  id              String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  empresaId       String
+  equipoId        String
+  descripcion     String
+  observacion     String?
+  horometro       Decimal?             @db.Decimal
+  fecha           DateTime             @db.Date
+  resuelto        Boolean              @default(false)
+  fechaResuelto   DateTime?            @db.Date
+  createdAt       DateTime             @default(now())
+  /// Si está resuelto, apunta al mantenimiento que lo resolvió
+  mantenimientoId String?
+  Empresa         Empresa              @relation(fields: [empresaId], references: [id])
+  Equipo          Equipo               @relation(fields: [equipoId], references: [id])
+  mantenimiento   MantenimientoEquipo? @relation(fields: [mantenimientoId], references: [id], onUpdate: NoAction)
 
   @@index([empresaId])
   @@index([equipoId])
+  @@index([mantenimientoId])
 }
 
 enum Role {
@@ -754,6 +813,18 @@ enum TipoMantenimiento {
   CORRECTIVO
   INSPECCION
   REPARACION
+}
+
+/// Tipo de registro en la nueva bitácora
+enum TipoBitacora {
+  EVENTO
+  MANTENIMIENTO
+}
+
+/// Origen del insumo dentro de un mantenimiento
+enum OrigenInsumo {
+  ALMACEN
+  COMPRA_DIRECTA
 }
 
 enum CategoriaGasto {
