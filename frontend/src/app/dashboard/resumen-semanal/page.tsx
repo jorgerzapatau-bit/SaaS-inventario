@@ -11,6 +11,32 @@ import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 import { RegistroDiarioExpandido } from '@/components/registro-diario/RegistroDiarioExpandido';
 
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
+function KpiTooltip({ text }: { text: string }) {
+    const [visible, setVisible] = useState(false);
+    return (
+        <span className="relative inline-flex items-center">
+            <button
+                type="button"
+                onMouseEnter={() => setVisible(true)}
+                onMouseLeave={() => setVisible(false)}
+                onFocus={() => setVisible(true)}
+                onBlur={() => setVisible(false)}
+                className="text-gray-300 hover:text-blue-400 transition-colors focus:outline-none"
+                aria-label="Cómo se calcula"
+            >
+                <Info size={11}/>
+            </button>
+            {visible && (
+                <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl leading-relaxed pointer-events-none whitespace-pre-line">
+                    {text}
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45 -mt-1"/>
+                </span>
+            )}
+        </span>
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
 // ─────────────────────────────────────────────────────────────────────────────
@@ -977,16 +1003,70 @@ function ResumenSemanalInner() {
             {/* KPIs globales */}
             {!loading && semanas.length > 0 && (
                 <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                    {[
-                        { label: 'Semanas',        val: totales.semanas,                                                                             unit: '',     icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
-                        { label: 'Horas totales',  val: totales.horas.toFixed(1),                                                                    unit: ' hrs', icon: <Gauge size={14}/>,    color: 'text-gray-800' },
-                        { label: 'Metros totales', val: totales.metros.toFixed(1),                                                                    unit: ' m',   icon: <BarChart2 size={14}/>, color: 'text-gray-800' },
-                        { label: 'Diésel total',   val: totales.litros.toLocaleString('es-MX'),                                                       unit: ' lt',  icon: <Droplets size={14}/>, color: 'text-blue-600' },
-                        { label: 'Lt/hr prom.',    val: totales.ltHr ?? '—',                                                                          unit: '',     icon: <Gauge size={14}/>,    color: 'text-gray-700' },
-                        { label: 'Costo total',    val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`,                unit: '',     icon: <DollarSign size={14}/>, color: 'text-gray-800' },
-                    ].map(k => (
+                    {([
+                        {
+                            label: 'Semanas',
+                            val: totales.semanas,
+                            unit: '',
+                            icon: <BarChart2 size={14}/>,
+                            color: 'text-gray-800',
+                            tip: 'Número de semanas distintas con al menos un registro diario en el período seleccionado.',
+                        },
+                        {
+                            label: 'Horas totales',
+                            val: totales.horas.toFixed(1),
+                            unit: ' hrs',
+                            icon: <Gauge size={14}/>,
+                            color: 'text-gray-800',
+                            tip: 'Suma de horasTrabajadas de todos los registros diarios.
+Se obtiene de horometroFin − horometroInicio por cada día.',
+                        },
+                        {
+                            label: 'Metros totales',
+                            val: totales.metros.toFixed(1),
+                            unit: ' m',
+                            icon: <BarChart2 size={14}/>,
+                            color: 'text-gray-800',
+                            tip: 'Suma de metrosLineales perforados en todos los registros del período.',
+                        },
+                        {
+                            label: 'Diésel total',
+                            val: totales.litros.toLocaleString('es-MX'),
+                            unit: ' lt',
+                            icon: <Droplets size={14}/>,
+                            color: 'text-blue-600',
+                            tip: 'Suma de litrosDiesel consumidos en todos los registros del período.',
+                        },
+                        {
+                            label: 'Lt/hr prom.',
+                            val: totales.ltHr ?? '—',
+                            unit: '',
+                            icon: <Gauge size={14}/>,
+                            color: 'text-gray-700',
+                            tip: 'Eficiencia de combustible promedio.
+Fórmula: Diésel total ÷ Horas totales.
+Valor más bajo = mayor eficiencia.',
+                        },
+                        {
+                            label: 'Costo total',
+                            val: `$${totales.costoTotal.toLocaleString('es-MX', { maximumFractionDigits: 0 })}`,
+                            unit: '',
+                            icon: <DollarSign size={14}/>,
+                            color: 'text-gray-800',
+                            tip: 'Suma de todos los costos del período:
+· Diésel (litros × precio)
+· Operadores (núm × $450/día)
+· Peones (núm × $283/día)
+· Renta de equipo diaria
+· Gastos operativos asignados',
+                        },
+                    ] as { label: string; val: string | number; unit: string; icon: React.ReactNode; color: string; tip: string }[]).map(k => (
                         <div key={k.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                            <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">{k.icon}{k.label}</p>
+                            <p className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                {k.icon}
+                                {k.label}
+                                <KpiTooltip text={k.tip}/>
+                            </p>
                             <p className={`text-xl font-bold ${k.color}`}>
                                 {k.val}<span className="text-sm font-normal text-gray-400">{k.unit}</span>
                             </p>
