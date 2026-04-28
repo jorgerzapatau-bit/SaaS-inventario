@@ -217,14 +217,17 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
                     <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                         {buscando && <p className="px-3 py-2 text-xs text-gray-400">Buscando...</p>}
                         {resultados.map(p=>(
-                            <button key={p.id} onClick={()=>agregarProducto(p)}
-                                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-blue-50 transition-colors text-left">
+                            <button key={p.id} onClick={()=>{ if(p.stockActual<=0) return; agregarProducto(p); }}
+                                disabled={p.stockActual<=0}
+                                className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors text-left ${p.stockActual>0?'hover:bg-blue-50 cursor-pointer':'opacity-50 cursor-not-allowed bg-gray-50'}`}>
                                 <div>
                                     <p className="text-sm font-medium text-gray-800">{p.nombre}</p>
                                     <p className="text-xs text-gray-400">{p.sku} · {p.unidad}</p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-xs font-semibold text-blue-600">Stock: {p.stockActual}</p>
+                                    <p className={`text-xs font-semibold ${p.stockActual>0?'text-blue-600':'text-red-400'}`}>
+                                        {p.stockActual>0?`Stock: ${p.stockActual}`:'Sin stock'}
+                                    </p>
                                     <p className="text-xs text-gray-400">
                                         {((p.ultimaEntrada?.moneda ?? p.moneda)==='USD'?'US$':'$')}
                                         {(p.ultimoPrecioCompra ?? p.precioCompra).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}
@@ -261,7 +264,9 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
                                     {l.origen==='ALMACEN' ? (
                                         <div>
                                             <p className="text-xs font-semibold text-gray-800">{l.productoNombre}</p>
-                                            <p className="text-xs text-gray-400">Stock: {l.stockDisponible} {l.unidad}</p>
+                                            <p className="text-xs text-gray-400">
+                                                Stock disponible: <span className={Number(l.cantidad)>l.stockDisponible?'text-red-500 font-semibold':`text-gray-400`}>{l.stockDisponible} {l.unidad}</span>
+                                            </p>
                                         </div>
                                     ) : (
                                         <input value={l.descripcionLibre} onChange={e=>update(l._key,{descripcionLibre:e.target.value})}
@@ -303,6 +308,14 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
                                         className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50 disabled:text-gray-300"/>
                                 </div>
                             </div>
+                            {l.origen==='ALMACEN' && (
+                                <div className={`flex items-center gap-1.5 text-xs rounded-lg px-2 py-1.5 ${Number(l.cantidad)>l.stockDisponible?'bg-red-50 text-red-600 border border-red-100':'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                                    {Number(l.cantidad)>l.stockDisponible
+                                        ? <><AlertTriangle size={11} className="flex-shrink-0"/><span>Cantidad supera el stock disponible ({l.stockDisponible} {l.unidad})</span></>
+                                        : <><AlertCircle size={11} className="flex-shrink-0 text-amber-500"/><span>Se descontarán <strong>{l.cantidad} {l.unidad}</strong> del stock al guardar</span></>
+                                    }
+                                </div>
+                            )}
                             {l.origen==='ALMACEN' && almacenes.length>1 && (
                                 <div>
                                     <label className="block text-xs text-gray-400 mb-0.5">Almacén</label>
@@ -372,6 +385,7 @@ function NuevoBitacoraModal({ equipoId, pendientesAbiertos, onClose, onSuccess, 
     const validar1 = ()=>{ if(!descripcion.trim()){ setError('La descripción es requerida.'); return false; } setError(''); return true; };
     const validar2 = ()=>{
         for(const l of lineas){
+            if(l.origen==='ALMACEN'&&Number(l.cantidad)>l.stockDisponible){ setError(`Stock insuficiente para "${l.productoNombre}": disponible ${l.stockDisponible} ${l.unidad}, pedido ${l.cantidad}.`); return false; }
             if(l.origen==='ALMACEN'&&!l.almacenId&&almacenes.length>1){ setError('Selecciona almacén para cada insumo.'); return false; }
             if(l.origen==='COMPRA_DIRECTA'&&!l.descripcionLibre.trim()){ setError('Escribe la descripción de la compra directa.'); return false; }
             if(!l.cantidad||Number(l.cantidad)<=0){ setError('La cantidad debe ser mayor a 0.'); return false; }
