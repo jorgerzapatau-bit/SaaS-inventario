@@ -173,7 +173,8 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
     const [loadingPlantillas, setLoadingPlantillas] = useState(false);
     const [busqueda,    setBusqueda]    = useState('');
     const [productoSel, setProductoSel] = useState<ProductoCatalogo | null>(null);
-    const [cantidadIn,  setCantidadIn]  = useState('');
+    const [cantidadIn,    setCantidadIn]    = useState('');
+    const [tcInsumo,      setTcInsumo]      = useState('');
     const [almacenId,   setAlmacenId]   = useState('');
     const [almacenes,   setAlmacenes]   = useState<Almacen[]>([]);
     const [catFiltrado, setCatFiltrado] = useState<ProductoCatalogo[]>([]);
@@ -210,7 +211,11 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
     })();
 
     const totalExt  = extForm.cantidad && extForm.precioUnitario ? Number(extForm.cantidad) * Number(extForm.precioUnitario) : null;
-    const totalInsu = productoSel && cantidadIn ? Number(cantidadIn) * productoSel.precioCompra : null;
+    const totalInsu = productoSel && cantidadIn
+        ? productoSel.moneda === 'USD' && tcInsumo
+            ? Number(cantidadIn) * productoSel.precioCompra * Number(tcInsumo)  // convertido a MXN
+            : Number(cantidadIn) * productoSel.precioCompra
+        : null;
     const totalAct  = tipoGasto === 'INSUMO' ? totalInsu : totalExt;
     const sumaPct   = distRows.reduce((a, r) => a + (Number(r.porcentaje) || 0), 0);
     const distOk    = nivelGasto !== 'DISTRIBUIBLE' || (distRows.every(r => r.plantillaId && Number(r.porcentaje) > 0) && Math.abs(sumaPct - 100) < 0.01);
@@ -252,7 +257,17 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
                 if (!productoSel) { setErr('Selecciona un producto'); setSaving(false); return; }
                 if (!cantidadIn || Number(cantidadIn) <= 0) { setErr('Cantidad inválida'); setSaving(false); return; }
                 if (Number(cantidadIn) > productoSel.stockActual) { setErr(`Stock insuficiente (disp: ${productoSel.stockActual})`); setSaving(false); return; }
-                await fetchApi('/gastos-operativos', { method: 'POST', body: JSON.stringify({ ...base, tipoGasto: 'INSUMO', productoId: productoSel.id, almacenId: almacenId || null, cantidad: Number(cantidadIn), moneda: productoSel.moneda }) });
+                if (productoSel.moneda === 'USD' && !tcInsumo) { setErr('El tipo de cambio es requerido para productos en USD'); setSaving(false); return; }
+                await fetchApi('/gastos-operativos', { method: 'POST', body: JSON.stringify({
+                    ...base,
+                    tipoGasto:      'INSUMO',
+                    productoId:     productoSel.id,
+                    almacenId:      almacenId || null,
+                    cantidad:       Number(cantidadIn),
+                    precioUnitario: productoSel.precioCompra,
+                    moneda:         productoSel.moneda,
+                    tipoCambio:     productoSel.moneda === 'USD' ? Number(tcInsumo) : null,
+                }) });
             } else {
                 if (!extForm.producto.trim()) { setErr('El concepto es requerido'); setSaving(false); return; }
                 if (!extForm.precioUnitario)  { setErr('El precio es requerido'); setSaving(false); return; }
@@ -396,7 +411,9 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
                                                 <p className="text-xs text-purple-600 mt-0.5">
                                                     Stock: <strong>{productoSel.stockActual} {productoSel.unidad}</strong>
                                                     {productoSel.stockBajo && <span className="ml-2 inline-flex items-center gap-1 text-amber-600"><AlertTriangle size={11}/> Stock bajo</span>}
-                                                    &nbsp;· ${productoSel.precioCompra.toLocaleString('es-MX', { minimumFractionDigits: 2 })} {productoSel.moneda}
+                                                    &nbsp;·&nbsp;
+                                                    {productoSel.moneda === 'USD' ? 'US$' : '$'}{productoSel.precioCompra.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                                    {productoSel.moneda === 'USD' && <span className="ml-1 font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded text-[10px]">USD</span>}
                                                 </p>
                                             </div>
                                             <button onClick={() => setProductoSel(null)} className="text-purple-400 hover:text-purple-700"><X size={14}/></button>
@@ -404,25 +421,44 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
                                     ) : loadCat ? <p className="text-xs text-gray-400">Cargando catálogo...</p>
                                     : <div className="max-h-44 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-50">
                                         {catFiltrado.slice(0, 30).map(p => (
-                                            <button key={p.id} onClick={() => { setProductoSel(p); setBusqueda(p.nombre); }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-purple-50 transition-colors text-left">
+                                            <button key={p.id} onClick={() => { setProductoSel(p); setBusqueda(p.nombre); setTcInsumo(''); }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-purple-50 transition-colors text-left">
                                                 <div><p className="text-sm text-gray-800">{p.nombre}</p><p className="text-xs text-gray-400">{p.sku} · {p.unidad}</p></div>
-                                                <p className={`text-xs font-medium ml-2 flex-shrink-0 ${p.stockBajo ? 'text-amber-600' : 'text-gray-500'}`}>{p.stockActual} {p.unidad}</p>
+                                                <div className="text-right ml-2 flex-shrink-0">
+                                                    <p className={`text-xs font-medium ${p.stockBajo ? 'text-amber-600' : 'text-gray-500'}`}>{p.stockActual} {p.unidad}</p>
+                                                    <p className="text-xs text-gray-400">
+                                                        {p.moneda === 'USD' ? 'US$' : '$'}{p.precioCompra.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                                        {p.moneda === 'USD' && <span className="ml-1 text-[9px] font-bold text-orange-600 bg-orange-100 px-1 py-0.5 rounded">USD</span>}
+                                                    </p>
+                                                </div>
                                             </button>
                                         ))}
                                         {catFiltrado.length === 0 && <p className="text-xs text-gray-400 italic p-3">No se encontraron productos.</p>}
                                     </div>}
                                     {productoSel && (
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Cantidad <span className="text-red-500">*</span> <span className="text-gray-400">(máx. {productoSel.stockActual})</span></label>
-                                                <input type="number" min="0.01" step="0.01" max={productoSel.stockActual} value={cantidadIn} onChange={e => setCantidadIn(e.target.value)} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"/>
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Cantidad <span className="text-red-500">*</span> <span className="text-gray-400">(máx. {productoSel.stockActual})</span></label>
+                                                    <input type="number" min="0.01" step="0.01" max={productoSel.stockActual} value={cantidadIn} onChange={e => setCantidadIn(e.target.value)} placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20"/>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">Almacén</label>
+                                                    <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20">
+                                                        {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                                                    </select>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-500 mb-1">Almacén</label>
-                                                <select value={almacenId} onChange={e => setAlmacenId(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20">
-                                                    {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                                                </select>
-                                            </div>
+                                            {productoSel.moneda === 'USD' && (
+                                                <div>
+                                                    <label className="block text-xs text-gray-500 mb-1">
+                                                        Tipo de cambio <span className="text-red-500">*</span>
+                                                        <span className="ml-1 text-orange-500 font-semibold text-[10px] bg-orange-50 px-1.5 py-0.5 rounded">Producto en USD</span>
+                                                    </label>
+                                                    <input type="number" min="0.01" step="0.01" value={tcInsumo} onChange={e => setTcInsumo(e.target.value)}
+                                                        placeholder="ej. 17.50 MXN por USD"
+                                                        className="w-full px-3 py-2 border border-orange-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"/>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
