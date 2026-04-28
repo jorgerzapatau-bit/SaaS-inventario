@@ -82,6 +82,8 @@ type InsumoConsumoResponse = {
 type ProductoBusqueda = {
     id: string; nombre: string; sku: string; unidad: string;
     stockActual: number; moneda: 'MXN' | 'USD'; precioCompra: number;
+    ultimoPrecioCompra: number | null;
+    ultimaEntrada: { costo: number; moneda: string; tipoCambio: number | null } | null;
 };
 type Almacen = { id: string; nombre: string };
 type Tab = 'registros' | 'mantenimiento' | 'pendientes' | 'inventario' | 'componentes';
@@ -175,8 +177,8 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
             almacenId:primer?.id??'', almacenNombre:primer?.nombre??'',
             stockDisponible:p.stockActual, unidad:p.unidad,
             descripcionLibre:'', cantidad:'1',
-            precioUnitario:String(p.precioCompra),
-            moneda:p.moneda as 'MXN'|'USD', tipoCambio:'',
+            precioUnitario:String(p.ultimoPrecioCompra ?? p.precioCompra),
+            moneda:(p.ultimaEntrada?.moneda ?? p.moneda) as 'MXN'|'USD', tipoCambio:'',
         }]);
         setBusqueda(''); setResultados([]);
     };
@@ -222,7 +224,11 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
                                 </div>
                                 <div className="text-right">
                                     <p className="text-xs font-semibold text-blue-600">Stock: {p.stockActual}</p>
-                                    <p className="text-xs text-gray-400">{p.moneda==='USD'?'US$':'$'}{p.precioCompra}</p>
+                                    <p className="text-xs text-gray-400">
+                                        {((p.ultimaEntrada?.moneda ?? p.moneda)==='USD'?'US$':'$')}
+                                        {(p.ultimoPrecioCompra ?? p.precioCompra).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                                        {(p.ultimaEntrada?.moneda ?? p.moneda)==='USD' && <span className="ml-1 text-orange-500 font-semibold">USD</span>}
+                                    </p>
                                 </div>
                             </button>
                         ))}
