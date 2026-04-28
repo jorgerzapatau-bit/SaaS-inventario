@@ -336,8 +336,27 @@ function NuevoBitacoraModal({ equipoId, pendientesAbiertos, onClose, onSuccess, 
     const [descripcion, setDescripcion] = useState(registroEditar?.descripcion ?? '');
     const [observaciones, setObservaciones] = useState(registroEditar?.observaciones ?? '');
     const [horometro, setHorometro] = useState(registroEditar?.horometro!=null ? String(registroEditar.horometro) : '');
-    const [lineas, setLineas] = useState<LineaInsumo[]>([]);
-    const [pendSel, setPendSel] = useState<string[]>([]);
+    const [lineas, setLineas] = useState<LineaInsumo[]>(()=>{
+        if(!registroEditar?.insumos?.length) return [];
+        return registroEditar.insumos.map(ins=>({
+            _key: Date.now()+Math.random(),
+            origen: ins.origen,
+            productoId: ins.producto?.id ?? '',
+            productoNombre: ins.producto?.nombre ?? '',
+            almacenId: ins.almacen?.id ?? '',
+            almacenNombre: ins.almacen?.nombre ?? '',
+            stockDisponible: 0,
+            unidad: ins.producto?.unidad ?? '',
+            descripcionLibre: ins.descripcionLibre ?? '',
+            cantidad: String(ins.cantidad),
+            precioUnitario: String(ins.precioUnitario),
+            moneda: ins.moneda,
+            tipoCambio: ins.tipoCambio!=null ? String(ins.tipoCambio) : '',
+        }));
+    });
+    const [pendSel, setPendSel] = useState<string[]>(
+        ()=>registroEditar?.pendientesResueltos?.map(p=>p.id)??[]
+    );
     const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
     const { tipoCambio: tcGlobalNum } = useCompany();
     const tcGlobal = String(tcGlobalNum ?? '');
@@ -551,29 +570,41 @@ function EditLegacyModal({ registro, equipoId, pendientesAbiertos, onClose, onSu
 
     const handleGuardar = async()=>{
         if(!descripcion.trim()){ setError('La descripción es requerida.'); return; }
+        if(!validar2()) return;
         setSaving(true); setError('');
         try {
-            // Migra el registro legacy creando uno nuevo en MantenimientoEquipo
-            await fetchApi(`/equipos/${equipoId}/mantenimientos`,{
-                method:'POST',
+            // Edita el registro legacy existente (solo campos generales)
+            await fetchApi(`/equipos/${equipoId}/mantenimiento/${registro.id}`,{
+                method:'PUT',
                 body:JSON.stringify({
-                    fecha, tipo:'MANTENIMIENTO',
+                    fecha,
                     descripcion:descripcion.trim(),
                     observaciones:observaciones.trim()||null,
                     horometro:horometro?Number(horometro):null,
-                    usuarioId,
-                    insumos:lineas.map(l=>({
-                        origen:l.origen,
-                        productoId:     l.origen==='ALMACEN'?l.productoId:undefined,
-                        almacenId:      l.origen==='ALMACEN'?l.almacenId:undefined,
-                        descripcionLibre:l.origen==='COMPRA_DIRECTA'?l.descripcionLibre.trim():undefined,
-                        cantidad:Number(l.cantidad), precioUnitario:Number(l.precioUnitario),
-                        moneda:l.moneda, tipoCambio:l.tipoCambio?Number(l.tipoCambio):undefined,
-                    })),
-                    pendientesIds:pendSel,
-                    legacyId:registro.id, // el API puede ignorarlo o usarlo para marcar el legacy
                 }),
             });
+            // Si hay insumos nuevos, los agrega via POST al nuevo modelo
+            if(lineas.length>0){
+                await fetchApi(`/equipos/${equipoId}/mantenimientos`,{
+                    method:'POST',
+                    body:JSON.stringify({
+                        fecha, tipo:'MANTENIMIENTO',
+                        descripcion:descripcion.trim(),
+                        observaciones:observaciones.trim()||null,
+                        horometro:horometro?Number(horometro):null,
+                        usuarioId,
+                        insumos:lineas.map(l=>({
+                            origen:l.origen,
+                            productoId:     l.origen==='ALMACEN'?l.productoId:undefined,
+                            almacenId:      l.origen==='ALMACEN'?l.almacenId:undefined,
+                            descripcionLibre:l.origen==='COMPRA_DIRECTA'?l.descripcionLibre.trim():undefined,
+                            cantidad:Number(l.cantidad), precioUnitario:Number(l.precioUnitario),
+                            moneda:l.moneda, tipoCambio:l.tipoCambio?Number(l.tipoCambio):undefined,
+                        })),
+                        pendientesIds:pendSel,
+                    }),
+                });
+            }
             onSuccess(); onClose();
         } catch(e:any){ setError(e.message||'Error al guardar'); setSaving(false); }
     };
