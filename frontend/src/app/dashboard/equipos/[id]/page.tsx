@@ -1027,6 +1027,113 @@ function ComponenteCard({comp,equipoId,onMovimiento,onEditar,onEliminar}:{
     );
 }
 
+// ─── BitacoraCard (componente separado para evitar Hook ilegal en .map()) ─────
+function BitacoraCard({ entry, onEditNuevo, onEditLegacy, onDeleteNuevo, onDeleteLegacy }: {
+    entry: RegistroMant;
+    onEditNuevo: (e: RegistroMant) => void;
+    onEditLegacy: (e: RegistroMant) => void;
+    onDeleteNuevo: (e: RegistroMant) => void;
+    onDeleteLegacy: (e: RegistroMant) => void;
+}) {
+    const [expandido, setExpandido] = useState(false);
+    const esNuevo = !!entry._esNuevo;
+    const chipClass = esNuevo
+        ? (entry.tipoBitacora === 'MANTENIMIENTO' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')
+        : (TIPO_LEGACY[entry.tipo ?? '']?.pill ?? 'bg-gray-100 text-gray-600');
+    const chipLabel = esNuevo
+        ? (entry.tipoBitacora === 'MANTENIMIENTO' ? 'Mantenimiento' : 'Evento')
+        : (TIPO_LEGACY[entry.tipo ?? '']?.label ?? entry.tipo ?? '—');
+    const costoInsumos = esNuevo && entry.insumos
+        ? entry.insumos.reduce((acc, ins) => {
+            const tc = ins.tipoCambio ?? 1;
+            return acc + (ins.moneda === 'USD' ? ins.cantidad * ins.precioUnitario * tc : ins.cantidad * ins.precioUnitario);
+        }, 0) : null;
+
+    return (
+        <div key={entry.id} className={`bg-white border rounded-xl overflow-hidden ${esNuevo ? 'border-blue-100' : 'border-gray-100'}`}>
+            <div className="flex items-start gap-3 p-4">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${esNuevo && entry.tipoBitacora === 'MANTENIMIENTO' ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                    {esNuevo && entry.tipoBitacora === 'MANTENIMIENTO' ? <Wrench size={15} className="text-blue-500" /> : <ClipboardList size={15} className="text-gray-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${chipClass}`}>{chipLabel}</span>
+                        {!esNuevo && <span className="text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">Histórico</span>}
+                        <span className="text-xs text-gray-400">{fmtFecha(entry.fecha)}</span>
+                        {entry.horometro != null && <span className="text-xs text-gray-400 flex items-center gap-1"><Gauge size={10} />{entry.horometro} hrs</span>}
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 mt-1">{entry.descripcion}</p>
+                    {entry.observaciones && <p className="text-xs text-gray-500 mt-0.5">{entry.observaciones}</p>}
+                    {!esNuevo && entry.numeroParte && <p className="text-xs text-gray-400 font-mono mt-0.5">P/N: {entry.numeroParte}</p>}
+                    {!esNuevo && entry.costo != null && entry.costo > 0 && (
+                        <p className="text-xs font-semibold text-gray-700 mt-1">{entry.moneda === 'USD' ? 'US$' : '$'}{Number(entry.costo).toLocaleString('es-MX', { maximumFractionDigits: 2 })}</p>
+                    )}
+                    {esNuevo && entry.insumos && ((entry.insumos.length > 0) || (entry.pendientesResueltos?.length ?? 0) > 0) && (
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                            {(entry.insumos?.length ?? 0) > 0 && (
+                                <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                    <Package size={10} />{entry.insumos!.length} insumo{entry.insumos!.length !== 1 ? 's' : ''}
+                                    {costoInsumos != null && costoInsumos > 0 && ` · ${fmtMXN(costoInsumos)}`}
+                                </span>
+                            )}
+                            {(entry.pendientesResueltos?.length ?? 0) > 0 && (
+                                <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                    <CheckCheck size={10} />{entry.pendientesResueltos!.length} pendiente{entry.pendientesResueltos!.length !== 1 ? 's' : ''} resuelto{entry.pendientesResueltos!.length !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    {esNuevo && ((entry.insumos?.length ?? 0) > 0 || (entry.pendientesResueltos?.length ?? 0) > 0) && (
+                        <button onClick={() => setExpandido(v => !v)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md">
+                            {expandido ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                    )}
+                    <button onClick={() => esNuevo ? onEditNuevo(entry) : onEditLegacy(entry)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md"><Pencil size={13} /></button>
+                    <button onClick={() => esNuevo ? onDeleteNuevo(entry) : onDeleteLegacy(entry)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md"><Trash2 size={13} /></button>
+                </div>
+            </div>
+            {esNuevo && expandido && (
+                <div className="border-t border-blue-50 bg-blue-50/30 px-4 py-3 space-y-3">
+                    {(entry.insumos?.length ?? 0) > 0 && (
+                        <div>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">Insumos utilizados</p>
+                            <div className="space-y-1">
+                                {entry.insumos!.map(ins => (
+                                    <div key={ins.id} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-blue-100">
+                                        <div className="flex items-center gap-2">
+                                            {ins.origen === 'ALMACEN' ? <Warehouse size={11} className="text-blue-400" /> : <ShoppingCart size={11} className="text-orange-400" />}
+                                            <span className="font-medium text-gray-700">{ins.origen === 'ALMACEN' ? ins.producto?.nombre : ins.descripcionLibre}</span>
+                                            {ins.origen === 'ALMACEN' && ins.almacen && <span className="text-gray-400">· {ins.almacen.nombre}</span>}
+                                        </div>
+                                        <span className="font-semibold text-gray-700">{ins.cantidad} {ins.producto?.unidad ?? ''} × {ins.moneda === 'USD' ? 'US$' : '$'}{ins.precioUnitario}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {(entry.pendientesResueltos?.length ?? 0) > 0 && (
+                        <div>
+                            <p className="text-xs font-semibold text-gray-500 mb-2">Pendientes resueltos</p>
+                            <div className="space-y-1">
+                                {entry.pendientesResueltos!.map(p => (
+                                    <div key={p.id} className="flex items-center gap-2 text-xs bg-white rounded-lg px-3 py-2 border border-green-100">
+                                        <CheckCheck size={11} className="text-green-500 flex-shrink-0" />
+                                        <span className="text-gray-700">{p.descripcion}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── RegistroRow ──────────────────────────────────────────────────────────────
 function RegistroRow({r,onDelete}:{r:Registro;onDelete:(id:string)=>void}) {
     const [exp,setExp]=useState(false);
@@ -1446,104 +1553,16 @@ export default function EquipoDetallePage() {
                         </div>
                     ):(
                         <div className="space-y-2">
-                            {bitacoraFiltrada.map(entry=>{
-                                const esNuevo=!!entry._esNuevo;
-                                const chipClass=esNuevo
-                                    ?(entry.tipoBitacora==='MANTENIMIENTO'?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-600')
-                                    :(TIPO_LEGACY[entry.tipo??'']?.pill??'bg-gray-100 text-gray-600');
-                                const chipLabel=esNuevo
-                                    ?(entry.tipoBitacora==='MANTENIMIENTO'?'Mantenimiento':'Evento')
-                                    :(TIPO_LEGACY[entry.tipo??'']?.label??entry.tipo??'—');
-                                const costoInsumos=esNuevo&&entry.insumos
-                                    ?entry.insumos.reduce((acc,ins)=>{
-                                        const tc=ins.tipoCambio??1;
-                                        return acc+(ins.moneda==='USD'?ins.cantidad*ins.precioUnitario*tc:ins.cantidad*ins.precioUnitario);
-                                    },0):null;
-                                const [expandido,setExpandido]=useState(false);
-                                return(
-                                    <div key={entry.id} className={`bg-white border rounded-xl overflow-hidden ${esNuevo?'border-blue-100':'border-gray-100'}`}>
-                                        <div className="flex items-start gap-3 p-4">
-                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${esNuevo&&entry.tipoBitacora==='MANTENIMIENTO'?'bg-blue-50':'bg-gray-50'}`}>
-                                                {esNuevo&&entry.tipoBitacora==='MANTENIMIENTO'?<Wrench size={15} className="text-blue-500"/>:<ClipboardList size={15} className="text-gray-400"/>}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${chipClass}`}>{chipLabel}</span>
-                                                    {!esNuevo&&<span className="text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">Histórico</span>}
-                                                    <span className="text-xs text-gray-400">{fmtFecha(entry.fecha)}</span>
-                                                    {entry.horometro!=null&&<span className="text-xs text-gray-400 flex items-center gap-1"><Gauge size={10}/>{entry.horometro} hrs</span>}
-                                                </div>
-                                                <p className="text-sm font-semibold text-gray-800 mt-1">{entry.descripcion}</p>
-                                                {entry.observaciones&&<p className="text-xs text-gray-500 mt-0.5">{entry.observaciones}</p>}
-                                                {!esNuevo&&entry.numeroParte&&<p className="text-xs text-gray-400 font-mono mt-0.5">P/N: {entry.numeroParte}</p>}
-                                                {!esNuevo&&entry.costo!=null&&entry.costo>0&&(
-                                                    <p className="text-xs font-semibold text-gray-700 mt-1">{entry.moneda==='USD'?'US$':'$'}{Number(entry.costo).toLocaleString('es-MX',{maximumFractionDigits:2})}</p>
-                                                )}
-                                                {esNuevo&&entry.insumos&&(entry.insumos.length>0||(entry.pendientesResueltos?.length??0)>0)&&(
-                                                    <div className="flex items-center gap-3 mt-2 flex-wrap">
-                                                        {(entry.insumos?.length??0)>0&&(
-                                                            <span className="flex items-center gap-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                                                                <Package size={10}/>{entry.insumos!.length} insumo{entry.insumos!.length!==1?'s':''}
-                                                                {costoInsumos!=null&&costoInsumos>0&&` · ${fmtMXN(costoInsumos)}`}
-                                                            </span>
-                                                        )}
-                                                        {(entry.pendientesResueltos?.length??0)>0&&(
-                                                            <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                                                                <CheckCheck size={10}/>{entry.pendientesResueltos!.length} pendiente{entry.pendientesResueltos!.length!==1?'s':''} resuelto{entry.pendientesResueltos!.length!==1?'s':''}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-1 flex-shrink-0">
-                                                {esNuevo&&((entry.insumos?.length??0)>0||(entry.pendientesResueltos?.length??0)>0)&&(
-                                                    <button onClick={()=>setExpandido(v=>!v)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md">
-                                                        {expandido?<ChevronUp size={14}/>:<ChevronDown size={14}/>}
-                                                    </button>
-                                                )}
-                                                <button onClick={()=>esNuevo?setModalEditNuevo(entry):setModalEditLegacy(entry)}
-                                                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md"><Pencil size={13}/></button>
-                                                <button onClick={()=>esNuevo?handleDeleteMantNuevo(entry):handleDeleteMantLegacy(entry)}
-                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md"><Trash2 size={13}/></button>
-                                            </div>
-                                        </div>
-                                        {esNuevo&&expandido&&(
-                                            <div className="border-t border-blue-50 bg-blue-50/30 px-4 py-3 space-y-3">
-                                                {(entry.insumos?.length??0)>0&&(
-                                                    <div>
-                                                        <p className="text-xs font-semibold text-gray-500 mb-2">Insumos utilizados</p>
-                                                        <div className="space-y-1">
-                                                            {entry.insumos!.map(ins=>(
-                                                                <div key={ins.id} className="flex items-center justify-between text-xs bg-white rounded-lg px-3 py-2 border border-blue-100">
-                                                                    <div className="flex items-center gap-2">
-                                                                        {ins.origen==='ALMACEN'?<Warehouse size={11} className="text-blue-400"/>:<ShoppingCart size={11} className="text-orange-400"/>}
-                                                                        <span className="font-medium text-gray-700">{ins.origen==='ALMACEN'?ins.producto?.nombre:ins.descripcionLibre}</span>
-                                                                        {ins.origen==='ALMACEN'&&ins.almacen&&<span className="text-gray-400">· {ins.almacen.nombre}</span>}
-                                                                    </div>
-                                                                    <span className="font-semibold text-gray-700">{ins.cantidad} {ins.producto?.unidad??''} × {ins.moneda==='USD'?'US$':'$'}{ins.precioUnitario}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {(entry.pendientesResueltos?.length??0)>0&&(
-                                                    <div>
-                                                        <p className="text-xs font-semibold text-gray-500 mb-2">Pendientes resueltos</p>
-                                                        <div className="space-y-1">
-                                                            {entry.pendientesResueltos!.map(p=>(
-                                                                <div key={p.id} className="flex items-center gap-2 text-xs bg-white rounded-lg px-3 py-2 border border-green-100">
-                                                                    <CheckCheck size={11} className="text-green-500 flex-shrink-0"/>
-                                                                    <span className="text-gray-700">{p.descripcion}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                            {bitacoraFiltrada.map(entry => (
+                                <BitacoraCard
+                                    key={entry.id}
+                                    entry={entry}
+                                    onEditNuevo={setModalEditNuevo}
+                                    onEditLegacy={setModalEditLegacy}
+                                    onDeleteNuevo={handleDeleteMantNuevo}
+                                    onDeleteLegacy={handleDeleteMantLegacy}
+                                />
+                            ))}
                             <p className="text-xs text-gray-400 text-center pt-1">
                                 {bitacoraFiltrada.length} registro{bitacoraFiltrada.length!==1?'s':''}
                                 {bitacoraFiltrada.length!==bitacoraUnificada.length&&` (de ${bitacoraUnificada.length} totales)`}
