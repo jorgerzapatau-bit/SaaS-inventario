@@ -5,6 +5,7 @@ import {
     HardHat, Plus, Edit, Trash2, Eye,
     CheckCircle, Clock, PauseCircle, Search, X, AlertTriangle,
     ChevronRight, ChevronLeft, Info, FileText, Layers, Wrench,
+    TrendingUp, Zap,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -1136,28 +1137,69 @@ export default function ObrasPage() {
         { label: 'Terminadas',         value: terminadas,                     sub: `${obras.length} obras totales`,                    color: 'text-gray-500'   },
         { label: 'Plantillas totales', value: totalPlantillas,                sub: `en ${activas} obra${activas !== 1 ? 's' : ''} activa${activas !== 1 ? 's' : ''}`,  color: 'text-blue-600'   },
         { label: 'Equipos desplegados',value: totalEquipos,                   sub: 'obras activas',                                    color: 'text-purple-600' },
+        { label: 'Obras excedidas',    value: obras.filter(o=>{ const mc=(o.plantillas??[]).reduce((s,p)=>s+p.metrosContratados,0); return mc>0&&(o.metricas?.metrosPerforados??0)/mc>1; }).length, sub: 'superaron el contrato', color: 'text-red-500' },
         { label: 'Total facturado',    value: `$${fmt(totalFacturado)}`,      sub: 'MXN',                                              color: 'text-blue-600'   },
         { label: 'Metros perforados',  value: `${fmt(metrosTotales)} m`,      sub: 'obras activas',                                    color: 'text-purple-600' },
     ];
 
     // ─── Tarjeta de obra ────────────────────────────────────────────────────
     const ObraCard = ({ obra }: { obra: Obra }) => {
-        // Recalcular avance desde plantillas para ser consistente con el detalle de obra
-        // SIN limitar a 100% — si se perforó más de lo contratado, se muestra tal cual
         const metrosContratadosTotales = (obra.plantillas ?? []).reduce((s, p) => s + p.metrosContratados, 0);
         const metrosPerforados = obra.metricas?.metrosPerforados ?? 0;
         const pct = metrosContratadosTotales > 0
             ? (metrosPerforados / metrosContratadosTotales) * 100
             : (obra.metricas?.pctAvance ?? 0);
+
+        // ── Semáforo de avance ──────────────────────────────────────────────
+        const sinActividad = metrosPerforados === 0 && obra.status === 'ACTIVA';
+        const excedido     = pct > 100;
+        const enRiesgo     = pct >= 90 && pct <= 100;
+
+        const barColor = excedido ? 'bg-red-500'
+            : enRiesgo            ? 'bg-amber-400'
+            : sinActividad        ? 'bg-gray-200'
+            :                       'bg-blue-500';
+
+        const pctColor = excedido ? 'text-red-600 font-bold'
+            : enRiesgo            ? 'text-amber-600 font-bold'
+            : sinActividad        ? 'text-gray-300'
+            :                       'text-gray-700';
+
+        // Porcentaje "real" para la barra (capped 100%) + tramo excedido
+        const barWidth    = Math.min(pct ?? 0, 100);
+        const excedidoPct = excedido ? Math.min((pct - 100) / pct * 100, 100) : 0;
+
+        // ── Importe contratado estimado ─────────────────────────────────────
+        const importeContratado = obra.metrosContratados && obra.precioUnitario
+            ? obra.metrosContratados * obra.precioUnitario : null;
+        const montoFacturado = obra.metricas?.montoFacturado ?? 0;
+        const pctFacturado = importeContratado && importeContratado > 0
+            ? Math.min((montoFacturado / importeContratado) * 100, 100) : null;
+
         const statusStyle = STATUS_STYLE[obra.status];
         const statusIcon  = STATUS_ICON[obra.status];
 
         return (
-            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 flex flex-col">
+            <div className={`bg-white border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col ${
+                excedido     ? 'border-red-200 hover:border-red-300'
+                : sinActividad ? 'border-gray-100 opacity-80 hover:opacity-100 hover:border-blue-100'
+                :                'border-gray-100 hover:border-blue-100'
+            }`}>
+                {/* Banda superior de alerta si excedido */}
+                {excedido && (
+                    <div className="flex items-center gap-2 px-4 py-1.5 bg-red-50 border-b border-red-100">
+                        <AlertTriangle size={11} className="text-red-500 flex-shrink-0" />
+                        <span className="text-[11px] font-semibold text-red-600">
+                            Contrato excedido en {(pct - 100).toFixed(1)}%
+                            {' '}({fmt(metrosPerforados - metrosContratadosTotales)} m extra)
+                        </span>
+                    </div>
+                )}
+
                 {/* Header */}
                 <div className="flex items-start gap-3 p-4 border-b border-gray-50">
-                    <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
-                        <HardHat size={16} className="text-orange-500" />
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${excedido ? 'bg-red-50' : 'bg-orange-50'}`}>
+                        <HardHat size={16} className={excedido ? 'text-red-400' : 'text-orange-500'} />
                     </div>
                     <div className="flex-1 min-w-0">
                         <Link
@@ -1170,36 +1212,77 @@ export default function ObrasPage() {
                             {obra.cliente?.nombre ?? obra.ubicacion ?? '—'}
                         </p>
                     </div>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${statusStyle}`}>
-                        {statusIcon}
-                        {obra.status.charAt(0) + obra.status.slice(1).toLowerCase()}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${statusStyle}`}>
+                            {statusIcon}
+                            {obra.status.charAt(0) + obra.status.slice(1).toLowerCase()}
+                        </span>
+                        {sinActividad && (
+                            <span className="text-[10px] text-gray-300 italic">Sin actividad</span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Progreso */}
                 <div className="px-4 py-3 border-b border-gray-50">
-                    <div className="flex justify-between items-baseline mb-1.5">
-                        <span className="text-xs text-gray-400">Avance general</span>
-                        <span className="text-sm font-semibold text-gray-700">
+                    <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                            Avance
+                            {excedido && <TrendingUp size={11} className="text-red-400" />}
+                        </span>
+                        <span className={`text-sm ${pctColor}`}>
                             {pct !== null && pct !== undefined ? `${pct.toFixed(1)}%` : '—'}
                         </span>
                     </div>
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    {/* Barra con marcador en 100% */}
+                    <div className="relative h-2 bg-gray-100 rounded-full overflow-hidden">
+                        {/* Tramo normal */}
                         <div
-                            className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                            style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+                            className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${barColor}`}
+                            style={{ width: `${barWidth}%` }}
                         />
+                        {/* Tramo excedido (rojo oscuro encima) */}
+                        {excedido && (
+                            <div
+                                className="absolute top-0 h-full bg-red-700/40 rounded-r-full"
+                                style={{ left: `${(metrosContratadosTotales / metrosPerforados) * 100}%`, width: `${excedidoPct}%` }}
+                            />
+                        )}
+                        {/* Marcador 100% */}
+                        {metrosContratadosTotales > 0 && (
+                            <div className="absolute top-0 h-full w-px bg-gray-400/40" style={{ left: '100%' }} />
+                        )}
                     </div>
                     <div className="flex justify-between mt-1.5">
-                        <span className="text-xs text-gray-400">
-                            {fmt(obra.metricas?.metrosPerforados ?? 0)} m perforados
+                        <span className={`text-xs ${excedido ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                            {fmt(metrosPerforados)} m perforados
                         </span>
                         <span className="text-xs text-gray-400">
-                            {obra.metricas?.metrosContratadosEfectivos
-                                ? `${fmt(obra.metricas.metrosContratadosEfectivos)} m contratados`
-                                : '—'}
+                            {metrosContratadosTotales > 0
+                                ? `${fmt(metrosContratadosTotales)} m contratados`
+                                : obra.metricas?.metrosContratadosEfectivos
+                                    ? `${fmt(obra.metricas.metrosContratadosEfectivos)} m contratados`
+                                    : '—'}
                         </span>
                     </div>
+                    {/* Relación facturado / contratado */}
+                    {pctFacturado !== null && (
+                        <div className="mt-2 pt-2 border-t border-gray-50">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] text-gray-400">Facturado</span>
+                                <span className="text-[10px] font-semibold text-gray-600">
+                                    ${fmt(montoFacturado)} / ${fmt(importeContratado!)} {obra.moneda}
+                                    <span className="ml-1 text-gray-400">({pctFacturado.toFixed(0)}%)</span>
+                                </span>
+                            </div>
+                            <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full rounded-full bg-green-400 transition-all duration-500"
+                                    style={{ width: `${pctFacturado}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Jerarquía: Plantillas → Equipos */}
@@ -1209,7 +1292,7 @@ export default function ObrasPage() {
                     </p>
                     {(obra.plantillas && obra.plantillas.length > 0) ? (
                         <div className="space-y-2">
-                            {obra.plantillas.slice(0, 3).map((plt) => {
+                            {obra.plantillas.slice(0, 4).map((plt) => {
                                 const equiposDePlantilla = plt.plantillaEquipos ?? [];
                                 return (
                                     <div key={plt.id} className="flex items-start gap-2">
@@ -1218,7 +1301,7 @@ export default function ObrasPage() {
                                         </span>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="text-xs text-gray-600">
+                                                <span className="text-xs text-gray-600 font-medium">
                                                     {fmt(plt.metrosContratados)} m
                                                 </span>
                                                 {equiposDePlantilla.length > 0 ? (
@@ -1238,50 +1321,41 @@ export default function ObrasPage() {
                                     </div>
                                 );
                             })}
-                            {obra.plantillas.length > 3 && (
-                                <p className="text-[10px] text-gray-400">
-                                    +{obra.plantillas.length - 3} plantilla{obra.plantillas.length - 3 > 1 ? 's' : ''} más
-                                </p>
+                            {obra.plantillas.length > 4 && (
+                                <Link href={`/dashboard/obras/${obra.id}`} className="text-[10px] text-blue-400 hover:text-blue-600 flex items-center gap-0.5">
+                                    +{obra.plantillas.length - 4} plantilla{obra.plantillas.length - 4 > 1 ? 's' : ''} más
+                                    <ChevronRight size={10} />
+                                </Link>
                             )}
                         </div>
                     ) : (
-                        /* Sin plantillas: mostrar equipos de la obra directamente */
                         obra.obraEquipos && obra.obraEquipos.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
                                 {obra.obraEquipos.map((oe, i) => (
-                                    <span
-                                        key={i}
-                                        className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium"
-                                    >
+                                    <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
                                         {oe.equipo.nombre}
                                     </span>
                                 ))}
                             </div>
                         ) : (
-                            <p className="text-xs text-gray-300 italic">Sin plantillas ni equipos asignados</p>
+                            <div className="flex items-center gap-1.5 py-1">
+                                <Zap size={12} className="text-gray-200" />
+                                <p className="text-xs text-gray-300 italic">Sin plantillas ni equipos asignados</p>
+                            </div>
                         )
                     )}
                 </div>
 
                 {/* Footer */}
                 <div className="px-4 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div>
-                            <p className="text-xs font-semibold text-gray-700">
-                                ${fmt(obra.metricas?.montoFacturado ?? 0)}
-                            </p>
-                            <p className="text-[10px] text-gray-400">Facturado {obra.moneda}</p>
-                        </div>
+                    <div className="flex items-center gap-3">
                         {obra.cliente?.nombre && (
-                            <>
-                                <div className="w-px h-6 bg-gray-100" />
-                                <div>
-                                    <p className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">
-                                        {obra.cliente.nombre}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400">Cliente</p>
-                                </div>
-                            </>
+                            <div>
+                                <p className="text-xs font-semibold text-gray-700 truncate max-w-[110px]">
+                                    {obra.cliente.nombre}
+                                </p>
+                                <p className="text-[10px] text-gray-400">Cliente</p>
+                            </div>
                         )}
                     </div>
                     <div className="flex gap-1">
