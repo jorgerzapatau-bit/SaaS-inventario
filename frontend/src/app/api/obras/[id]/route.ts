@@ -86,16 +86,23 @@ export async function GET(req: NextRequest, { params }: Params) {
             _max:   { fecha: true },
         });
         const plantillaMetricsMap = new Map(
-            registrosPorPlantilla.map(r => [
-                r.plantillaId ?? '__null__',
-                {
-                    metrosPerforados:   Number(r._sum.metrosLineales ?? 0),
-                    barrenosPerforados: Number(r._sum.barrenos ?? 0),
-                    totalRegistros:     r._count.id,
-                    fechaPrimerRegistro: r._min.fecha ? String(r._min.fecha).slice(0, 10) : null,
-                    fechaUltimoRegistro: r._max.fecha ? String(r._max.fecha).slice(0, 10) : null,
-                },
-            ])
+            registrosPorPlantilla.map(r => {
+                const toISO = (d: Date | null | undefined) => {
+                    if (!d) return null;
+                    const dt = d instanceof Date ? d : new Date(d);
+                    return dt.toISOString().slice(0, 10); // siempre "YYYY-MM-DD"
+                };
+                return [
+                    r.plantillaId ?? '__null__',
+                    {
+                        metrosPerforados:    Number(r._sum.metrosLineales ?? 0),
+                        barrenosPerforados:  Number(r._sum.barrenos ?? 0),
+                        totalRegistros:      r._count.id,
+                        fechaPrimerRegistro: toISO(r._min.fecha),
+                        fechaUltimoRegistro: toISO(r._max.fecha),
+                    },
+                ];
+            })
         );
 
         // Monto total cobrado (solo cortes en status COBRADO)
