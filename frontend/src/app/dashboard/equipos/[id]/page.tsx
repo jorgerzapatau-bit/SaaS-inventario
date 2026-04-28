@@ -160,7 +160,7 @@ function InsumosPanel({ lineas, setLineas, tipoCambioGlobal, almacenes }:{
         const t = setTimeout(async()=>{
             setBuscando(true);
             try {
-                const r = await fetchApi(`/productos?q=${encodeURIComponent(busqueda)}&limit=8`);
+                const r = await fetchApi(`/products?q=${encodeURIComponent(busqueda)}&limit=8`);
                 setResultados(Array.isArray(r) ? r : r.productos ?? []);
             } catch { setResultados([]); } finally { setBuscando(false); }
         },300);

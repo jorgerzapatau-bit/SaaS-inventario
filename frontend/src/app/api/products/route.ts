@@ -10,10 +10,24 @@ export async function GET(req: NextRequest) {
     if (!user) return unauthorized();
     try {
         const empresaId = user.empresaId;
+        const { searchParams } = new URL(req.url);
+        const q     = searchParams.get('q')?.trim() ?? '';
+        const limit = parseInt(searchParams.get('limit') ?? '200', 10);
+
         const products = await prisma.producto.findMany({
-            where: { empresaId },
+            where: {
+                empresaId,
+                activo: true,
+                ...(q ? {
+                    OR: [
+                        { nombre: { contains: q, mode: 'insensitive' } },
+                        { sku:    { contains: q, mode: 'insensitive' } },
+                    ],
+                } : {}),
+            },
             include: { categoria: true },
             orderBy: { nombre: 'asc' },
+            take: limit,
         });
 
         // stockActual ya está almacenado en el campo — no necesitamos calcular con SUM.
