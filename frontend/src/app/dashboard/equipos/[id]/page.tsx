@@ -13,6 +13,7 @@ import {
     ShoppingCart, Warehouse, ChevronRight,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
+import { useCompany } from '@/context/CompanyContext';
 import { Card } from '@/components/ui/Card';
 import Link from 'next/link';
 
@@ -338,13 +339,13 @@ function NuevoBitacoraModal({ equipoId, pendientesAbiertos, onClose, onSuccess, 
     const [lineas, setLineas] = useState<LineaInsumo[]>([]);
     const [pendSel, setPendSel] = useState<string[]>([]);
     const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-    const [tcGlobal, setTcGlobal] = useState('');
+    const { tipoCambio: tcGlobalNum } = useCompany();
+    const tcGlobal = String(tcGlobalNum ?? '');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(()=>{
-        fetchApi('/almacenes').then(setAlmacenes).catch(()=>{});
-        fetchApi('/empresa/config').then((c:any)=>{ if(c?.tipoCambio) setTcGlobal(String(c.tipoCambio)); }).catch(()=>{});
+        fetchApi('/warehouse').then(setAlmacenes).catch(()=>{});
     },[]);
 
     const togglePend = (id:string)=>setPendSel(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
@@ -352,7 +353,7 @@ function NuevoBitacoraModal({ equipoId, pendientesAbiertos, onClose, onSuccess, 
     const validar1 = ()=>{ if(!descripcion.trim()){ setError('La descripción es requerida.'); return false; } setError(''); return true; };
     const validar2 = ()=>{
         for(const l of lineas){
-            if(l.origen==='ALMACEN'&&!l.almacenId){ setError('Selecciona almacén para cada insumo.'); return false; }
+            if(l.origen==='ALMACEN'&&!l.almacenId&&almacenes.length>1){ setError('Selecciona almacén para cada insumo.'); return false; }
             if(l.origen==='COMPRA_DIRECTA'&&!l.descripcionLibre.trim()){ setError('Escribe la descripción de la compra directa.'); return false; }
             if(!l.cantidad||Number(l.cantidad)<=0){ setError('La cantidad debe ser mayor a 0.'); return false; }
             if(l.precioUnitario===''||Number(l.precioUnitario)<0){ setError('El precio unitario es requerido.'); return false; }
@@ -528,13 +529,13 @@ function EditLegacyModal({ registro, equipoId, pendientesAbiertos, onClose, onSu
     const [lineas, setLineas] = useState<LineaInsumo[]>([]);
     const [pendSel, setPendSel] = useState<string[]>([]);
     const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
-    const [tcGlobal, setTcGlobal] = useState('');
+    const { tipoCambio: tcGlobalNum } = useCompany();
+    const tcGlobal = String(tcGlobalNum ?? '');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(()=>{
-        fetchApi('/almacenes').then(setAlmacenes).catch(()=>{});
-        fetchApi('/empresa/config').then((c:any)=>{ if(c?.tipoCambio) setTcGlobal(String(c.tipoCambio)); }).catch(()=>{});
+        fetchApi('/warehouse').then(setAlmacenes).catch(()=>{});
     },[]);
 
     const togglePend = (id:string)=>setPendSel(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
