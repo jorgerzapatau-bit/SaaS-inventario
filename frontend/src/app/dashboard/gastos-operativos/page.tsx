@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
     Receipt, Plus, Trash2, X, Filter, Package, ShoppingCart,
-    AlertTriangle, Building2, Wrench, Users, GitBranch, ChevronDown, ChevronUp,
+    AlertTriangle, Building2, Wrench, Users, GitBranch, ChevronDown, ChevronUp, Pencil, CheckCircle,
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -75,7 +75,7 @@ function NivelBadge({ nivel }: { nivel: NivelGasto }) {
     return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${color}`}>{label}</span>;
 }
 
-function GastoRow({ g, fmt, onDelete }: { g: Gasto; fmt: (n: number) => string; onDelete: (id: string) => void }) {
+function GastoRow({ g, fmt, onDelete, onEdit }: { g: Gasto; fmt: (n: number) => string; onDelete: (id: string) => void; onEdit: (g: Gasto) => void }) {
     const [expanded, setExpanded] = useState(false);
     const hasDist = g.distribuciones && g.distribuciones.length > 0;
     const fmtDate = (s: string) => new Date(s + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
@@ -125,10 +125,18 @@ function GastoRow({ g, fmt, onDelete }: { g: Gasto; fmt: (n: number) => string; 
                 )}
             </td>
             <td className="p-3 text-right">
-                <button onClick={() => onDelete(g.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                    <Trash2 size={14}/>
-                </button>
+                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => onEdit(g)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Editar gasto">
+                        <Pencil size={13}/>
+                    </button>
+                    <button onClick={() => onDelete(g.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        title={g.tipoGasto === 'INSUMO' ? 'Eliminar (restaura stock)' : 'Eliminar'}>
+                        <Trash2 size={14}/>
+                    </button>
+                </div>
             </td>
         </tr>
         {expanded && hasDist && (
@@ -539,6 +547,231 @@ function GastoModal({ equipos, obras, onClose, onSaved }: {
     );
 }
 
+
+// ─── Modal Confirmar Eliminación ──────────────────────────────────────────────
+function DeleteConfirmModal({ gasto, onConfirm, onCancel, loading }: {
+    gasto: Gasto; onConfirm: () => void; onCancel: () => void; loading: boolean;
+}) {
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle size={18} className="text-red-600"/>
+                    </div>
+                    <div>
+                        <h3 className="text-base font-bold text-gray-800">Eliminar gasto</h3>
+                        <p className="text-xs text-gray-400 mt-0.5">Esta acción no se puede deshacer</p>
+                    </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl px-4 py-3 mb-4 space-y-1 border border-gray-100">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{gasto.producto}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORIAS[gasto.categoria]?.color ?? 'bg-gray-100 text-gray-600'}`}>
+                            {CATEGORIAS[gasto.categoria]?.label ?? gasto.categoria}
+                        </span>
+                        <span className="text-xs text-gray-500">{gasto.cantidad} {gasto.unidad}</span>
+                        <span className="text-xs font-semibold text-gray-700">
+                            ${Number(gasto.total).toLocaleString('es-MX', { minimumFractionDigits: 2 })} {gasto.moneda}
+                        </span>
+                    </div>
+                    {gasto.obra && <p className="text-xs text-gray-400">{gasto.obra.nombre}{gasto.plantilla ? ` · Plt. ${gasto.plantilla.numero}` : ''}</p>}
+                </div>
+
+                {gasto.tipoGasto === 'INSUMO' && (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                        <AlertTriangle size={13} className="text-amber-500 mt-0.5 flex-shrink-0"/>
+                        <p className="text-xs text-amber-700">
+                            Este es un <strong>insumo del almacén</strong>. Al eliminar, se restaurarán <strong>{gasto.cantidad} {gasto.unidad}</strong> al stock de <em>{gasto.producto}</em>.
+                        </p>
+                    </div>
+                )}
+
+                <div className="flex gap-2">
+                    <button onClick={onCancel} disabled={loading}
+                        className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                        Cancelar
+                    </button>
+                    <button onClick={onConfirm} disabled={loading}
+                        className="flex-1 py-2 text-sm bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors">
+                        {loading ? 'Eliminando...' : 'Sí, eliminar'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Modal Editar Gasto ────────────────────────────────────────────────────────
+function EditGastoModal({ gasto, onClose, onSaved }: { gasto: Gasto; onClose: () => void; onSaved: (g: Gasto) => void }) {
+    const [form, setForm] = useState({
+        categoria:      gasto.categoria,
+        producto:       gasto.producto,
+        unidad:         gasto.unidad,
+        cantidad:       String(gasto.cantidad),
+        precioUnitario: String(gasto.precioUnitario),
+        moneda:         gasto.moneda,
+        tipoCambio:     gasto.tipoCambio != null ? String(gasto.tipoCambio) : '',
+        notas:          gasto.notas ?? '',
+    });
+    const [saving,  setSaving]  = useState(false);
+    const [success, setSuccess] = useState(false);
+    const [error,   setError]   = useState('');
+
+    const setF = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+        setForm(f => ({ ...f, [k]: e.target.value }));
+
+    const total = (Number(form.cantidad) || 0) * (Number(form.precioUnitario) || 0);
+
+    const handleSave = async () => {
+        if (!form.cantidad || !form.precioUnitario) { setError('Cantidad y precio son requeridos'); return; }
+        setSaving(true); setError('');
+        try {
+            const updated = await fetchApi(`/gastos-operativos/${gasto.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    categoria:      form.categoria,
+                    unidad:         form.unidad,
+                    cantidad:       Number(form.cantidad),
+                    precioUnitario: Number(form.precioUnitario),
+                    moneda:         form.moneda,
+                    tipoCambio:     form.tipoCambio ? Number(form.tipoCambio) : null,
+                    notas:          form.notas || null,
+                }),
+            });
+            setSuccess(true);
+            setTimeout(() => { onSaved(updated); }, 800);
+        } catch (e: any) {
+            setError(e.message || 'Error al guardar');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-base font-bold text-gray-800">Editar gasto</h2>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            {gasto.tipoGasto === 'INSUMO'
+                                ? 'Solo se pueden editar cantidad, precio y notas (el insumo no cambia)'
+                                : 'Modifica los datos del gasto externo'}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                        <X size={15}/>
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-6 py-4 space-y-4">
+                    {success ? (
+                        <div className="flex flex-col items-center py-8 gap-2">
+                            <CheckCircle size={32} className="text-green-500"/>
+                            <p className="text-sm font-semibold text-gray-700">Gasto actualizado</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Concepto — solo lectura si es insumo */}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Concepto</label>
+                                <p className="text-sm font-semibold text-gray-800 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                    {gasto.producto}
+                                    {gasto.tipoGasto === 'INSUMO' && <span className="ml-2 text-xs text-purple-500 font-normal">Insumo almacén</span>}
+                                </p>
+                            </div>
+
+                            {/* Categoría */}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
+                                <select value={form.categoria} onChange={setF('categoria')}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                    {Object.entries(CATEGORIAS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                </select>
+                            </div>
+
+                            {/* Cantidad + Unidad */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Cantidad</label>
+                                    <input type="number" min="0.001" step="any" value={form.cantidad} onChange={setF('cantidad')}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Unidad</label>
+                                    <input type="text" value={form.unidad} onChange={setF('unidad')}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                </div>
+                            </div>
+
+                            {/* Precio + Moneda */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Precio unitario</label>
+                                    <input type="number" min="0" step="any" value={form.precioUnitario} onChange={setF('precioUnitario')}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Moneda</label>
+                                    <select value={form.moneda} onChange={setF('moneda')}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                                        <option value="MXN">MXN</option>
+                                        <option value="USD">USD</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* T.C. si es USD */}
+                            {form.moneda === 'USD' && (
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Tipo de cambio</label>
+                                    <input type="number" min="0" step="0.01" value={form.tipoCambio} onChange={setF('tipoCambio')}
+                                        placeholder="ej. 17.50"
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                                </div>
+                            )}
+
+                            {/* Notas */}
+                            <div>
+                                <label className="block text-xs font-medium text-gray-500 mb-1">Notas</label>
+                                <textarea value={form.notas} onChange={setF('notas')} rows={2} placeholder="Opcional"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20"/>
+                            </div>
+
+                            {/* Total preview */}
+                            {total > 0 && (
+                                <div className="flex justify-between items-center bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
+                                    <span className="text-xs text-blue-600 font-medium">Total estimado</span>
+                                    <span className="text-sm font-bold text-blue-700">
+                                        {form.moneda === 'USD' ? 'US$' : '$'}{total.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            )}
+
+                            {error && <p className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle size={11}/> {error}</p>}
+                        </>
+                    )}
+                </div>
+
+                {/* Footer */}
+                {!success && (
+                    <div className="px-6 pb-5 flex gap-2">
+                        <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancelar</button>
+                        <button onClick={handleSave} disabled={saving}
+                            className="flex-1 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors">
+                            {saving ? 'Guardando...' : 'Guardar cambios'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function GastosOperativosInner() {
     const searchParams  = useSearchParams();
     const equipoIdParam = searchParams.get('equipoId') || '';
@@ -548,6 +781,9 @@ function GastosOperativosInner() {
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
     const [modal,        setModal]        = useState(false);
+    const [gastoEditar,  setGastoEditar]  = useState<Gasto | null>(null);
+    const [gastoAEliminar, setGastoAEliminar] = useState<Gasto | null>(null);
+    const [deletingId,     setDeletingId]     = useState(false);
     const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam);
     const [filtroCateg,  setFiltroCateg]  = useState('');
     const [filtroTipo,   setFiltroTipo]   = useState('');
@@ -568,10 +804,19 @@ function GastosOperativosInner() {
 
     useEffect(() => { load(); }, [filtroEquipo, filtroCateg, filtroTipo, filtroNivel]);
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('¿Eliminar este gasto? Si era un insumo, el stock se restaurará automáticamente.')) return;
-        try { await fetchApi(`/gastos-operativos/${id}`, { method: 'DELETE' }); setGastos(g => g.filter(x => x.id !== id)); }
-        catch (e: any) { alert(e.message || 'Error al eliminar'); }
+    const handleDelete = (id: string) => {
+        const g = gastos.find(x => x.id === id);
+        if (g) setGastoAEliminar(g);
+    };
+    const confirmarDelete = async () => {
+        if (!gastoAEliminar) return;
+        setDeletingId(true);
+        try {
+            await fetchApi(`/gastos-operativos/${gastoAEliminar.id}`, { method: 'DELETE' });
+            setGastos(g => g.filter(x => x.id !== gastoAEliminar.id));
+            setGastoAEliminar(null);
+        } catch (e: any) { alert(e.message || 'Error al eliminar'); }
+        finally { setDeletingId(false); }
     };
 
     const fmt = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -652,13 +897,31 @@ function GastosOperativosInner() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {gastos.map(g => <GastoRow key={g.id} g={g} fmt={fmt} onDelete={handleDelete}/>)}
+                                {gastos.map(g => <GastoRow key={g.id} g={g} fmt={fmt} onDelete={handleDelete} onEdit={setGastoEditar}/>)}
                             </tbody>
                         </table>
                     </div>
                 )}
             </Card>
             {modal && <GastoModal equipos={equipos} obras={obras} onClose={() => setModal(false)} onSaved={() => { setModal(false); load(); }}/>}
+            {gastoAEliminar && (
+                <DeleteConfirmModal
+                    gasto={gastoAEliminar}
+                    loading={deletingId}
+                    onConfirm={confirmarDelete}
+                    onCancel={() => setGastoAEliminar(null)}
+                />
+            )}
+            {gastoEditar && (
+                <EditGastoModal
+                    gasto={gastoEditar}
+                    onClose={() => setGastoEditar(null)}
+                    onSaved={(updated) => {
+                        setGastos(gs => gs.map(g => g.id === updated.id ? { ...g, ...updated } : g));
+                        setGastoEditar(null);
+                    }}
+                />
+            )}
         </div>
     );
 }
