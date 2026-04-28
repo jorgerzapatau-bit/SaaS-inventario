@@ -786,30 +786,27 @@ function ResumenSemanalInner() {
 
     const [registros,    setRegistros]    = useState<Registro[]>([]);
     const [gastosOp,     setGastosOp]     = useState<GastoOperativo[]>([]);
-    const [equipos,      setEquipos]      = useState<Equipo[]>([]);
+
     const [obras,        setObras]        = useState<ObraSimple[]>([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState('');
-    const [filtroEquipo, setFiltroEquipo] = useState(equipoIdParam);
     const [filtroObra,   setFiltroObra]   = useState('');
+    const [filtroAno,    setFiltroAno]    = useState('');
 
     useEffect(() => {
         const load = async () => {
             setLoading(true);
             try {
                 const params = new URLSearchParams();
-                if (filtroEquipo !== 'todos') params.set('equipoId', filtroEquipo);
-                if (filtroObra)              params.set('obraId',   filtroObra);
+                if (filtroObra) params.set('obraId', filtroObra);
 
-                const [regs, gastos, eqs, obs] = await Promise.all([
+                const [regs, gastos, obs] = await Promise.all([
                     fetchApi(`/registros-diarios${params.toString() ? '?' + params.toString() : ''}`),
                     fetchApi(`/gastos-operativos${filtroObra ? `?obraId=${filtroObra}` : ''}`),
-                    fetchApi('/equipos'),
                     fetchApi('/obras'),
                 ]);
                 setRegistros(regs);
                 setGastosOp(gastos);
-                setEquipos(eqs);
                 setObras(obs);
             } catch (e: any) {
                 setError(e.message || 'Error al cargar');
@@ -818,7 +815,7 @@ function ResumenSemanalInner() {
             }
         };
         load();
-    }, [filtroEquipo, filtroObra]);
+    }, [filtroObra]);
 
     const gastoEnSemana = (g: GastoOperativo, semanaNum: number, anoNum: number): boolean => {
         if (g.semanaNum != null && g.anoNum != null) {
@@ -844,7 +841,7 @@ function ResumenSemanalInner() {
             mapa[key].push({ ...r, semanaNum: semana, anoNum: ano });
         }
 
-        return Object.entries(mapa)
+        const todasSemanas = Object.entries(mapa)
             .map(([, regs]) => {
                 regs.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
@@ -915,7 +912,11 @@ function ResumenSemanalInner() {
                 if (b.anoNum !== a.anoNum) return b.anoNum - a.anoNum;
                 return b.semanaNum - a.semanaNum;
             });
-    }, [registros, gastosOp]);
+
+        return filtroAno
+            ? todasSemanas.filter(s => String(s.anoNum) === filtroAno)
+            : todasSemanas;
+    }, [registros, gastosOp, filtroAno]);
 
     const totales = useMemo(() => {
         const horas      = semanas.reduce((a, s) => a + s.horasTotales,  0);
@@ -930,6 +931,16 @@ function ResumenSemanalInner() {
     }, [semanas]);
 
 
+
+    // Años disponibles derivados de los registros (sin fetch extra)
+    const anosDisponibles = useMemo(() => {
+        const anos = new Set<number>();
+        for (const r of registros) {
+            const ano = r.anoNum ?? new Date(r.fecha + 'T12:00:00').getFullYear();
+            anos.add(ano);
+        }
+        return [...anos].sort((a, b) => b - a); // más reciente primero
+    }, [registros]);
 
     return (
         <div className="space-y-5 animate-in fade-in duration-500">
@@ -949,12 +960,12 @@ function ResumenSemanalInner() {
                         {obras.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                     </select>
                     <select
-                        value={filtroEquipo}
-                        onChange={e => setFiltroEquipo(e.target.value)}
+                        value={filtroAno}
+                        onChange={e => setFiltroAno(e.target.value)}
                         className="py-2 px-3 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     >
-                        <option value="todos">Todos los equipos</option>
-                        {equipos.map(eq => <option key={eq.id} value={eq.id}>{eq.nombre}</option>)}
+                        <option value="">Todos los años</option>
+                        {anosDisponibles.map(a => <option key={a} value={String(a)}>{a}</option>)}
                     </select>
                 </div>
             </div>
