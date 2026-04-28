@@ -82,14 +82,18 @@ export async function GET(req: NextRequest, { params }: Params) {
             where: { obraId: id, empresaId: user.empresaId },
             _sum:   { metrosLineales: true, barrenos: true },
             _count: { id: true },
+            _min:   { fecha: true },
+            _max:   { fecha: true },
         });
         const plantillaMetricsMap = new Map(
             registrosPorPlantilla.map(r => [
                 r.plantillaId ?? '__null__',
                 {
-                    metrosPerforados: Number(r._sum.metrosLineales ?? 0),
+                    metrosPerforados:   Number(r._sum.metrosLineales ?? 0),
                     barrenosPerforados: Number(r._sum.barrenos ?? 0),
-                    totalRegistros: r._count.id,
+                    totalRegistros:     r._count.id,
+                    fechaPrimerRegistro: r._min.fecha ? String(r._min.fecha).slice(0, 10) : null,
+                    fechaUltimoRegistro: r._max.fecha ? String(r._max.fecha).slice(0, 10) : null,
                 },
             ])
         );
@@ -178,19 +182,21 @@ export async function GET(req: NextRequest, { params }: Params) {
             espesor:           obra.espesor           ? Number(obra.espesor)           : null,
             tipoCambio:        obra.tipoCambio        ? Number(obra.tipoCambio)        : null,
             plantillas: (obra.plantillas ?? []).map(p => {
-                const pm = plantillaMetricsMap.get(p.id) ?? { metrosPerforados: 0, barrenosPerforados: 0, totalRegistros: 0 };
+                const pm = plantillaMetricsMap.get(p.id) ?? { metrosPerforados: 0, barrenosPerforados: 0, totalRegistros: 0, fechaPrimerRegistro: null, fechaUltimoRegistro: null };
                 return {
                     ...p,
-                    metrosContratados:  Number(p.metrosContratados),
-                    barrenos:           Number(p.barrenos ?? 0),
-                    bordo:              p.bordo          ? Number(p.bordo)          : null,
-                    espaciamiento:      p.espaciamiento  ? Number(p.espaciamiento)  : null,
-                    precioUnitario:     p.precioUnitario ? Number(p.precioUnitario) : null,
-                    status:             p.status,
-                    plantillaEquipos:   (p.plantillaEquipos ?? []),
-                    metrosPerforados:   pm.metrosPerforados,
-                    barrenosPerforados: pm.barrenosPerforados,
-                    totalRegistros:     pm.totalRegistros,
+                    metrosContratados:   Number(p.metrosContratados),
+                    barrenos:            Number(p.barrenos ?? 0),
+                    bordo:               p.bordo          ? Number(p.bordo)          : null,
+                    espaciamiento:       p.espaciamiento  ? Number(p.espaciamiento)  : null,
+                    precioUnitario:      p.precioUnitario ? Number(p.precioUnitario) : null,
+                    status:              p.status,
+                    plantillaEquipos:    (p.plantillaEquipos ?? []),
+                    metrosPerforados:    pm.metrosPerforados,
+                    barrenosPerforados:  pm.barrenosPerforados,
+                    totalRegistros:      pm.totalRegistros,
+                    fechaPrimerRegistro: pm.fechaPrimerRegistro ?? null,
+                    fechaUltimoRegistro: pm.fechaUltimoRegistro ?? null,
                 };
             }),
             obraEquipos: obra.obraEquipos.map(oe => ({
@@ -290,6 +296,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
                             data: {
                                 metrosContratados: Number(p.metrosContratados),
                                 barrenos:          Number(p.barrenos ?? 0),
+                                precioUnitario:    p.precioUnitario != null ? Number(p.precioUnitario) : null,
                                 fechaInicio:       p.fechaInicio ? new Date(p.fechaInicio) : null,
                                 fechaFin:          p.fechaFin   ? new Date(p.fechaFin)    : null,
                                 notas:             p.notas      || null,
