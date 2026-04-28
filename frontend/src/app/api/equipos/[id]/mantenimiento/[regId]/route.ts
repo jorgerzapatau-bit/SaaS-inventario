@@ -78,7 +78,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 //   2. Libera los PendienteEquipo vinculados (los vuelve a "abierto").
 //   3. Elimina los MantenimientoInsumo y el MantenimientoEquipo.
 // Todo en una única transacción.
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
   const user = getAuthUser(req);
   if (!user) return unauthorized();
 
